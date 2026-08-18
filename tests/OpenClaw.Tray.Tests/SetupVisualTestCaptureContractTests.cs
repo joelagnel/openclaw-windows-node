@@ -46,6 +46,10 @@ public sealed class SetupVisualTestCaptureContractTests
         Assert.Contains("return () => border.Background = null", capture);
         Assert.Contains("File.Delete(signalPath)", capture);
         Assert.Contains("File.WriteAllBytesAsync(outputPath, png", capture);
+        Assert.Contains("catch (ObjectDisposedException)", capture);
+        Assert.Matches(
+            @"(?s)finally\s*\{\s*root\.Unloaded -= onUnloaded;\s*lock \(s_signalListeners\).*?lifetime\.Dispose\(\);",
+            capture);
         Assert.Contains("#if DEBUG", window);
         Assert.Contains("XamlVisualTestCapture.ScheduleSignalCapture(RootGrid, \"Setup\"", window);
         Assert.Contains("x:Name=\"RootGrid\"", xaml);

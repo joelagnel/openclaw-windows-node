@@ -66,15 +66,20 @@ public static class XamlVisualTestCapture
         var surfaceDirectory = Path.Combine(rootDirectory, surfaceName);
         var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        RoutedEventHandler? onUnloaded = null;
+        RoutedEventHandler onUnloaded = null!;
         onUnloaded = (_, _) =>
         {
             root.Unloaded -= onUnloaded;
-            lifetime.Cancel();
+            try { lifetime.Cancel(); }
+            catch (ObjectDisposedException)
+            {
+                // Parent shutdown can finish and dispose the listener before
+                // WinUI raises Unloaded for the same surface.
+            }
         };
         root.Unloaded += onUnloaded;
 
-        _ = CaptureWhenSignaledAsync(root, signalPath, surfaceDirectory, lifetime);
+        _ = CaptureWhenSignaledAsync(root, signalPath, surfaceDirectory, lifetime, onUnloaded);
     }
 
     public static async Task CaptureAsync(FrameworkElement root, string surfaceName)
@@ -95,7 +100,8 @@ public static class XamlVisualTestCapture
         FrameworkElement root,
         string signalPath,
         string surfaceDirectory,
-        CancellationTokenSource lifetime)
+        CancellationTokenSource lifetime,
+        RoutedEventHandler onUnloaded)
     {
         try
         {
@@ -127,6 +133,7 @@ public static class XamlVisualTestCapture
         }
         finally
         {
+            root.Unloaded -= onUnloaded;
             lock (s_signalListeners)
                 s_signalListeners.Remove(root);
             lifetime.Dispose();

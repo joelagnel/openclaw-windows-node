@@ -42,6 +42,8 @@ public sealed class SetupVisualTestCaptureContractTests
         Assert.Contains("OPENCLAW_VISUAL_TEST_SIGNAL", capture);
         Assert.Contains("OPENCLAW_VISUAL_TEST_SURFACE", capture);
         Assert.Contains("RenderTargetBitmap", capture);
+        Assert.Contains("root is Border { Background: null } border", capture);
+        Assert.Contains("return () => border.Background = null", capture);
         Assert.Contains("File.Delete(signalPath)", capture);
         Assert.Contains("File.WriteAllBytesAsync(outputPath, png", capture);
         Assert.Contains("#if DEBUG", window);

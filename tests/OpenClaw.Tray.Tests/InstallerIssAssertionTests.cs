@@ -199,6 +199,23 @@ public sealed class InstallerIssAssertionTests
     }
 
     [Fact]
+    public void LocalAppRunner_IsolatesSetupLocalDataAndRestoresCallerOverrides()
+    {
+        var script = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(), "run-app-local.ps1"));
+
+        Assert.Contains(".PARAMETER LocalDataDir", script);
+        Assert.Contains("[string]$LocalDataDir,", script);
+        Assert.Contains("$effectiveLocalDataDir = Join-Path $effectiveDataDir \"local\"", script);
+        Assert.Contains("$env:OPENCLAW_TRAY_LOCALAPPDATA_DIR = $null", script);
+        Assert.Contains("} elseif ($previousLocalDataDir) {", script);
+        Assert.Contains("$env:OPENCLAW_TRAY_LOCAL_DATA_DIR = $effectiveLocalDataDir", script);
+        Assert.Contains("Local data dir: $effectiveLocalDataDir", script);
+        Assert.Contains("$env:OPENCLAW_TRAY_LOCAL_DATA_DIR = $previousLocalDataDir", script);
+        Assert.Contains("$env:OPENCLAW_TRAY_LOCALAPPDATA_DIR = $previousLocalAppDataDir", script);
+    }
+
+    [Fact]
     public void MsixManifest_IsGeneratedUnderObjWithoutMutatingTrackedSource()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

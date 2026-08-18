@@ -79,7 +79,7 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(26, steps.Count);
+        Assert.Equal(29, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightWslStep>(steps[2]);
@@ -91,11 +91,16 @@ public class SetupPipelineTests
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
         Assert.Equal(lockdownIndex + 1, cliInstallIndex);
-        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 1]);
-        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AcquireLocalAiEngineStep>(steps[cliInstallIndex + 1]);
+        Assert.IsType<DownloadLocalAiModelStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<VerifyLocalAiWslStep>(steps[cliInstallIndex + 3]);
+        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 4]);
+        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 5]);
         var configureGatewayIndex = steps.FindIndex(s => s is ConfigureGatewayStep);
         Assert.IsType<ConfigureLocalAiGatewayStep>(steps[configureGatewayIndex + 1]);
         var installServiceIndex = steps.FindIndex(s => s is InstallGatewayServiceStep);
+        Assert.True(steps.FindIndex(s => s is VerifyLocalAiWslStep) < configureGatewayIndex);
+        Assert.True(steps.FindIndex(s => s is ConfigureLocalAiGatewayStep) < installServiceIndex);
         Assert.IsType<StartGatewayStep>(steps[installServiceIndex + 1]);
         Assert.IsType<FinalizeTailscaleServeStep>(steps[installServiceIndex + 2]);
         Assert.Contains(steps, s => s is RunGatewayWizardStep);

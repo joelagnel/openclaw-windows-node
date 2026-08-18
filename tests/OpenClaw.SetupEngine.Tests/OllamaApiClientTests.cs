@@ -59,6 +59,24 @@ public sealed class OllamaApiClientTests
     }
 
     [Fact]
+    public async Task DeleteModelAsync_UsesExactNativeDeleteEndpoint()
+    {
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            Assert.Equal(HttpMethod.Delete, request.Method);
+            Assert.Equal("/api/delete", request.RequestUri?.AbsolutePath);
+            var requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            using var requestDocument = JsonDocument.Parse(requestJson);
+            Assert.Equal(LocalAiConfig.DefaultModel, requestDocument.RootElement.GetProperty("model").GetString());
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new OllamaApiClient(httpClient, Endpoint);
+
+        await client.DeleteModelAsync(LocalAiConfig.DefaultModel, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task PullModelAsync_StreamsAndAggregatesPerDigestProgress()
     {
         const string progressBody = """

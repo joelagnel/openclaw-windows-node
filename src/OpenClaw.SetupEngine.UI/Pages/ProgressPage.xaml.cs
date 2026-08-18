@@ -247,6 +247,7 @@ public sealed partial class ProgressPage : Page
         var sw = Stopwatch.StartNew();
         using var cts = new CancellationTokenSource();
         _runCts = cts;
+        SetupContext? context = null;
 
         try
         {
@@ -258,7 +259,7 @@ public sealed partial class ProgressPage : Page
             var journalPath = Path.ChangeExtension(config.LogPath, ".journal.jsonl");
             using var journal = new TransactionJournal(journalPath);
             var commands = new CommandRunner(_logger);
-            var ctx = new SetupContext(
+            context = new SetupContext(
                 config,
                 _logger,
                 journal,
@@ -266,13 +267,14 @@ public sealed partial class ProgressPage : Page
                 cts.Token,
                 _dataDir,
                 _localDataDir);
-            ctx.ExternalAuthorizationPresenter = new ProgressAuthorizationPresenter(DispatcherQueue, ShowTailscaleAuthorization);
+            context.ExternalAuthorizationPresenter = new ProgressAuthorizationPresenter(DispatcherQueue, ShowTailscaleAuthorization);
+            context.DetailProgress += OnDetailProgress;
 
             var steps = BuildSteps(config);
             _pipeline = new SetupPipeline(steps);
             _pipeline.StepProgress += OnStepProgress;
 
-            var result = await Task.Run(() => _pipeline.RunAsync(ctx), cts.Token);
+            var result = await Task.Run(() => _pipeline.RunAsync(context), cts.Token);
             sw.Stop();
             _pipelineFinished = true;
 
@@ -323,6 +325,8 @@ public sealed partial class ProgressPage : Page
         }
         finally
         {
+            if (context != null)
+                context.DetailProgress -= OnDetailProgress;
             if (_logger != null)
                 _logger.LogEmitted -= OnLogEmitted;
             if (_pipeline != null)
@@ -383,6 +387,63 @@ public sealed partial class ProgressPage : Page
     }
 
     private readonly HashSet<string> _completedSteps = new();
+
+    private void OnDetailProgress(object? sender, SetupDetailProgressEvent e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var groupId = e.Phase switch
+            {
+                "artifact" => "local-ai-engine",
+                "model" => "local-ai-model",
+                "verification" => "local-ai-wsl-verification",
+                _ => null,
+            };
+            if (groupId is null || !_rows.TryGetValue(groupId, out var row))
+                return;
+
+            var detail = FormatDetailProgress(e);
+            row.SetDetail(detail);
+
+            if (e.Phase == "model")
+            {
+                if (e.Completed is { } completed && e.Total is > 0 and { } total)
+                    row.SetProgress(completed * 100d / total);
+                SubtitleText.Text = $"Downloading Qwen3.6 35B: {detail}";
+            }
+            else if (e.Phase == "artifact")
+            {
+                SubtitleText.Text = $"Preparing Ollama for Local AI: {detail}";
+            }
+        });
+    }
+
+    private static string FormatDetailProgress(SetupDetailProgressEvent progress)
+    {
+        var status = string.IsNullOrWhiteSpace(progress.Status)
+            ? "Working"
+            : progress.Status.Trim().Replace('_', ' ');
+
+        return progress.Unit switch
+        {
+            SetupDetailProgressUnit.Bytes when progress.Completed is { } completed && progress.Total is > 0 and { } total =>
+                $"{status}: {FormatDecimalBytes(completed)} of {FormatDecimalBytes(total)}",
+            SetupDetailProgressUnit.Bytes when progress.Completed is { } completed =>
+                $"{status}: {FormatDecimalBytes(completed)}",
+            SetupDetailProgressUnit.Entries when progress.Completed is { } completed && progress.Total is > 0 and { } total =>
+                $"{status}: {completed:N0} of {total:N0} files",
+            _ => status,
+        };
+    }
+
+    private static string FormatDecimalBytes(long bytes)
+    {
+        const double megabyte = 1_000_000d;
+        const double gigabyte = 1_000_000_000d;
+        return bytes >= gigabyte
+            ? $"{bytes / gigabyte:0.0} GB"
+            : $"{bytes / megabyte:0} MB";
+    }
 
     private void OnLogEmitted(object? sender, LogEntry entry)
     {
@@ -484,6 +545,7 @@ internal sealed class StepRow
 
     private readonly TextBlock _label;
     private readonly TextBlock? _detail;
+    private readonly string _displayName;
     private readonly ProgressBar? _determinateProgress;
     private readonly ProgressRing _spinner;
     private readonly Border _idleBadge;
@@ -493,6 +555,7 @@ internal sealed class StepRow
 
     public StepRow(string groupId, string displayName, string? detail, bool showsDeterminateProgress)
     {
+        _displayName = displayName;
         _label = new TextBlock
         {
             Text = displayName,
@@ -598,6 +661,10 @@ internal sealed class StepRow
         AutomationProperties.SetName(
             _rowBorder,
             string.IsNullOrWhiteSpace(detail) ? displayName : $"{displayName}. {detail}");
+        if (showsDeterminateProgress)
+            AutomationProperties.SetLiveSetting(
+                _rowBorder,
+                Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
 
         Element = _rowBorder;
     }
@@ -647,6 +714,18 @@ internal sealed class StepRow
         _determinateProgress.IsIndeterminate = false;
         _determinateProgress.Value = Math.Clamp(percent, 0, 100);
         _determinateProgress.Visibility = Visibility.Visible;
+        AutomationProperties.SetName(
+            _determinateProgress,
+            $"{_displayName} download progress, {_determinateProgress.Value:0}%");
+    }
+
+    public void SetDetail(string detail)
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(detail))
+            return;
+
+        _detail.Text = detail;
+        AutomationProperties.SetName(_rowBorder, $"{_displayName}. {detail}");
     }
 
     private static Border CreateEmptyBadge()

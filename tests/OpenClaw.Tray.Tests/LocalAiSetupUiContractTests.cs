@@ -51,6 +51,13 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("ShowsDeterminateProgress: true", code);
         Assert.Contains("new ProgressBar", code);
         Assert.Contains("modelRow.SetProgress(38)", code);
+        Assert.Contains("context.DetailProgress += OnDetailProgress", code);
+        Assert.Contains("context.DetailProgress -= OnDetailProgress", code);
+        Assert.Contains("private void OnDetailProgress", code);
+        Assert.Contains("row.SetProgress(completed * 100d / total)", code);
+        Assert.Contains("row.SetDetail(detail)", code);
+        Assert.Contains("SetupDetailProgressUnit.Bytes", code);
+        Assert.Contains("FormatDecimalBytes", code);
         Assert.Contains("else if (group.GroupId == \"install-cli\")", code);
         Assert.Contains("new StepGroup(\"configure-gateway\"", code);
         Assert.Contains("new StepGroup(\"install-service\"", code);

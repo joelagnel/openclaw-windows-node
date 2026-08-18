@@ -127,7 +127,7 @@ public sealed class LocalInferenceSelectorTests
         var gpu = new GpuInfo(
             GpuVendor.Nvidia,
             "NVIDIA GeForce RTX 5090",
-            DedicatedMemoryBytes: dedicatedMemoryBytes);
+            GpuVisibleMemoryBytes: dedicatedMemoryBytes);
         var hardware = new HostHardwareInfo(
             RuntimeArchitecture.X64,
             totalPhysicalMemoryBytes,

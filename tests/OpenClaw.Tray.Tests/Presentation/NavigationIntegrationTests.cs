@@ -22,7 +22,8 @@ public sealed class NavigationIntegrationTests
             new FakeAppCommands(),
             new SettingsManager(temp.Path),
             execApprovalsStore,
-            new FakePermissionsPageRuntimeHost()));
+            new FakePermissionsPageRuntimeHost(),
+            new FakeLocalAiRuntime()));
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateScopes = true,

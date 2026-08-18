@@ -97,6 +97,26 @@ public partial class App
             }));
         }
 
+        // Disconnect gateway consumers before stopping companion-owned local inference.
+        // The runtime is App-owned and registered into DI as a pre-built instance, so this
+        // authoritative shutdown step is its only disposal owner.
+        var localAiRuntime = _localAiRuntime;
+        if (localAiRuntime is not null)
+        {
+            steps.Add(new AppShutdownStep("local AI runtime", async () =>
+            {
+                try
+                {
+                    await localAiRuntime.DisposeAsync();
+                }
+                finally
+                {
+                    if (ReferenceEquals(_localAiRuntime, localAiRuntime))
+                        _localAiRuntime = null;
+                }
+            }));
+        }
+
         steps.Add(new AppShutdownStep("OpenTelemetry endpoint", () =>
         {
             _openTelemetryConnection?.Dispose();

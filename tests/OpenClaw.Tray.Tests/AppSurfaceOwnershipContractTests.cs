@@ -3,6 +3,38 @@ namespace OpenClaw.Tray.Tests;
 public sealed class AppSurfaceOwnershipContractTests
 {
     [Fact]
+    public void App_ComposesAndOrdersLocalAiRuntimeLifecycle()
+    {
+        var app = Read("App.xaml.cs");
+        var shutdown = Read("App.AppShutdownCoordinator.cs");
+        var context = Read("Presentation", "AppServiceContext.cs");
+        var registration = Read("Presentation", "AppServiceRegistration.cs");
+
+        Assert.Contains("private ILocalAiRuntime? _localAiRuntime;", app);
+        Assert.Contains("new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory())", app);
+        Assert.Contains("services.AddSingleton<ILocalAiRuntime>(context.LocalAiRuntime);", registration);
+        Assert.Contains("public ILocalAiRuntime LocalAiRuntime { get; }", context);
+        Assert.DoesNotContain("OLLAMA_", app);
+        Assert.DoesNotContain("ollama serve", app, StringComparison.OrdinalIgnoreCase);
+
+        AssertInOrder(
+            app,
+            "_settings = new SettingsManager();",
+            "_localAiRuntime = new OllamaRuntimeService(",
+            "InitializeServiceProvider();",
+            "await _localAiRuntime.EnsureStartedAsync();",
+            "InitializeGatewayClient();");
+        AssertInOrder(
+            shutdown,
+            "\"chat coordinator\"",
+            "\"gateway client\"",
+            "\"local AI runtime\"",
+            "await localAiRuntime.DisposeAsync()",
+            "\"OpenTelemetry endpoint\"",
+            "\"service provider\"");
+    }
+
+    [Fact]
     public void App_DelegatesConcreteTrayAndWindowOwnership()
     {
         var app = Read("App.xaml.cs");

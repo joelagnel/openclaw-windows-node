@@ -1,4 +1,5 @@
 using OpenClaw.Shared.ExecApprovals;
+using OpenClaw.Connection.LocalAi;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClawTray.Services;
 
@@ -12,7 +13,7 @@ namespace OpenClawTray.Presentation;
 /// Ownership rules encoded here:
 /// <list type="bullet">
 /// <item>App-owned singletons (<see cref="IUiDispatcher"/>, <see cref="IAppCommands"/>,
-/// <see cref="SettingsManager"/>) are registered as <b>pre-built instances</b>, so the
+/// <see cref="SettingsManager"/>, <see cref="ILocalAiRuntime"/>) are registered as <b>pre-built instances</b>, so the
 /// container never disposes them — App remains their sole owner (no double-dispose).</item>
 /// <item><see cref="NavigationScopeManager"/> is a container-created singleton, so the
 /// container disposes it when the root provider is disposed.</item>
@@ -35,6 +36,7 @@ internal static class AppServiceRegistration
         services.AddSingleton(context.Settings);
         services.AddSingleton(context.ExecApprovalsStore);
         services.AddSingleton(context.PermissionsRuntimeHost);
+        services.AddSingleton<ILocalAiRuntime>(context.LocalAiRuntime);
         // Settings facade over the App-owned SettingsManager. Container-owned so it can dispose
         // its Saved-event subscription during shutdown.
         services.AddSingleton<ISettingsStore, SettingsStore>();

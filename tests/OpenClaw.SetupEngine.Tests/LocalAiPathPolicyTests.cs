@@ -112,6 +112,55 @@ public sealed class LocalAiPathPolicyTests : IDisposable
         Assert.Contains("run ID", traversalError);
     }
 
+    [Fact]
+    public void TryGetModelPaths_UsesImmutableRepositoryRevisionLayout()
+    {
+        var paths = ResolvePaths();
+        const string revision = "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d";
+
+        var resolved = LocalAiPathPolicy.TryGetModelPaths(
+            paths,
+            "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+            revision,
+            "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+            out var model,
+            out var partial,
+            out var error);
+
+        Assert.True(resolved, error);
+        Assert.Equal(
+            _temp.Combine(
+                "LocalAI",
+                "models",
+                "unsloth",
+                "Qwen3.6-35B-A3B-MTP-GGUF",
+                revision,
+                "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
+            model);
+        Assert.Equal(model + ".partial", partial);
+    }
+
+    [Theory]
+    [InlineData("unsloth/model", "main", "model.gguf")]
+    [InlineData("unsloth/../model", "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d", "model.gguf")]
+    [InlineData("unsloth/model", "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d", "../model.gguf")]
+    [InlineData("unsloth/model", "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d", "model.bin")]
+    public void TryGetModelPaths_RejectsMutableOrUnsafeIdentity(
+        string repositoryId,
+        string revision,
+        string fileName)
+    {
+        Assert.False(LocalAiPathPolicy.TryGetModelPaths(
+            ResolvePaths(),
+            repositoryId,
+            revision,
+            fileName,
+            out _,
+            out _,
+            out var error));
+        Assert.Contains("invalid path segment", error);
+    }
+
     [Theory]
     [InlineData("bin/native.exe", true)]
     [InlineData("lib/cuda.dll", true)]

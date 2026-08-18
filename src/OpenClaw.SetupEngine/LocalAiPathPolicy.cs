@@ -161,6 +161,69 @@ internal static class LocalAiPathPolicy
         return true;
     }
 
+    public static bool TryGetModelPaths(
+        LocalAiSetupPaths paths,
+        string repositoryId,
+        string revision,
+        string fileName,
+        out string modelPath,
+        out string partialPath,
+        out string error)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        modelPath = "";
+        partialPath = "";
+
+        string[] repositorySegments = repositoryId?.Split('/') ?? [];
+        if (repositorySegments.Length != 2 ||
+            repositorySegments.Any(segment => !IsSafeWindowsPathSegment(segment)) ||
+            revision is null || revision.Length != 40 || !revision.All(IsLowerHex) ||
+            !IsSafeWindowsPathSegment(fileName) ||
+            !string.Equals(Path.GetExtension(fileName), ".gguf", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Local AI model identity contains an invalid path segment.";
+            return false;
+        }
+
+        try
+        {
+            string modelDirectory = NormalizePath(Path.Combine(
+                paths.ModelsDirectory,
+                repositorySegments[0],
+                repositorySegments[1],
+                revision));
+            modelPath = NormalizePath(Path.Combine(modelDirectory, fileName));
+            partialPath = NormalizePath(Path.Combine(modelDirectory, fileName + ".partial"));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            error = $"Invalid Local AI model path: {ex.Message}";
+            return false;
+        }
+
+        if (!IsStrictDescendant(modelPath, paths.ModelsDirectory) ||
+            !IsStrictDescendant(partialPath, paths.ModelsDirectory) ||
+            !IsStrictDescendant(modelPath, paths.RootDirectory) ||
+            !IsStrictDescendant(partialPath, paths.RootDirectory))
+        {
+            modelPath = "";
+            partialPath = "";
+            error = "Local AI model path escaped the app-owned model directory.";
+            return false;
+        }
+
+        if (!TryValidateExistingPathChain(paths.RootDirectory, modelPath, out error) ||
+            !TryValidateExistingPathChain(paths.RootDirectory, partialPath, out error))
+        {
+            modelPath = "";
+            partialPath = "";
+            return false;
+        }
+
+        error = "";
+        return true;
+    }
+
     public static bool TryGetStagingDirectory(
         LocalAiSetupPaths paths,
         string runId,
@@ -389,6 +452,9 @@ internal static class LocalAiPathPolicy
                IsNumberedDevice(baseName, "COM") ||
                IsNumberedDevice(baseName, "LPT");
     }
+
+    private static bool IsLowerHex(char value) =>
+        value is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private static bool IsNumberedDevice(string value, string prefix)
         => value.Length == 4 &&

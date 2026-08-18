@@ -7021,6 +7021,12 @@ Het binaire bestand wxc-exec is niet gevonden. {1} Als dit een ontwikkelaarsbuil
   <data name="LocalAiPage_Model_NotInstalled" xml:space="preserve">
     <value>Niet geïnstalleerd</value>
   </data>
+  <data name="LocalAiPage_Model_Downloaded" xml:space="preserve">
+    <value>Gedownload</value>
+  </data>
+  <data name="LocalAiPage_Model_Loaded" xml:space="preserve">
+    <value>Geladen</value>
+  </data>
   <data name="LocalAiPage_Model_Unknown" xml:space="preserve">
     <value>Onbekend</value>
   </data>
@@ -7041,6 +7047,9 @@ Het binaire bestand wxc-exec is niet gevonden. {1} Als dit een ontwikkelaarsbuil
   </data>
   <data name="LocalAiPage_Value_Unknown" xml:space="preserve">
     <value>Onbekende waarde</value>
+  </data>
+  <data name="LocalAiPage_Value_ExternalSettings" xml:space="preserve">
+    <value>Externe instellingen (niet geverifieerd)</value>
   </data>
   <data name="Command_GoToLocalAi_Title" xml:space="preserve">
     <value>Naar lokale AI</value>

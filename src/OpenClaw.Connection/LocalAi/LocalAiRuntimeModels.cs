@@ -18,19 +18,42 @@ public enum LocalAiOwnership
     External,
 }
 
+/// <summary>
+/// Evidence-backed availability of the exact managed manifest model tag.
+/// Unknown means no current qualified API evidence exists.
+/// </summary>
+public enum LocalAiModelAvailabilityState
+{
+    Unknown,
+    NotInstalled,
+    Downloaded,
+    Loaded,
+}
+
 public sealed record LocalAiRuntimeSnapshot(
     LocalAiRuntimeState State,
     LocalAiOwnership Ownership,
     Uri Endpoint,
     string? EngineVersion,
     string? ModelTag,
+    LocalAiModelAvailabilityState ModelAvailability,
     int? ProcessId,
     DateTimeOffset? ProcessStartedAtUtc,
     string? Detail,
     DateTimeOffset UpdatedAtUtc)
 {
     public static LocalAiRuntimeSnapshot Initial(Uri endpoint, DateTimeOffset now) =>
-        new(LocalAiRuntimeState.Stopped, LocalAiOwnership.None, endpoint, null, null, null, null, null, now);
+        new(
+            LocalAiRuntimeState.Stopped,
+            LocalAiOwnership.None,
+            endpoint,
+            null,
+            null,
+            LocalAiModelAvailabilityState.Unknown,
+            null,
+            null,
+            null,
+            now);
 }
 
 public sealed class LocalAiRuntimeSnapshotChangedEventArgs(LocalAiRuntimeSnapshot snapshot) : EventArgs

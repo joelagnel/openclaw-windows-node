@@ -133,7 +133,7 @@
                         <TextBlock x:Name="ContextLengthText" Grid.Row="1" Grid.Column="1" Text="256K"/>
                         <TextBlock x:Uid="LocalAiPage_KvCacheLabel" Grid.Row="2" Text="KV cache"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                        <TextBlock x:Name="KvCacheText" Grid.Row="2" Grid.Column="1" Text="FP16"/>
+                        <TextBlock x:Name="KvCacheText" Grid.Row="2" Grid.Column="1"/>
                     </Grid>
                     <Button x:Name="RetrySetupButton" x:Uid="LocalAiPage_RetrySetupButton"
                             Content="Retry setup or download" Click="OnRetrySetup"

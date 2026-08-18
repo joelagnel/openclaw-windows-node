@@ -567,6 +567,7 @@ public sealed class LocalAiSetupStepsTests : IDisposable
             new Uri(LocalAiConfig.DefaultEndpoint),
             OllamaReleasePolicy.RecommendedVersion,
             LocalAiConfig.DefaultModel,
+            LocalAiModelAvailabilityState.Unknown,
             ownership == LocalAiOwnership.None ? null : 123,
             ownership == LocalAiOwnership.None ? null : DateTimeOffset.UtcNow,
             detail,

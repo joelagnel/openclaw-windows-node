@@ -130,7 +130,7 @@ Download and install WebView2 from [Microsoft](https://developer.microsoft.com/m
 
 ### Can't connect to gateway
 
-- Verify the gateway URL in Settings (default: `ws://localhost:18789`).
+- Verify the gateway URL in Settings (default: `ws://127.0.0.1:18789`).
 - Make sure the OpenClaw gateway process is running.
 - Check Windows Firewall - if your gateway runs on a different machine, allow inbound traffic on port 18789.
 - See the log at `%LOCALAPPDATA%\OpenClawTray\openclaw-tray.log` for connection errors.

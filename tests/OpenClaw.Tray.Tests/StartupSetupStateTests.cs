@@ -93,6 +93,16 @@ public class StartupSetupStateTests
         // so first-run setup should still be offered.
         using var temp = TempSettings.Create();
         StoreDeviceToken(temp.Path);
+        var settings = new SettingsManager(temp.Path) { GatewayUrl = "ws://127.0.0.1:18789" };
+
+        Assert.True(StartupSetupState.RequiresSetup(settings, temp.Path));
+    }
+
+    [Fact]
+    public void RequiresSetup_ReturnsTrue_WhenOperatorTokenExistsWithLegacyLocalhostDefault()
+    {
+        using var temp = TempSettings.Create();
+        StoreDeviceToken(temp.Path);
         var settings = new SettingsManager(temp.Path) { GatewayUrl = "ws://localhost:18789" };
 
         Assert.True(StartupSetupState.RequiresSetup(settings, temp.Path));
@@ -578,14 +588,18 @@ public class StartupSetupStateTests
         Assert.False(StartupSetupState.RequiresSetup(settings, temp.Path));
     }
 
-    [Fact]
-    public void DefaultGatewayUrl_IsLocalhost18789()
+    [Theory]
+    [InlineData("ws://127.0.0.1:18789", false)]
+    [InlineData("ws://localhost:18789", false)]
+    [InlineData("wss://remote.example.com:443", true)]
+    public void ConfiguredGatewayTarget_TreatsCurrentAndLegacySetupUrlsAsDefaults(
+        string gatewayUrl,
+        bool expected)
     {
-        // StartupSetupState uses "ws://localhost:18789" as the default gateway URL.
-        // A non-default URL indicates the user has configured an external gateway.
-        // This test guards against accidentally changing the constant.
-        var settings = new SettingsManager(Path.GetTempPath()) { GatewayUrl = "ws://localhost:18789" };
-        Assert.True(StartupSetupState.RequiresSetup(settings, Path.GetTempPath()));
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path) { GatewayUrl = gatewayUrl };
+
+        Assert.Equal(expected, StartupSetupState.HasAnyConfiguredGatewayTarget(settings));
     }
 
     private static void StoreDeviceToken(string dataPath)

@@ -1,0 +1,447 @@
+{
+  "started_at": "2026-08-18T08:30:10.975096-07:00",
+  "model": "qwen3.6:35b-a3b-mtp-q4_K_M",
+  "kv_cache_type": "f16",
+  "forced_num_gpu": 999,
+  "num_batch": 512,
+  "ollama_llm_library": "cuda_v13",
+  "mapped_host_fallback": false,
+  "flash_attention": "1",
+  "cold_state_before": {
+    "last_boot_time": "2026-08-17T16:58:24.5993300-07:00",
+    "captured_at": "2026-08-18T08:30:12.7161527-07:00",
+    "cuda_cache_disable_user": null,
+    "compute_cache_path": "C:\\Users\\joelagnelf\\AppData\\Roaming\\NVIDIA\\ComputeCache",
+    "compute_cache_files": 16,
+    "compute_cache_bytes": 199767220,
+    "compute_cache_newest": "2026-08-17T15:38:09.2689263-07:00"
+  },
+  "driver_and_memory_before": {
+    "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+    "gpu_total_mib": 24512,
+    "gpu_used_mib": 24336,
+    "gpu_free_mib": 163,
+    "gpu_utilization_percent": 3,
+    "llama_server_pids": [
+      28340
+    ],
+    "wddm_dedicated_mib": 23763.2,
+    "wddm_shared_mib": 5594,
+    "wddm_combined_mib": 29357.2,
+    "wddm_adapter_dedicated_mib": 24353.1,
+    "wddm_adapter_shared_mib": 5969.2,
+    "installed_physical_mib": 65536,
+    "windows_visible_mib": 38988.7,
+    "hardware_reserved_mib": 26547.3
+  },
+  "contexts": [
+    {
+      "requested_context": 262144,
+      "baseline_gpu": {
+        "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+        "gpu_total_mib": 24512,
+        "gpu_used_mib": 584,
+        "gpu_free_mib": 23915,
+        "gpu_utilization_percent": 5,
+        "llama_server_pids": [],
+        "wddm_dedicated_mib": 0,
+        "wddm_shared_mib": 0,
+        "wddm_combined_mib": 0,
+        "wddm_adapter_dedicated_mib": 589.9,
+        "wddm_adapter_shared_mib": 375.2,
+        "installed_physical_mib": 65536,
+        "windows_visible_mib": 38988.7,
+        "hardware_reserved_mib": 26547.3
+      },
+      "runs": [
+        {
+          "phase": "cold",
+          "ok": true,
+          "ttft_seconds": 47.163,
+          "wall_seconds": 48.214,
+          "post_first_token_seconds": 1.052,
+          "ollama_total_seconds": 48.184,
+          "load_seconds": 44.18,
+          "prompt_eval_seconds": 2.923,
+          "decode_seconds": 1.039,
+          "prompt_tokens": 3659,
+          "output_tokens": 36,
+          "prompt_tokens_per_second": 1251.94,
+          "decode_tokens_per_second": 34.64,
+          "milliseconds_per_output_token": 28.87,
+          "active_tokens_per_second": 932.64,
+          "end_to_end_tokens_per_second": 76.64,
+          "done_reason": "stop",
+          "response_preview": "the quick brown fox jumps over the lazy dog and runs through the forest with great speed and agility while the sun shines brightly in the sky above the green gr",
+          "io": {
+            "before": {
+              "physical_disk_read_bytes": 171684366848,
+              "physical_disk_reads": 2089701,
+              "cache_bytes": 121626624,
+              "standby_normal_bytes": 18963525632,
+              "standby_reserve_bytes": 585895936,
+              "standby_core_bytes": 97660928,
+              "available_bytes": 25569984512,
+              "pages_input": 48505007,
+              "page_reads": 3022954
+            },
+            "after": {
+              "physical_disk_read_bytes": 178271280128,
+              "physical_disk_reads": 2114101,
+              "cache_bytes": 116568064,
+              "standby_normal_bytes": 18343677952,
+              "standby_reserve_bytes": 0,
+              "standby_core_bytes": 97673216,
+              "available_bytes": 18441768960,
+              "pages_input": 50116682,
+              "page_reads": 3047324
+            },
+            "physical_disk_read_bytes_delta": 6586913280,
+            "physical_disk_reads_delta": 24400,
+            "pages_input_delta": 1611675,
+            "page_reads_delta": 24370
+          },
+          "loaded_model": {
+            "loaded": true,
+            "reported_context": 262144,
+            "loaded_size_bytes": 22857174219,
+            "loaded_size_gib": 21.287,
+            "loaded_vram_bytes": 22857174219,
+            "loaded_vram_gib": 21.287,
+            "reported_gpu_residency_percent": 100.0
+          },
+          "runner_details": {
+            "runners": {
+              "pid": 28172,
+              "command_line": "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\llama-server.exe --model C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-d372de8e934898a59e6ccfabc3368474711384d8f1fd4d22d87a3f0a45400cdc --port 61375 --host 127.0.0.1 --no-webui --offline -c 262144 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-a62390d25b4b4a2d8afd7cc3c90021c11935c1fdd48d7cb0723ab71cd02a598e --spec-type draft-mtp --spec-draft-n-max 4 --spec-draft-backend-sampling --load-mode none --cache-type-k f16 --cache-type-v f16 --flash-attn on -b 512 -ub 512 -ngl 999 --context-shift --keep 4",
+              "ggml_cuda_modules": [
+                "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\cuda_v13\\ggml-cuda.dll"
+              ],
+              "logical_read_bytes": 22755505221,
+              "logical_read_operations": 30250,
+              "logical_write_bytes": 24250,
+              "working_set_bytes": 6685143040,
+              "kernel_time_100ns": 218437500,
+              "user_time_100ns": 220937500
+            }
+          },
+          "gpu_after": {
+            "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+            "gpu_total_mib": 24512,
+            "gpu_used_mib": 24390,
+            "gpu_free_mib": 109,
+            "gpu_utilization_percent": 2,
+            "llama_server_pids": [
+              28172
+            ],
+            "wddm_dedicated_mib": 23833.1,
+            "wddm_shared_mib": 5524,
+            "wddm_combined_mib": 29357.1,
+            "wddm_adapter_dedicated_mib": 24406.7,
+            "wddm_adapter_shared_mib": 5899.3,
+            "installed_physical_mib": 65536,
+            "windows_visible_mib": 38988.7,
+            "hardware_reserved_mib": 26547.3
+          },
+          "system_memory_after": {
+            "system_memory_load_percent": 54,
+            "system_total_mib": 38989,
+            "system_available_mib": 17704
+          }
+        },
+        {
+          "phase": "hot_1",
+          "ok": true,
+          "ttft_seconds": 2.992,
+          "wall_seconds": 3.813,
+          "post_first_token_seconds": 0.821,
+          "ollama_total_seconds": 3.764,
+          "load_seconds": 0.527,
+          "prompt_eval_seconds": 2.314,
+          "decode_seconds": 0.804,
+          "prompt_tokens": 3660,
+          "output_tokens": 36,
+          "prompt_tokens_per_second": 1581.93,
+          "decode_tokens_per_second": 44.76,
+          "milliseconds_per_output_token": 22.34,
+          "active_tokens_per_second": 1185.38,
+          "end_to_end_tokens_per_second": 969.37,
+          "done_reason": "stop",
+          "response_preview": "the quick brown fox jumps over the lazy dog and runs through the forest with great speed and agility while the sun shines brightly in the sky above the green gr",
+          "io": {
+            "before": {
+              "physical_disk_read_bytes": 178484465152,
+              "physical_disk_reads": 2121249,
+              "cache_bytes": 120868864,
+              "standby_normal_bytes": 18369888256,
+              "standby_reserve_bytes": 11481088,
+              "standby_core_bytes": 97677312,
+              "available_bytes": 18479312896,
+              "pages_input": 50169214,
+              "page_reads": 3054628
+            },
+            "after": {
+              "physical_disk_read_bytes": 178604298240,
+              "physical_disk_reads": 2124662,
+              "cache_bytes": 123342848,
+              "standby_normal_bytes": 17967165440,
+              "standby_reserve_bytes": 0,
+              "standby_core_bytes": 97054720,
+              "available_bytes": 18064285696,
+              "pages_input": 50201561,
+              "page_reads": 3059359
+            },
+            "physical_disk_read_bytes_delta": 119833088,
+            "physical_disk_reads_delta": 3413,
+            "pages_input_delta": 32347,
+            "page_reads_delta": 4731
+          },
+          "loaded_model": {
+            "loaded": true,
+            "reported_context": 262144,
+            "loaded_size_bytes": 22857174219,
+            "loaded_size_gib": 21.287,
+            "loaded_vram_bytes": 22857174219,
+            "loaded_vram_gib": 21.287,
+            "reported_gpu_residency_percent": 100.0
+          },
+          "runner_details": {
+            "runners": {
+              "pid": 28172,
+              "command_line": "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\llama-server.exe --model C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-d372de8e934898a59e6ccfabc3368474711384d8f1fd4d22d87a3f0a45400cdc --port 61375 --host 127.0.0.1 --no-webui --offline -c 262144 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-a62390d25b4b4a2d8afd7cc3c90021c11935c1fdd48d7cb0723ab71cd02a598e --spec-type draft-mtp --spec-draft-n-max 4 --spec-draft-backend-sampling --load-mode none --cache-type-k f16 --cache-type-v f16 --flash-attn on -b 512 -ub 512 -ngl 999 --context-shift --keep 4",
+              "ggml_cuda_modules": [
+                "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\cuda_v13\\ggml-cuda.dll"
+              ],
+              "logical_read_bytes": 22755505221,
+              "logical_read_operations": 30250,
+              "logical_write_bytes": 28822,
+              "working_set_bytes": 6980407296,
+              "kernel_time_100ns": 221250000,
+              "user_time_100ns": 250937500
+            }
+          },
+          "gpu_after": {
+            "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+            "gpu_total_mib": 24512,
+            "gpu_used_mib": 24390,
+            "gpu_free_mib": 109,
+            "gpu_utilization_percent": 0,
+            "llama_server_pids": [
+              28172
+            ],
+            "wddm_dedicated_mib": 23833.1,
+            "wddm_shared_mib": 5524,
+            "wddm_combined_mib": 29357.1,
+            "wddm_adapter_dedicated_mib": 24406.7,
+            "wddm_adapter_shared_mib": 5899.3,
+            "installed_physical_mib": 65536,
+            "windows_visible_mib": 38988.7,
+            "hardware_reserved_mib": 26547.3
+          },
+          "system_memory_after": {
+            "system_memory_load_percent": 55,
+            "system_total_mib": 38989,
+            "system_available_mib": 17167
+          }
+        },
+        {
+          "phase": "hot_2",
+          "ok": true,
+          "ttft_seconds": 2.9,
+          "wall_seconds": 3.601,
+          "post_first_token_seconds": 0.701,
+          "ollama_total_seconds": 3.565,
+          "load_seconds": 0.509,
+          "prompt_eval_seconds": 2.263,
+          "decode_seconds": 0.687,
+          "prompt_tokens": 3660,
+          "output_tokens": 36,
+          "prompt_tokens_per_second": 1617.33,
+          "decode_tokens_per_second": 52.42,
+          "milliseconds_per_output_token": 19.08,
+          "active_tokens_per_second": 1252.99,
+          "end_to_end_tokens_per_second": 1026.41,
+          "done_reason": "stop",
+          "response_preview": "the quick brown fox jumps over the lazy dog and runs through the forest with great speed and agility while the sun shines brightly in the sky above the green gr",
+          "io": {
+            "before": {
+              "physical_disk_read_bytes": 178712603136,
+              "physical_disk_reads": 2128642,
+              "cache_bytes": 123142144,
+              "standby_normal_bytes": 17816412160,
+              "standby_reserve_bytes": 39305216,
+              "standby_core_bytes": 97054720,
+              "available_bytes": 18101063680,
+              "pages_input": 50229053,
+              "page_reads": 3063269
+            },
+            "after": {
+              "physical_disk_read_bytes": 178752199168,
+              "physical_disk_reads": 2129742,
+              "cache_bytes": 123965440,
+              "standby_normal_bytes": 17791934464,
+              "standby_reserve_bytes": 12222464,
+              "standby_core_bytes": 97091584,
+              "available_bytes": 17913061376,
+              "pages_input": 50239112,
+              "page_reads": 3064485
+            },
+            "physical_disk_read_bytes_delta": 39596032,
+            "physical_disk_reads_delta": 1100,
+            "pages_input_delta": 10059,
+            "page_reads_delta": 1216
+          },
+          "loaded_model": {
+            "loaded": true,
+            "reported_context": 262144,
+            "loaded_size_bytes": 22857174219,
+            "loaded_size_gib": 21.287,
+            "loaded_vram_bytes": 22857174219,
+            "loaded_vram_gib": 21.287,
+            "reported_gpu_residency_percent": 100.0
+          },
+          "runner_details": {
+            "runners": {
+              "pid": 28172,
+              "command_line": "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\llama-server.exe --model C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-d372de8e934898a59e6ccfabc3368474711384d8f1fd4d22d87a3f0a45400cdc --port 61375 --host 127.0.0.1 --no-webui --offline -c 262144 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-a62390d25b4b4a2d8afd7cc3c90021c11935c1fdd48d7cb0723ab71cd02a598e --spec-type draft-mtp --spec-draft-n-max 4 --spec-draft-backend-sampling --load-mode none --cache-type-k f16 --cache-type-v f16 --flash-attn on -b 512 -ub 512 -ngl 999 --context-shift --keep 4",
+              "ggml_cuda_modules": [
+                "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\cuda_v13\\ggml-cuda.dll"
+              ],
+              "logical_read_bytes": 22755505221,
+              "logical_read_operations": 30250,
+              "logical_write_bytes": 33589,
+              "working_set_bytes": 7277727744,
+              "kernel_time_100ns": 225156250,
+              "user_time_100ns": 277968750
+            }
+          },
+          "gpu_after": {
+            "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+            "gpu_total_mib": 24512,
+            "gpu_used_mib": 24390,
+            "gpu_free_mib": 109,
+            "gpu_utilization_percent": 0,
+            "llama_server_pids": [
+              28172
+            ],
+            "wddm_dedicated_mib": 23833.1,
+            "wddm_shared_mib": 5524,
+            "wddm_combined_mib": 29357.1,
+            "wddm_adapter_dedicated_mib": 24406.7,
+            "wddm_adapter_shared_mib": 5899.3,
+            "installed_physical_mib": 65536,
+            "windows_visible_mib": 38988.7,
+            "hardware_reserved_mib": 26547.3
+          },
+          "system_memory_after": {
+            "system_memory_load_percent": 56,
+            "system_total_mib": 38989,
+            "system_available_mib": 17050
+          }
+        },
+        {
+          "phase": "hot_3",
+          "ok": true,
+          "ttft_seconds": 2.946,
+          "wall_seconds": 3.679,
+          "post_first_token_seconds": 0.733,
+          "ollama_total_seconds": 3.66,
+          "load_seconds": 0.48,
+          "prompt_eval_seconds": 2.352,
+          "decode_seconds": 0.718,
+          "prompt_tokens": 3660,
+          "output_tokens": 36,
+          "prompt_tokens_per_second": 1556.12,
+          "decode_tokens_per_second": 50.14,
+          "milliseconds_per_output_token": 19.95,
+          "active_tokens_per_second": 1203.89,
+          "end_to_end_tokens_per_second": 1004.49,
+          "done_reason": "stop",
+          "response_preview": "the quick brown fox jumps over the lazy dog and runs through the forest with great speed and agility while the sun shines brightly in the sky above the green gr",
+          "io": {
+            "before": {
+              "physical_disk_read_bytes": 178832459776,
+              "physical_disk_reads": 2133243,
+              "cache_bytes": 122798080,
+              "standby_normal_bytes": 17621610496,
+              "standby_reserve_bytes": 63590400,
+              "standby_core_bytes": 97083392,
+              "available_bytes": 17796849664,
+              "pages_input": 50258899,
+              "page_reads": 3067918
+            },
+            "after": {
+              "physical_disk_read_bytes": 178861694976,
+              "physical_disk_reads": 2134142,
+              "cache_bytes": 122068992,
+              "standby_normal_bytes": 17334366208,
+              "standby_reserve_bytes": 0,
+              "standby_core_bytes": 97083392,
+              "available_bytes": 17431449600,
+              "pages_input": 50266460,
+              "page_reads": 3068875
+            },
+            "physical_disk_read_bytes_delta": 29235200,
+            "physical_disk_reads_delta": 899,
+            "pages_input_delta": 7561,
+            "page_reads_delta": 957
+          },
+          "loaded_model": {
+            "loaded": true,
+            "reported_context": 262144,
+            "loaded_size_bytes": 22857174219,
+            "loaded_size_gib": 21.287,
+            "loaded_vram_bytes": 22857174219,
+            "loaded_vram_gib": 21.287,
+            "reported_gpu_residency_percent": 100.0
+          },
+          "runner_details": {
+            "runners": {
+              "pid": 28172,
+              "command_line": "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\llama-server.exe --model C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-d372de8e934898a59e6ccfabc3368474711384d8f1fd4d22d87a3f0a45400cdc --port 61375 --host 127.0.0.1 --no-webui --offline -c 262144 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\models\\blobs\\sha256-a62390d25b4b4a2d8afd7cc3c90021c11935c1fdd48d7cb0723ab71cd02a598e --spec-type draft-mtp --spec-draft-n-max 4 --spec-draft-backend-sampling --load-mode none --cache-type-k f16 --cache-type-v f16 --flash-attn on -b 512 -ub 512 -ngl 999 --context-shift --keep 4",
+              "ggml_cuda_modules": [
+                "C:\\Users\\joelagnelf\\OpenClaw-Ollama-Experience\\managed-acceptance-db8ec612\\local\\LocalAI\\engines\\ollama\\0.32.14\\win-arm64\\lib\\ollama\\cuda_v13\\ggml-cuda.dll"
+              ],
+              "logical_read_bytes": 22755505221,
+              "logical_read_operations": 30250,
+              "logical_write_bytes": 38551,
+              "working_set_bytes": 7572873216,
+              "kernel_time_100ns": 230156250,
+              "user_time_100ns": 307812500
+            }
+          },
+          "gpu_after": {
+            "gpu_name": "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+            "gpu_total_mib": 24512,
+            "gpu_used_mib": 24390,
+            "gpu_free_mib": 109,
+            "gpu_utilization_percent": 1,
+            "llama_server_pids": [
+              28172
+            ],
+            "wddm_dedicated_mib": 23833.1,
+            "wddm_shared_mib": 5524,
+            "wddm_combined_mib": 29357.1,
+            "wddm_adapter_dedicated_mib": 24406.7,
+            "wddm_adapter_shared_mib": 5899.3,
+            "installed_physical_mib": 65536,
+            "windows_visible_mib": 38988.7,
+            "hardware_reserved_mib": 26547.3
+          },
+          "system_memory_after": {
+            "system_memory_load_percent": 57,
+            "system_total_mib": 38989,
+            "system_available_mib": 16755
+          }
+        }
+      ]
+    }
+  ],
+  "hot_summary": {
+    "runs": 3,
+    "median_ttft_seconds": 2.946,
+    "median_decode_tokens_per_second": 50.14,
+    "median_prompt_tokens_per_second": 1581.93
+  },
+  "finished_at": "2026-08-18T08:31:58.970009-07:00"
+}

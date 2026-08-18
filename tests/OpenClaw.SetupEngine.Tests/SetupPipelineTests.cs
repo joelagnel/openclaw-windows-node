@@ -348,6 +348,80 @@ public class SetupPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_Cancellation_WithRollback_CleansInterruptedAndCompletedSteps()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbackOrder = new List<string>();
+        var ctx = CreateContext(
+            new SetupConfig { RollbackOnFailure = true },
+            ct: cts.Token);
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "completed",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackOrder.Add("completed");
+                    return Task.CompletedTask;
+                }),
+            new MockStep(
+                "interrupted",
+                (_, _) =>
+                {
+                    cts.Cancel();
+                    return Task.FromCanceled<StepResult>(cts.Token);
+                },
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackOrder.Add("interrupted");
+                    return Task.CompletedTask;
+                }),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.Equal(["interrupted", "completed"], rollbackOrder);
+        Assert.Contains(ctx.Journal.Entries, entry => entry.StepId == "interrupted" && entry.Event == "rollback_ok");
+        Assert.Contains(ctx.Journal.Entries, entry => entry.StepId == "completed" && entry.Event == "rollback_ok");
+    }
+
+    [Fact]
+    public async Task RunAsync_CancellationBetweenSteps_WithRollback_CleansCompletedSteps()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbackCalled = false;
+        var ctx = CreateContext(
+            new SetupConfig { RollbackOnFailure = true },
+            ct: cts.Token);
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "completed",
+                (_, _) =>
+                {
+                    cts.Cancel();
+                    return Task.FromResult(StepResult.Ok());
+                },
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackCalled = true;
+                    return Task.CompletedTask;
+                }),
+            new MockStep("not-started", (_, _) => Task.FromResult(StepResult.Ok())),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.True(rollbackCalled);
+    }
+
+    [Fact]
     public async Task RunAsync_StepThrowsException_ReturnsFail()
     {
         var ctx = CreateContext();

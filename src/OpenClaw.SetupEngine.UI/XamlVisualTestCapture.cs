@@ -232,14 +232,24 @@ public static class XamlVisualTestCapture
 
     private static Action ApplyCaptureBackground(FrameworkElement root)
     {
-        if (root is not Panel panel || panel.Background is not null)
-            return static () => { };
-
         var color = root.ActualTheme == ElementTheme.Dark
             ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
             : Microsoft.UI.Colors.White;
-        panel.Background = new SolidColorBrush(color);
-        return () => panel.Background = null;
+        var background = new SolidColorBrush(color);
+
+        if (root is Panel { Background: null } panel)
+        {
+            panel.Background = background;
+            return () => panel.Background = null;
+        }
+
+        if (root is Border { Background: null } border)
+        {
+            border.Background = background;
+            return () => border.Background = null;
+        }
+
+        return static () => { };
     }
 
     private static string GetNextOutputPath(string surfaceDirectory)

@@ -41,7 +41,7 @@ public sealed class SetupConfig
     public WindowsNodeContextConfig WindowsNodeContext { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
 
-    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://localhost:{GatewayPort}";
+    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://127.0.0.1:{GatewayPort}";
 
     public static SetupConfig LoadFromFile(string path)
     {

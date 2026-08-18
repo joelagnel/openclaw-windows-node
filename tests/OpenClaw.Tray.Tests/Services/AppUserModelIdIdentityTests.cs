@@ -48,6 +48,22 @@ public sealed class AppUserModelIdIdentityTests
     }
 
     [Fact]
+    public void EmbeddedSetupGatewayUrls_UseExplicitIpv4Loopback()
+    {
+        Assert.Equal("ws://127.0.0.1:18789", AppIdentity.SetupGatewayUrl);
+
+        var source = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src",
+            "OpenClaw.Tray.WinUI",
+            "AppIdentity.cs"));
+
+        Assert.Contains("SetupGatewayUrl = \"ws://127.0.0.1:18790\"", source);
+        Assert.Contains("SetupGatewayUrl = \"ws://127.0.0.1:18789\"", source);
+        Assert.DoesNotContain("SetupGatewayUrl = \"ws://localhost:", source);
+    }
+
+    [Fact]
     public void InstallerAumid_MatchesRuntimeAppUserModelId()
     {
         var iss = File.ReadAllText(Path.Combine(

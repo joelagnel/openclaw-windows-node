@@ -1,5 +1,6 @@
 using OpenClaw.Connection.LocalAi;
 using OpenClaw.TestSupport;
+using System.Collections.Immutable;
 
 namespace OpenClaw.Connection.Tests;
 
@@ -23,6 +24,10 @@ public sealed class LocalAiManifestStoreTests
             Path.Combine(paths.RootDirectory, "models", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
             loaded.ModelPath);
         Assert.Equal(18803, loaded.Endpoint.Port);
+        Assert.Equal(2, loaded.Manifest.RuntimeAssets.Length);
+        Assert.Contains(
+            loaded.Manifest.RuntimeAssets,
+            asset => asset.FileName == "cudart-llama-bin-win-cuda-13.4-arm64.zip");
         Assert.Empty(Directory.EnumerateFiles(paths.RootDirectory, "*.tmp"));
         Assert.Empty(Directory.EnumerateFiles(paths.RootDirectory, ".*.tmp"));
     }
@@ -140,6 +145,37 @@ public sealed class LocalAiManifestStoreTests
     }
 
     [Fact]
+    public async Task Save_RejectsMissingRuntimeAssetReceipts()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(ValidManifest() with
+            {
+                RuntimeAssets = ImmutableArray<LocalAiAssetReceipt>.Empty,
+            }));
+    }
+
+    [Fact]
+    public async Task Save_RejectsDuplicateRuntimeAssetFilenamesCaseInsensitively()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+        var runtimeAsset = ValidManifest().RuntimeAssets[0];
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(ValidManifest() with
+            {
+                RuntimeAssets =
+                [
+                    runtimeAsset,
+                    runtimeAsset with { FileName = runtimeAsset.FileName.ToUpperInvariant() },
+                ],
+            }));
+    }
+
+    [Fact]
     public async Task Load_RejectsMalformedJson()
     {
         using var temp = new TempDirectory("local-ai-manifest-");
@@ -156,13 +192,23 @@ public sealed class LocalAiManifestStoreTests
         EngineVersion = "b10488",
         Architecture = "arm64",
         ExecutablePath = Path.Combine("engines", "llama-b10488", "llama-server.exe"),
-        RuntimeAsset = new LocalAiAssetReceipt
-        {
-            FileName = "llama-b10488-bin-win-cuda-13.4-arm64.zip",
-            SourceUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b10488/llama-b10488-bin-win-cuda-13.4-arm64.zip",
-            SizeBytes = 140_379_054,
-            Sha256 = "75554d62f4af8f4150d3b4b0cca7df62d44105e98fb7cd92ab2d177e382b441d",
-        },
+        RuntimeAssets =
+        [
+            new LocalAiAssetReceipt
+            {
+                FileName = "llama-b10488-bin-win-cuda-13.4-arm64.zip",
+                SourceUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b10488/llama-b10488-bin-win-cuda-13.4-arm64.zip",
+                SizeBytes = 140_379_054,
+                Sha256 = "75554d62f4af8f4150d3b4b0cca7df62d44105e98fb7cd92ab2d177e382b441d",
+            },
+            new LocalAiAssetReceipt
+            {
+                FileName = "cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                SourceUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b10488/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                SizeBytes = 153_318_797,
+                Sha256 = "5a40dc7c5fa3d0a80ceeba4f16f9e8d25d87bcf1399c9233588953c43436c33c",
+            },
+        ],
         ModelPath = Path.Combine("models", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
         ModelId = "unsloth/Qwen3.6-35B-A3B-MTP-GGUF@5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
         ModelAlias = "qwen3.6-35b-a3b-q4",

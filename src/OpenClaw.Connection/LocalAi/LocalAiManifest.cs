@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -125,7 +126,7 @@ public sealed record LocalAiInstallManifest
     public required string EngineVersion { get; init; }
     public required string Architecture { get; init; }
     public required string ExecutablePath { get; init; }
-    public required LocalAiAssetReceipt RuntimeAsset { get; init; }
+    public required ImmutableArray<LocalAiAssetReceipt> RuntimeAssets { get; init; }
     public required string ModelPath { get; init; }
     public required string ModelId { get; init; }
     public required string ModelAlias { get; init; }
@@ -255,7 +256,16 @@ public sealed class LocalAiManifestStore
         if (manifest.ContextLength <= 0)
             throw new InvalidDataException("The local AI manifest context length must be positive.");
 
-        ValidateAssetReceipt(manifest.RuntimeAsset, nameof(manifest.RuntimeAsset));
+        if (manifest.RuntimeAssets.IsDefaultOrEmpty)
+            throw new InvalidDataException("The local AI manifest must record at least one runtime asset receipt.");
+
+        var runtimeFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var runtimeAsset in manifest.RuntimeAssets)
+        {
+            ValidateAssetReceipt(runtimeAsset, nameof(manifest.RuntimeAssets));
+            if (!runtimeFileNames.Add(runtimeAsset.FileName))
+                throw new InvalidDataException("The local AI manifest runtime asset filenames must be unique.");
+        }
         ValidateAssetReceipt(manifest.ModelAsset, nameof(manifest.ModelAsset));
 
         var executable = _paths.ResolveContainedPath(manifest.ExecutablePath, nameof(manifest.ExecutablePath));

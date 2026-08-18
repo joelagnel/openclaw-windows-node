@@ -28,16 +28,24 @@ internal static partial class LocalAiSetupPolicy
         }
         if (!ModelTagPattern().IsMatch(config.Model))
             return "The Local AI model tag contains unsupported characters.";
-        if (config.ModelDownloadSizeBytes <= 0)
-            return "The Local AI model download size must be positive.";
-        if (config.ContextWindow <= 0 || config.MaxTokens <= 0 || config.MaxTokens > config.ContextWindow)
-            return "The Local AI context and output token limits are invalid.";
+        if (!string.Equals(config.Model, LocalAiConfig.DefaultModel, StringComparison.Ordinal))
+            return $"The first Local AI release requires model {LocalAiConfig.DefaultModel}.";
+        if (config.ModelDownloadSizeBytes != LocalAiConfig.DefaultModelDownloadSizeBytes)
+            return $"The qualified Local AI model size is {LocalAiConfig.DefaultModelDownloadSizeBytes} bytes.";
+        if (config.ContextWindow != 262_144 || config.MaxTokens != 8_192)
+            return "The qualified Local AI context is 262144 with 8192 maximum output tokens.";
         if (config.ProviderTimeoutSeconds <= 0 || config.HealthTimeoutSeconds <= 0 || config.PullTimeoutSeconds <= 0)
             return "The Local AI timeouts must be positive.";
         if (!string.Equals(config.KvCacheType, "f16", StringComparison.OrdinalIgnoreCase))
             return "The first Local AI release requires FP16 KV cache.";
-        if (config.NumParallel != 1 || config.MaxLoadedModels != 1)
-            return "The first Local AI release requires one parallel request and one loaded model.";
+        if (!config.FlashAttention || config.NumParallel != 1 || config.MaxLoadedModels != 1)
+            return "The first Local AI release requires flash attention, one parallel request, and one loaded model.";
+        if (!config.Reasoning ||
+            !string.Equals(config.KeepAlive, "10m", StringComparison.Ordinal) ||
+            !string.Equals(config.LlmLibrary, "cuda_v13", StringComparison.Ordinal))
+        {
+            return "The Local AI recipe settings do not match the qualified release.";
+        }
         return null;
     }
 

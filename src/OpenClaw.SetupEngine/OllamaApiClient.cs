@@ -45,6 +45,7 @@ internal interface IOllamaApiClient
 {
     Task<OllamaVersionInfo> GetVersionAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<OllamaModelInfo>> ListModelsAsync(CancellationToken cancellationToken);
+    Task DeleteModelAsync(string model, CancellationToken cancellationToken);
     Task<OllamaPullResult> PullModelAsync(
         string model,
         long? expectedBytes,
@@ -159,14 +160,27 @@ internal sealed class OllamaApiClient : IOllamaApiClient
         return result;
     }
 
+    public async Task DeleteModelAsync(string model, CancellationToken cancellationToken)
+    {
+        ValidateModelName(model);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, BuildUri("api/delete"))
+        {
+            Content = JsonContent.Create(new OllamaDeleteRequest(model.Trim()), options: JsonOptions),
+        };
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<OllamaPullResult> PullModelAsync(
         string model,
         long? expectedBytes,
         IProgress<OllamaPullProgress>? progress,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(model) || model.Contains('\r') || model.Contains('\n'))
-            throw new ArgumentException("Ollama model name must be non-empty and contain no newlines.", nameof(model));
+        ValidateModelName(model);
         if (expectedBytes is <= 0)
             throw new ArgumentOutOfRangeException(nameof(expectedBytes), "Expected model size must be positive when provided.");
 
@@ -207,7 +221,7 @@ internal sealed class OllamaApiClient : IOllamaApiClient
             if (!string.IsNullOrWhiteSpace(update.Error))
                 throw new OllamaApiException($"Ollama could not pull model '{model}': {Flatten(update.Error)}");
 
-            lastStatus = string.IsNullOrWhiteSpace(update.Status) ? lastStatus : update.Status.Trim();
+            lastStatus = string.IsNullOrWhiteSpace(update.Status) ? lastStatus : Flatten(update.Status);
             if (!string.IsNullOrWhiteSpace(update.Digest))
             {
                 var digest = update.Digest.Trim();
@@ -249,6 +263,12 @@ internal sealed class OllamaApiClient : IOllamaApiClient
     }
 
     private Uri BuildUri(string relativePath) => new(_baseUri, relativePath);
+
+    private static void ValidateModelName(string model)
+    {
+        if (string.IsNullOrWhiteSpace(model) || model.Contains('\r') || model.Contains('\n'))
+            throw new ArgumentException("Ollama model name must be non-empty and contain no newlines.", nameof(model));
+    }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -330,6 +350,9 @@ internal sealed class OllamaApiClient : IOllamaApiClient
     private sealed record OllamaPullRequest(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("stream")] bool Stream);
+
+    private sealed record OllamaDeleteRequest(
+        [property: JsonPropertyName("model")] string Model);
 
     private sealed record OllamaPullResponse(
         [property: JsonPropertyName("status")] string? Status,

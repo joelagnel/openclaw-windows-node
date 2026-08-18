@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared;
 
 namespace OpenClaw.SetupEngine;
@@ -445,6 +446,20 @@ public interface IExternalAuthorizationPresenter
     Task PresentAsync(ExternalAuthorizationRequest request, CancellationToken cancellationToken);
 }
 
+public enum SetupDetailProgressUnit
+{
+    None,
+    Bytes,
+    Entries,
+}
+
+public sealed record SetupDetailProgressEvent(
+    string Phase,
+    string Status,
+    long? Completed,
+    long? Total,
+    SetupDetailProgressUnit Unit);
+
 public sealed class ConsoleExternalAuthorizationPresenter : IExternalAuthorizationPresenter
 {
     public Task PresentAsync(ExternalAuthorizationRequest request, CancellationToken cancellationToken)
@@ -481,6 +496,7 @@ public sealed class SetupContext
     public TransactionJournal Journal { get; }
     public ICommandRunner Commands { get; }
     public CancellationToken CancellationToken { get; }
+    public event EventHandler<SetupDetailProgressEvent>? DetailProgress;
 
     // Accumulated state from steps
     public string? DistroName { get; set; }
@@ -494,6 +510,10 @@ public sealed class SetupContext
     public GatewayCompatibilityException? GatewayCompatibilityFailure { get; set; }
     public string? WindowsTailnetDnsSuffix { get; set; }
     public string? TailscaleDnsName { get; set; }
+    public LocalAiOwnership LocalAiOwnership { get; internal set; }
+    public string? LocalAiEngineVersion { get; internal set; }
+    internal bool CreatedManagedLocalAiInstallThisRun { get; set; }
+    internal bool DownloadedManagedLocalAiModelThisRun { get; set; }
     public IExternalAuthorizationPresenter? ExternalAuthorizationPresenter { get; set; }
     public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
         EndpointProvenanceProbe { get; set; }
@@ -544,5 +564,19 @@ public sealed class SetupContext
             return localDataDir;
 
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenClawTray");
+    }
+
+    internal void ReportDetailProgress(SetupDetailProgressEvent value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var handler = DetailProgress;
+        if (handler is null)
+            return;
+
+        foreach (EventHandler<SetupDetailProgressEvent> subscriber in handler.GetInvocationList())
+        {
+            try { subscriber(this, value); }
+            catch (Exception ex) { Logger.Warn($"A setup detail progress observer failed: {ex.Message}"); }
+        }
     }
 }

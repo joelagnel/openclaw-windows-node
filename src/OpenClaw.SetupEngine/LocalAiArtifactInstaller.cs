@@ -62,11 +62,20 @@ internal sealed class LocalAiArtifactInstallException : Exception
     }
 }
 
+internal interface ILocalAiArtifactInstaller
+{
+    Task<LocalAiArtifactInstallResult> InstallAsync(
+        string localDataDirectory,
+        Architecture architecture,
+        IProgress<LocalAiArtifactInstallProgress>? progress,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Acquires a policy-pinned Ollama archive, verifies it, safely extracts it into
 /// a disposable staging directory, then atomically promotes the directory.
 /// </summary>
-internal sealed class LocalAiArtifactInstaller
+internal sealed class LocalAiArtifactInstaller : ILocalAiArtifactInstaller
 {
     private const int DownloadBufferSize = 128 * 1024;
     private const int DownloadProgressIntervalBytes = 4 * 1024 * 1024;

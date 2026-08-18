@@ -289,6 +289,18 @@ public static class Program
 
         var pipeline = new SetupPipeline(steps);
 
+        ctx.DetailProgress += (_, e) =>
+        {
+            var amount = e.Unit == SetupDetailProgressUnit.None
+                ? ""
+                : e.Completed is { } completed
+                ? e.Total is { } total
+                    ? $" {completed}/{total} {e.Unit.ToString().ToLowerInvariant()}"
+                    : $" {completed} {e.Unit.ToString().ToLowerInvariant()}"
+                : "";
+            Console.WriteLine($"      {e.Phase}: {e.Status}{amount}");
+        };
+
         pipeline.StepProgress += (_, e) =>
         {
             var icon = e.Outcome switch

@@ -54,6 +54,7 @@ public static class SetupStepFactory
         [
             new ValidateDistroInstallPathStep(),
             new PreflightOsStep(),
+            new PreflightLocalAiHardwareStep(),
             new PreflightWslStep(),
             new PreflightWindowsTailscaleStep(),
             new ConfigureLocalAiWslNetworkingStep(),

@@ -93,6 +93,14 @@ public sealed partial class CapabilitiesPage : Page
         UpdateTailscaleOptions();
         var previewPage = SetupPreview.RequestedPage;
         var localAiReviewPreview = previewPage is "capabilities-review" or "capabilities-review-consent";
+        var localAiEligibility = LocalAiHardwareEligibilityPolicy.Evaluate(
+            new NvmlLocalAiHardwareProbe().Probe());
+        var localAiEligible = localAiReviewPreview || localAiEligibility.IsEligible;
+        LocalAiInstallReviewCard.Visibility = localAiEligible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        if (!localAiEligible)
+            _config.LocalAi.Enabled = false;
         if (localAiReviewPreview)
             _config.LocalAi.Enabled = true;
         _suppressLocalAiToggle = true;

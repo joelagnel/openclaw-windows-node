@@ -3286,7 +3286,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             if (_settings?.EnableNodeMode == true && _nodeService?.IsConnected == true)
             {
-                _appState!.LastCheckTime = DateTime.Now;
+                RecordHealthCheckTime();
                 OnUiThread(UpdateStatusDetailWindow);
                 if (userInitiated)
                 {
@@ -3308,7 +3308,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         try
         {
-            _appState!.LastCheckTime = DateTime.Now;
+            RecordHealthCheckTime();
             await client.CheckHealthAsync();
             if (userInitiated)
             {
@@ -3327,6 +3327,15 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                     .AddText(ex.Message));
             }
         }
+    }
+
+    private void RecordHealthCheckTime()
+    {
+        OnUiThread(() =>
+        {
+            if (_appState is not null)
+                _appState.LastCheckTime = DateTime.Now;
+        });
     }
 
     #endregion

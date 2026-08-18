@@ -441,6 +441,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void HealthCheckTimestamp_IsMarshaledToUiThread()
+    {
+        var source = ReadAppSources();
+        var healthCheck = ExtractMethod(source, "RunHealthCheckAsync");
+        var timestampWriter = ExtractMethod(source, "RecordHealthCheckTime");
+
+        Assert.Equal(2, Regex.Matches(healthCheck, @"\bRecordHealthCheckTime\(\)").Count);
+        Assert.DoesNotContain("LastCheckTime =", healthCheck);
+        Assert.Contains("OnUiThread(() =>", timestampWriter);
+        Assert.Contains("_appState.LastCheckTime = DateTime.Now", timestampWriter);
+    }
+
+    [Fact]
     public void Dashboard_SurfacesSshTunnelConfigurationFailure()
     {
         var source = ReadAppSources();

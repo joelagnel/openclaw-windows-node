@@ -124,8 +124,7 @@ public static class LocalModelCatalog
                     22_663_387_424,
                     "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b"),
                 Recipe(
-                    speculativeDraftMaxTokens: 2,
-                    presencePenalty: 1.5),
+                    temperature: 0.6),
                 IsDefault: true,
                 IsExplicitAlternative: false,
                 SupportsVision: false),
@@ -141,8 +140,7 @@ public static class LocalModelCatalog
                     17_106_773_120,
                     "a7cbd3ecc0e3f9b333edee61ae66bc87ed713c5d49587a8355814722ed329e0f"),
                 Recipe(
-                    speculativeDraftMaxTokens: 2,
-                    presencePenalty: 0.0),
+                    temperature: 1.0),
                 IsDefault: false,
                 IsExplicitAlternative: true,
                 SupportsVision: false),
@@ -158,8 +156,7 @@ public static class LocalModelCatalog
                     5_868_826_976,
                     "e8dd94817e95d6c0939102049d068418269978377b13616c4726235e232841fe"),
                 Recipe(
-                    speculativeDraftMaxTokens: 6,
-                    presencePenalty: 1.5),
+                    temperature: 1.0),
                 IsDefault: false,
                 IsExplicitAlternative: true,
                 SupportsVision: false),
@@ -194,23 +191,23 @@ public static class LocalModelCatalog
             new Sha256Digest(sha256),
             LocalInferenceCatalogProvenance.NvidiaCair);
 
-    private static LocalModelRunRecipe Recipe(int speculativeDraftMaxTokens, double presencePenalty) =>
+    private static LocalModelRunRecipe Recipe(double temperature) =>
         new(
             contextTokens: NativeContextTokens,
             keyCachePrecision: KvCachePrecision.F16,
             valueCachePrecision: KvCachePrecision.F16,
-            batchTokens: 512,
-            microBatchTokens: 512,
+            batchTokens: 4_096,
+            microBatchTokens: 4_096,
             parallelRequests: 1,
             flashAttention: true,
             offloadAllLayers: true,
             speculativeDecoding: SpeculativeDecodingMode.DraftMtp,
-            speculativeDraftMaxTokens: speculativeDraftMaxTokens,
+            speculativeDraftMaxTokens: 3,
             sampling: new ModelSamplingPreset(
-                Temperature: 1.0,
+                Temperature: temperature,
                 TopK: 20,
                 TopP: 0.95,
                 MinP: 0.0,
                 RepetitionPenalty: 1.0,
-                PresencePenalty: presencePenalty));
+                PresencePenalty: 0.0));
 }

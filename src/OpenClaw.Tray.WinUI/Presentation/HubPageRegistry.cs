@@ -15,6 +15,7 @@ internal enum HubPageKind
     Config,
     Usage,
     Bindings,
+    LocalAi,
     Permissions,
     Voice,
     Sandbox,
@@ -110,6 +111,8 @@ internal static class HubPageRegistry
         "Command_GoToUsage_Subtitle",
         "Command_GoToBindings_Title",
         "Command_GoToBindings_Subtitle",
+        "Command_GoToLocalAi_Title",
+        "Command_GoToLocalAi_Subtitle",
         "Command_GoToPermissions_Title",
         "Command_GoToPermissions_Subtitle",
         "Command_GoToSettings_Title",
@@ -150,6 +153,7 @@ internal static class HubPageRegistry
         "config" => HubPageKind.Config,
         "usage" => HubPageKind.Usage,
         "bindings" => HubPageKind.Bindings,
+        "local-ai" => HubPageKind.LocalAi,
         "capabilities" or "permissions" => HubPageKind.Permissions,
         "voice" => HubPageKind.Voice,
         "sandbox" => HubPageKind.Sandbox,
@@ -225,6 +229,7 @@ internal static class HubPageRegistry
         HubPageKind.Config => typeof(ConfigPage),
         HubPageKind.Usage => typeof(UsagePage),
         HubPageKind.Bindings => typeof(BindingsPage),
+        HubPageKind.LocalAi => typeof(LocalAiPage),
         HubPageKind.Permissions => typeof(PermissionsPage),
         HubPageKind.Voice => typeof(VoiceSettingsPage),
         HubPageKind.Sandbox => typeof(SandboxPage),
@@ -264,6 +269,7 @@ internal static class HubPageRegistry
         AddNavigation(commands, context, "📡", "Command_GoToConfig", "config");
         AddNavigation(commands, context, "📡", "Command_GoToUsage", "usage");
         AddNavigation(commands, context, "📡", "Command_GoToBindings", "bindings");
+        AddNavigation(commands, context, "\u2726", "Command_GoToLocalAi", "local-ai");
         AddNavigation(commands, context, "🛡️", "Command_GoToPermissions", "permissions");
         AddNavigation(commands, context, "⚙️", "Command_GoToSettings", "settings");
         AddNavigation(commands, context, "🔔", "Command_GoToNotifications", "notifications");

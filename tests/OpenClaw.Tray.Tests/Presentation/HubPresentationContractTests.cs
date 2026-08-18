@@ -1,3 +1,5 @@
+using OpenClawTray.Presentation;
+
 namespace OpenClaw.Tray.Tests.Presentation;
 
 public sealed class HubPresentationContractTests
@@ -11,6 +13,7 @@ public sealed class HubPresentationContractTests
 
         Assert.Contains("public static Type? ResolvePageType", registry);
         Assert.Contains("HubPageKind.Permissions => typeof(PermissionsPage)", registry);
+        Assert.Contains("HubPageKind.LocalAi => typeof(LocalAiPage)", registry);
         Assert.Contains("public static ImmutableArray<HubCommand> BuildCommands", registry);
         Assert.Contains("public static ImmutableArray<HubCommand> SearchCommands", registry);
         Assert.Contains("public static bool IsGatewayPageTag", registry);
@@ -22,6 +25,7 @@ public sealed class HubPresentationContractTests
         Assert.DoesNotContain("Command_GoToConnection_Title", hub);
         Assert.DoesNotContain("IsGatewayPageTag", gatewayPolicy);
         Assert.DoesNotContain("ShouldKeepCurrentPageVisibleDuringDisconnect", gatewayPolicy);
+        Assert.False(HubPageRegistry.IsGatewayPageTag("local-ai"));
     }
 
     [Fact]

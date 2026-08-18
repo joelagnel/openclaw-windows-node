@@ -80,7 +80,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void PageViewModels_AreTransient_AndReceiveInjectedServices()
     {
-        var provider = BuildProvider(out var dispatcher, out var commands, out _, out var execApprovalsStore, out _, out _, out var temp);
+        var provider = BuildProvider(out var dispatcher, out var commands, out _, out var execApprovalsStore, out _, out var localAiRuntime, out var temp);
         using (provider)
         using (temp)
         using (var scope = provider.CreateScope())
@@ -94,6 +94,11 @@ public sealed class AppServiceRegistrationTests
             Assert.Same(scope.ServiceProvider.GetRequiredService<ISettingsStore>(), first.SettingsStore);
             Assert.Same(execApprovalsStore, first.ExecApprovalsStore);
             Assert.Same(scope.ServiceProvider.GetRequiredService<IPermissionsPageRuntimeSource>(), first.RuntimeSource);
+
+            var localAiFirst = scope.ServiceProvider.GetRequiredService<LocalAiPageViewModel>();
+            var localAiSecond = scope.ServiceProvider.GetRequiredService<LocalAiPageViewModel>();
+            Assert.NotSame(localAiFirst, localAiSecond);
+            Assert.Same(localAiRuntime, localAiFirst.Runtime);
         }
     }
 

@@ -251,6 +251,51 @@ public sealed class OllamaRuntimeServiceTests
     }
 
     [Fact]
+    public async Task DisposeAsync_WaitsForQueuedExitHandlerBeforeDisposingItsGate()
+    {
+        using var temp = new TempDirectory("local-ai-runtime-");
+        var paths = await InstallAsync(temp);
+        var delayStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDelay = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var platform = new FakePlatform
+        {
+            DelayHandler = (_, _) =>
+            {
+                delayStarted.TrySetResult();
+                return releaseDelay.Task;
+            },
+        };
+        platform.ListenerFactory = () => platform.Process is null
+            ? Complete()
+            : Complete(new WindowsTcpListenerInfo(
+                IPAddress.Loopback,
+                11434,
+                platform.Process.ProcessId,
+                "ollama",
+                Path.Combine(paths.RootDirectory, "engines", "ollama", "ollama.exe"),
+                platform.Process.StartedAtUtc.UtcDateTime));
+        using var health = new FakeHealth(_ => new(platform.Process is not null, "0.11.7"));
+        var runtime = CreateRuntime(temp, platform, health);
+
+        await runtime.EnsureStartedAsync();
+        platform.Process!.Exit(1);
+        await delayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var disposeTask = runtime.DisposeAsync().AsTask();
+        try
+        {
+            Assert.False(disposeTask.IsCompleted);
+        }
+        finally
+        {
+            releaseDelay.TrySetResult();
+            await disposeTask;
+        }
+
+        Assert.Equal(1, platform.StartCount);
+    }
+
+    [Fact]
     public async Task EnsureStarted_MissingManagedExecutableReportsFailure()
     {
         using var temp = new TempDirectory("local-ai-runtime-");
@@ -346,9 +391,14 @@ public sealed class OllamaRuntimeServiceTests
         public FakeProcess? Process { get; private set; }
         public LocalAiProcessStartSpec? LastSpec { get; private set; }
         public int StartCount { get; private set; }
+        public Func<TimeSpan, CancellationToken, Task>? DelayHandler { get; init; }
         public DateTimeOffset UtcNow => _now;
         public WindowsTcpListenerSnapshotResult CaptureListeners() => ListenerFactory();
-        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) { _now += delay; return Task.CompletedTask; }
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            _now += delay;
+            return DelayHandler?.Invoke(delay, cancellationToken) ?? Task.CompletedTask;
+        }
         public Task<ILocalAiManagedProcess> StartProcessAsync(LocalAiProcessStartSpec spec, Action<int?> exited, CancellationToken cancellationToken)
         {
             LastSpec = spec;

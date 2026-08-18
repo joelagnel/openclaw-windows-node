@@ -163,6 +163,8 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
     private readonly ILocalAiRuntimePlatform _platform;
     private readonly ILocalAiHealthClient _health;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly object _exitTasksGate = new();
+    private readonly HashSet<Task> _exitTasks = [];
     private readonly object _snapshotGate = new();
     private LocalAiRuntimeSnapshot _snapshot;
     private ILocalAiManagedProcess? _managedProcess;
@@ -171,6 +173,7 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
     private int _restartAttempts;
     private bool _stopping;
     private bool _disposed;
+    private bool _acceptExitTasks = true;
 
     public OllamaRuntimeService(OllamaRuntimeOptions options, IOpenClawLogger? logger = null)
         : this(options, logger ?? NullLogger.Instance, new WindowsLocalAiRuntimePlatform(logger ?? NullLogger.Instance), new OllamaHealthClient())
@@ -436,7 +439,22 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
 
     private void OnManagedProcessExited(long generation, int? exitCode)
     {
-        _ = Task.Run(async () =>
+        Task exitTask;
+        lock (_exitTasksGate)
+        {
+            if (!_acceptExitTasks)
+                return;
+
+            exitTask = Task.Run(() => HandleManagedProcessExitedAsync(generation, exitCode));
+            _exitTasks.Add(exitTask);
+        }
+
+        _ = RemoveCompletedExitTaskAsync(exitTask);
+    }
+
+    private async Task HandleManagedProcessExitedAsync(long generation, int? exitCode)
+    {
+        try
         {
             await _operationGate.WaitAsync().ConfigureAwait(false);
             try
@@ -453,19 +471,28 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
             }
             finally { _operationGate.Release(); }
 
+            await _platform.DelayAsync(_options.RestartDelay, CancellationToken.None).ConfigureAwait(false);
+            await _operationGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                await _platform.DelayAsync(_options.RestartDelay, CancellationToken.None).ConfigureAwait(false);
-                await _operationGate.WaitAsync().ConfigureAwait(false);
-                try
-                {
-                    if (!_disposed && !_stopping && generation == _generation)
-                        await EnsureStartedCoreAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-                finally { _operationGate.Release(); }
+                if (!_disposed && !_stopping && generation == _generation)
+                    await EnsureStartedCoreAsync(CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception ex) { _logger.Error("Managed Ollama automatic restart failed.", ex); }
-        });
+            finally { _operationGate.Release(); }
+        }
+        catch (Exception ex)
+        {
+            // Process exit callbacks are detached from the caller. Observe every
+            // failure here so none can surface later as UnobservedTaskException.
+            _logger.Error("Managed Ollama automatic restart failed.", ex);
+        }
+    }
+
+    private async Task RemoveCompletedExitTaskAsync(Task exitTask)
+    {
+        await exitTask.ConfigureAwait(false);
+        lock (_exitTasksGate)
+            _exitTasks.Remove(exitTask);
     }
 
     private async Task<EndpointObservation> ObserveEndpointAsync(CancellationToken cancellationToken)
@@ -588,18 +615,32 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
 
     public async ValueTask DisposeAsync()
     {
-        await _operationGate.WaitAsync().ConfigureAwait(false);
+        Task[] exitTasks;
+        lock (_exitTasksGate)
+        {
+            _acceptExitTasks = false;
+            exitTasks = [.. _exitTasks];
+        }
+
         try
         {
-            if (_disposed) return;
-            _stopping = true;
-            ++_generation;
-            await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
-            _disposed = true;
-            _health.Dispose();
+            await _operationGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_disposed) return;
+                _stopping = true;
+                ++_generation;
+                await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
+                _disposed = true;
+                _health.Dispose();
+            }
+            finally { _stopping = false; _operationGate.Release(); }
         }
-        finally { _stopping = false; _operationGate.Release(); }
-        _operationGate.Dispose();
+        finally
+        {
+            await Task.WhenAll(exitTasks).ConfigureAwait(false);
+            _operationGate.Dispose();
+        }
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

@@ -18,7 +18,12 @@ public sealed partial class CapabilitiesPage : Page
     private SetupWindow? _setupWindow;
     private Task? _permissionsTask;
     private bool _suppressProfile;
+    private bool _suppressLocalAiToggle;
+    private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
+    private bool _skipWizardWithoutLocalAi;
+    private bool _localAiNetworkingConsentRequired;
+    private bool _localAiNetworkingInspectionFailed;
     private bool _treatBundledAllOnAsPlaceholder;
     private int _step = 1;
 
@@ -61,6 +66,7 @@ public sealed partial class CapabilitiesPage : Page
         // setup declaration and gateway allowlist aligned with that runtime contract.
         _config.Capabilities.Device = true;
         _skipPermissions = _config.SkipPermissions;
+        _skipWizardWithoutLocalAi = _config.SkipWizard;
         _treatBundledAllOnAsPlaceholder = _config.UsesBundledDefaultConfig;
         BuildToggles();
         _suppressProfile = true;
@@ -81,12 +87,22 @@ public sealed partial class CapabilitiesPage : Page
         _setupWindow = SetupWindow.Active;
         if (_setupWindow is not null)
             _setupWindow.Activated += SetupWindow_Activated;
-        ApplySetupReviewSummary(_config);
         TailscaleToggle.IsOn = _config.Tailscale.Enabled;
         TailscaleTrustAuthToggle.IsOn = _config.Tailscale.TrustTailscaleAuth;
         TailscaleAuthModeSelector.SelectedIndex = _config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey ? 1 : 0;
         UpdateTailscaleOptions();
-        GoToStep(1);
+        var previewPage = SetupPreview.RequestedPage;
+        var localAiReviewPreview = previewPage is "capabilities-review" or "capabilities-review-consent";
+        if (localAiReviewPreview)
+            _config.LocalAi.Enabled = true;
+        _suppressLocalAiToggle = true;
+        LocalAiToggle.IsOn = _config.LocalAi.Enabled;
+        _suppressLocalAiToggle = false;
+        UpdateLocalAiOptions(forceNetworkingConsent: previewPage == "capabilities-review-consent");
+        ApplySetupReviewSummary(_config);
+        GoToStep(localAiReviewPreview ? 3 : 1);
+        if (localAiReviewPreview)
+            DispatcherQueue.TryEnqueue(() => Scroller.ChangeView(null, 0, null, disableAnimation: true));
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -138,6 +154,7 @@ public sealed partial class CapabilitiesPage : Page
         PrimaryButton.Content = step == 3 ? "Install & set up" : "Next";
         // Back is always available — from step 1 it returns to the Welcome screen.
         BackButton.Visibility = Visibility.Visible;
+        UpdatePrimaryButtonState();
 
         ScrollActiveIntoView();
     }
@@ -158,7 +175,7 @@ public sealed partial class CapabilitiesPage : Page
         {
             PrimaryButton.IsEnabled = false;
             try { await permissionsTask; }
-            finally { PrimaryButton.IsEnabled = true; }
+            finally { UpdatePrimaryButtonState(); }
         }
 
         switch (_step)
@@ -214,6 +231,12 @@ public sealed partial class CapabilitiesPage : Page
         config.Tailscale.AuthKey = config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey
             ? TailscaleAuthKeyBox.Password
             : null;
+        config.LocalAi.Enabled = LocalAiToggle.IsOn == true;
+        config.SkipWizard = config.LocalAi.Enabled || _skipWizardWithoutLocalAi;
+        config.LocalAi.AllowGlobalWslNetworkingChange =
+            config.LocalAi.Enabled &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
     }
 
     private void ApplySetupReviewSummary(SetupConfig config)
@@ -229,6 +252,105 @@ public sealed partial class CapabilitiesPage : Page
         GatewayServiceDetailText.Text = summary.GatewayDescription;
         GatewayEndpointText.Text = summary.GatewayEndpoint;
         ExactCommandsText.Text = summary.ExactCommands;
+        LocalAiEngineDetailText.Text = summary.LocalAiEngineDescription;
+        LocalAiModelDetailText.Text = summary.LocalAiModelDescription;
+        LocalAiSettingsDetailText.Text = summary.LocalAiSettingsDescription;
+    }
+
+    private void LocalAiToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_suppressLocalAiToggle || _config is null)
+            return;
+
+        UpdateLocalAiOptions();
+        ApplySetupReviewSummary(_config);
+    }
+
+    private void LocalAiNetworkingConsent_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressLocalAiConsent || _config is null)
+            return;
+
+        _config.LocalAi.AllowGlobalWslNetworkingChange =
+            LocalAiToggle.IsOn == true &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
+        UpdatePrimaryButtonState();
+    }
+
+    private void UpdateLocalAiOptions(bool forceNetworkingConsent = false)
+    {
+        var config = _config!;
+        var enabled = LocalAiToggle.IsOn == true;
+        config.LocalAi.Enabled = enabled;
+        config.SkipWizard = enabled || _skipWizardWithoutLocalAi;
+        LocalAiDetailsPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
+        LocalAiNetworkingReadyText.Visibility = Visibility.Collapsed;
+        _localAiNetworkingConsentRequired = false;
+        _localAiNetworkingInspectionFailed = false;
+
+        if (!enabled)
+        {
+            LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.AllowGlobalWslNetworkingChange = false;
+            UpdatePrimaryButtonState();
+            return;
+        }
+
+        try
+        {
+            var status = forceNetworkingConsent
+                ? new WslGlobalConfigStatus(Exists: false, IsMirrored: false)
+                : InspectWslGlobalConfig();
+            _localAiNetworkingConsentRequired = !status.IsMirrored;
+            LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            LocalAiNetworkingReadyText.Visibility = status.IsMirrored
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.AllowGlobalWslNetworkingChange = false;
+        }
+        catch (Exception ex)
+        {
+            _localAiNetworkingInspectionFailed = true;
+            LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.AllowGlobalWslNetworkingChange = false;
+            LocalAiNetworkingInspectionError.Message =
+                $"Setup cannot continue with Local AI until the global WSL configuration can be read. {ex.Message}";
+            LocalAiNetworkingInspectionError.Visibility = Visibility.Visible;
+        }
+
+        UpdatePrimaryButtonState();
+    }
+
+    private WslGlobalConfigStatus InspectWslGlobalConfig()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var configPath = Path.Combine(profile, ".wslconfig");
+        var localDataDir = SetupWindow.Active?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
+        var backupDirectory = Path.Combine(localDataDir, "LocalAI", "network-backup");
+        return new WslGlobalConfigManager(configPath, backupDirectory).Inspect();
+    }
+
+    private void SetLocalAiNetworkingConsent(bool value)
+    {
+        _suppressLocalAiConsent = true;
+        LocalAiNetworkingConsentCheckBox.IsChecked = value;
+        _suppressLocalAiConsent = false;
+    }
+
+    private void UpdatePrimaryButtonState()
+    {
+        PrimaryButton.IsEnabled =
+            _step != 3 ||
+            LocalAiToggle.IsOn != true ||
+            (!_localAiNetworkingInspectionFailed &&
+             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
     }
 
     private void TailscaleToggle_Toggled(object sender, RoutedEventArgs e)

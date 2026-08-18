@@ -31,9 +31,18 @@ public sealed partial class CompletePage : Page
                 FailureIcon.Visibility = Visibility.Collapsed;
                 StartupToggle.IsOn = args.DefaultAutoStart;
                 StartupRow.Visibility = args.ShowStartupPreference ? Visibility.Visible : Visibility.Collapsed;
-                GatewaySummaryText.Text = (args.ReviewSummary ?? SetupReviewSummaryBuilder.Build(new SetupConfig())).CompletionGatewaySummary;
-                TitleText.Text = "All set!";
-                SubtitleText.Text = "OpenClaw is ready to go";
+                var summary = args.ReviewSummary ?? SetupReviewSummaryBuilder.Build(new SetupConfig());
+                GatewaySummaryText.Text = summary.CompletionGatewaySummary;
+                LocalAiSummaryText.Text = summary.CompletionLocalAiSummary;
+                LocalAiSettingsSummaryText.Text = summary.LocalAiSettingsDescription;
+                LocalAiSummaryCard.Visibility = summary.LocalAiEnabled
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+                TitleText.Text = summary.LocalAiEnabled ? "Local AI is ready" : "All set!";
+                SubtitleText.Text = summary.LocalAiEnabled
+                    ? "OpenClaw is ready to chat with Qwen3.6 on this PC."
+                    : "OpenClaw is ready to go";
+                LaunchButton.Content = summary.LocalAiEnabled ? "Open chat" : "Finish";
                 ErrorCard.Visibility = Visibility.Collapsed;
                 HelpLink.Visibility = Visibility.Collapsed;
                 FallbackButton.Visibility = Visibility.Collapsed;

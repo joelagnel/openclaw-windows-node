@@ -9,7 +9,14 @@ namespace OpenClaw.SetupEngine;
 /// unrelated user configuration. The exact original bytes are retained so a
 /// rollback can restore them when the user has not edited the file meanwhile.
 /// </summary>
-internal sealed class WslGlobalConfigManager
+internal interface IWslGlobalConfigManager
+{
+    WslGlobalConfigStatus Inspect();
+    WslGlobalConfigApplyResult ApplyMirroredNetworking();
+    WslGlobalConfigRestoreResult RestoreIfUnchanged();
+}
+
+internal sealed class WslGlobalConfigManager : IWslGlobalConfigManager
 {
     private const string Wsl2Section = "wsl2";
     private const string NetworkingModeKey = "networkingMode";

@@ -117,6 +117,42 @@ public sealed class OllamaRuntimeServiceTests
         Assert.Equal("cuda_v13", platform.LastSpec.Environment["OLLAMA_LLM_LIBRARY"]);
     }
 
+    [Fact]
+    public async Task EnsureStarted_HealthyProbeBeforeListenerSnapshotRetriesOwnershipProof()
+    {
+        using var temp = new TempDirectory("local-ai-runtime-");
+        var paths = await InstallAsync(temp);
+        var platform = new FakePlatform();
+        var postStartCaptures = 0;
+        platform.ListenerFactory = () =>
+        {
+            if (platform.Process is null)
+                return Complete();
+
+            postStartCaptures++;
+            return postStartCaptures == 1
+                ? Complete()
+                : Complete(new WindowsTcpListenerInfo(
+                    IPAddress.Loopback,
+                    11434,
+                    platform.Process.ProcessId,
+                    "ollama",
+                    Path.Combine(paths.RootDirectory, "engines", "ollama", "ollama.exe"),
+                    platform.Process.StartedAtUtc.UtcDateTime));
+        };
+        using var health = new FakeHealth(_ => new(
+            platform.Process is not null,
+            platform.Process is null ? null : "0.11.7"));
+        await using var runtime = CreateRuntime(temp, platform, health);
+
+        var snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.Equal(LocalAiOwnership.Managed, snapshot.Ownership);
+        Assert.Equal(2, postStartCaptures);
+        Assert.Equal(0, platform.Process!.StopCount);
+    }
+
     [Theory]
     [InlineData(LocalAiModelAvailabilityState.NotInstalled)]
     [InlineData(LocalAiModelAvailabilityState.Downloaded)]

@@ -307,6 +307,7 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
             _options.LogBackupCount,
             _options.MaxLogLineCharacters);
 
+        var sawHealthyWithoutListener = false;
         try
         {
             _managedProcess = await _platform.StartProcessAsync(
@@ -344,12 +345,19 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
                 }
                 else if (observed.Health.IsHealthy)
                 {
-                    return await FailStartupAsync(LocalAiRuntimeState.Conflict, "Ollama responded without a verifiable TCP listener.").ConfigureAwait(false);
+                    // Listener capture happens before the HTTP probe. Ollama can bind in
+                    // between those operations, so require the next OS snapshot to prove
+                    // ownership instead of rejecting that normal startup race.
+                    sawHealthyWithoutListener = true;
                 }
 
                 await _platform.DelayAsync(_options.HealthPollInterval, cancellationToken).ConfigureAwait(false);
             }
-            return await FailStartupAsync(LocalAiRuntimeState.Failed, "Managed Ollama did not become healthy before the startup timeout.").ConfigureAwait(false);
+            return await FailStartupAsync(
+                sawHealthyWithoutListener ? LocalAiRuntimeState.Conflict : LocalAiRuntimeState.Failed,
+                sawHealthyWithoutListener
+                    ? "Ollama responded without a verifiable TCP listener."
+                    : "Managed Ollama did not become healthy before the startup timeout.").ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

@@ -118,6 +118,7 @@ public sealed class SetupPipeline
         {
             if (ct.IsCancellationRequested)
             {
+                await RollbackCancelledSetupAsync(null, ctx);
                 ctx.Journal.RecordPipelineEvent("pipeline_cancelled");
                 return new PipelineResult(PipelineOutcome.Cancelled);
             }
@@ -152,6 +153,7 @@ public sealed class SetupPipeline
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
+                    await RollbackCancelledSetupAsync(step, ctx);
                     ctx.Journal.RecordPipelineEvent("pipeline_cancelled", $"during step {step.Id}");
                     return new PipelineResult(PipelineOutcome.Cancelled);
                 }
@@ -164,6 +166,7 @@ public sealed class SetupPipeline
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
+                    await RollbackCancelledSetupAsync(step, ctx);
                     ctx.Journal.RecordPipelineEvent("pipeline_cancelled", $"during step {step.Id}");
                     return new PipelineResult(PipelineOutcome.Cancelled);
                 }
@@ -216,6 +219,9 @@ public sealed class SetupPipeline
     }
 
     private async Task RollbackCompletedSteps(SetupContext ctx)
+        => await RollbackCompletedSteps(ctx, ctx.CancellationToken);
+
+    private async Task RollbackCompletedSteps(SetupContext ctx, CancellationToken rollbackCancellationToken)
     {
         ctx.Logger.Warn($"Rolling back {_completedSteps.Count} completed steps");
         for (int i = _completedSteps.Count - 1; i >= 0; i--)
@@ -224,10 +230,10 @@ public sealed class SetupPipeline
             try
             {
                 ctx.Logger.Info($"Rolling back: {step.DisplayName}");
-                await RunRollbackWithTimeout(step, ctx, ctx.CancellationToken);
+                await RunRollbackWithTimeout(step, ctx, rollbackCancellationToken);
                 ctx.Journal.RecordRollback(step.Id, success: true);
             }
-            catch (OperationCanceledException) when (ctx.CancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (rollbackCancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -240,15 +246,21 @@ public sealed class SetupPipeline
     }
 
     private static async Task RollbackFailedStep(SetupStep step, SetupContext ctx)
+        => await RollbackFailedStep(step, ctx, ctx.CancellationToken);
+
+    private static async Task RollbackFailedStep(
+        SetupStep step,
+        SetupContext ctx,
+        CancellationToken rollbackCancellationToken)
     {
         ctx.Logger.Warn($"Attempting cleanup for failed step: {step.DisplayName}");
 
         try
         {
-            await RunRollbackWithTimeout(step, ctx, ctx.CancellationToken);
+            await RunRollbackWithTimeout(step, ctx, rollbackCancellationToken);
             ctx.Journal.RecordRollback(step.Id, success: true);
         }
-        catch (OperationCanceledException) when (ctx.CancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (rollbackCancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -257,6 +269,18 @@ public sealed class SetupPipeline
             ctx.Logger.Error($"Cleanup failed for failed step {step.Id}: {ex.Message}");
             ctx.Journal.RecordRollback(step.Id, success: false);
         }
+    }
+
+    private async Task RollbackCancelledSetupAsync(SetupStep? interruptedStep, SetupContext ctx)
+    {
+        if (!(_rollbackOnFailureOverride ?? ctx.Config.RollbackOnFailure))
+            return;
+
+        // The setup token is already cancelled, so rollback needs its own bounded
+        // lifetime. Each step still receives the configured rollback timeout.
+        if (interruptedStep is not null)
+            await RollbackFailedStep(interruptedStep, ctx, CancellationToken.None);
+        await RollbackCompletedSteps(ctx, CancellationToken.None);
     }
 
     /// <summary>

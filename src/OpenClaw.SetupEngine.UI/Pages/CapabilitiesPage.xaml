@@ -109,7 +109,8 @@
                                         <TextBlock Grid.Column="2" Text="~200 MB" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
                                     </Grid>
                                 </Border>
-                                <Border AutomationProperties.AutomationId="LocalAiInstallReviewCard"
+                                <Border x:Name="LocalAiInstallReviewCard"
+                                        AutomationProperties.AutomationId="LocalAiInstallReviewCard"
                                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="1" CornerRadius="4" Padding="14,12">

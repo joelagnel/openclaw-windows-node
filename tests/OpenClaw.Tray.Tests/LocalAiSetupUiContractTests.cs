@@ -10,6 +10,7 @@ public sealed class LocalAiSetupUiContractTests
         var code = Read(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs");
         var summary = Read(root, "src", "OpenClaw.SetupEngine", "SetupReviewSummary.cs");
 
+        Assert.Contains("x:Name=\"LocalAiInstallReviewCard\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"LocalAiInstallReviewCard\"", xaml);
         Assert.Contains("Ollama v0.32.14 for Windows", xaml);
         Assert.DoesNotContain("~1.4 GB", xaml);
@@ -20,6 +21,9 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("global WSL change and one-time shutdown", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Assertive\"", xaml);
         Assert.Contains("new WslGlobalConfigManager(configPath, backupDirectory).Inspect()", code);
+        Assert.Contains("new NvmlLocalAiHardwareProbe().Probe()", code);
+        Assert.Contains("LocalAiInstallReviewCard.Visibility = localAiEligible", code);
+        Assert.Contains("_config.LocalAi.Enabled = false", code);
         Assert.Contains("_localAiNetworkingConsentRequired = !status.IsMirrored", code);
         Assert.Contains("config.SkipWizard = enabled || _skipWizardWithoutLocalAi", code);
         Assert.Contains("config.LocalAi.AllowGlobalWslNetworkingChange", code);

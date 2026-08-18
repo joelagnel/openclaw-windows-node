@@ -38,7 +38,7 @@ public sealed partial class ProgressPage : Page
     // Map pipeline step IDs to display groups (N:1).
     private static readonly StepGroup[] StandardStepGroups =
     [
-        new("preflight", "Check system", ["validate-distro-path", "preflight-os", "preflight-wsl", "preflight-windows-tailscale"]),
+        new("preflight", "Check system", ["validate-distro-path", "preflight-os", "preflight-local-ai-hardware", "preflight-wsl", "preflight-windows-tailscale"]),
         new("cleanup", "Removing existing gateway", ["cleanup-distro", "cleanup-gateway"]),
         new("port", "Checking gateway port", ["preflight-port"]),
         new("wsl-create", "Installing clean WSL gateway", ["wsl-create"]),

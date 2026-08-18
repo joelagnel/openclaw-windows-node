@@ -78,6 +78,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             [typeof(Pages.SettingsPage)] = typeof(SettingsPageViewModel),
             [typeof(Pages.PermissionsPage)] = typeof(PermissionsPageViewModel),
+            [typeof(Pages.LocalAiPage)] = typeof(LocalAiPageViewModel),
         };
 
     /// <summary>The root service provider, or null before startup / after shutdown.</summary>
@@ -3872,6 +3873,10 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     }
     void IAppCommands.ShowVoiceOverlay() => ShowHub("voice");
     void IAppCommands.ShowChat() => ShowChatWindow();
+    void IAppCommands.OpenLocalAiLogs() =>
+        OpenFolder(
+            new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()).LogsDirectory,
+            "local AI logs");
     void IAppCommands.CheckForUpdates() => _ = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync();
     void IAppCommands.ShowOnboarding() => _ = ShowOnboardingAsync();
     void IAppCommands.ShowGatewayWizard() => _ = ShowGatewayWizardAsync();

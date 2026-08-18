@@ -93,6 +93,35 @@ public sealed class NavigationIntegrationTests
     }
 
     [Fact]
+    public void RegistryLocalAiRoute_IsNonGatewayAndUsesTransientActivationLifecycle()
+    {
+        using var provider = BuildRealContainer(out var temp);
+        using (temp)
+        {
+            Assert.Equal(HubPageKind.LocalAi, HubPageRegistry.ResolvePage("local-ai"));
+            Assert.False(HubPageRegistry.IsGatewayPageTag("local-ai"));
+
+            var manager = provider.GetRequiredService<NavigationScopeManager>();
+            var first = Assert.IsType<LocalAiPageViewModel>(
+                manager.Navigate(typeof(LocalAiPageViewModel), "local-ai"));
+            Assert.True(first.IsActive);
+
+            manager.Navigate(typeof(SettingsPageViewModel), "settings");
+            Assert.False(first.IsActive);
+            Assert.True(first.IsDisposed);
+
+            var reopened = Assert.IsType<LocalAiPageViewModel>(
+                manager.Navigate(typeof(LocalAiPageViewModel), "local-ai"));
+            Assert.NotSame(first, reopened);
+            Assert.True(reopened.IsActive);
+
+            manager.Reset();
+            Assert.False(reopened.IsActive);
+            Assert.True(reopened.IsDisposed);
+        }
+    }
+
+    [Fact]
     public void FrameHandlerSimulation_ContainsActivationException_AndDisposesScope()
     {
         var created = new List<ThrowingActivateViewModel>();

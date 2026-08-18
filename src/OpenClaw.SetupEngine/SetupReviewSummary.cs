@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace OpenClaw.SetupEngine;
 
 public sealed record SetupReviewSummary(
@@ -8,7 +10,12 @@ public sealed record SetupReviewSummary(
     string GatewayDescription,
     string GatewayEndpoint,
     string ExactCommands,
-    string CompletionGatewaySummary);
+    string CompletionGatewaySummary,
+    bool LocalAiEnabled,
+    string LocalAiEngineDescription,
+    string LocalAiModelDescription,
+    string LocalAiSettingsDescription,
+    string CompletionLocalAiSummary);
 
 public static class SetupReviewSummaryBuilder
 {
@@ -53,6 +60,13 @@ public static class SetupReviewSummaryBuilder
             : $" --node-version {GatewayReleasePolicy.NodeVersion}";
         var installCommand =
             $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {release.Version}{runtimeArgument}";
+        var localAi = config.LocalAi;
+        var localAiEngineDescription = BuildLocalAiEngineDescription(
+            localAi,
+            RuntimeInformation.OSArchitecture);
+        var localAiModelDescription = $"{Display(localAi.Model, LocalAiConfig.DefaultModel)}, ~23 GB";
+        var localAiSettingsDescription =
+            $"{FormatContextWindow(localAi.ContextWindow)} context, {FormatKvCache(localAi.KvCacheType)} KV cache";
 
         return new SetupReviewSummary(
             DistroTitle: $"Install an isolated {baseDistro} instance",
@@ -77,11 +91,49 @@ public static class SetupReviewSummaryBuilder
                     $"writes -> {installPath}",
                     $"writes -> {gatewayDataPath} + identity"
                 }.Where(line => line is not null)),
-            CompletionGatewaySummary: $"{distroName} · {gatewayEndpoint}");
+            CompletionGatewaySummary: $"{distroName} · {gatewayEndpoint}",
+            LocalAiEnabled: localAi.Enabled,
+            LocalAiEngineDescription: localAiEngineDescription,
+            LocalAiModelDescription: localAiModelDescription,
+            LocalAiSettingsDescription: localAiSettingsDescription,
+            CompletionLocalAiSummary:
+                $"Ollama v{localAi.Version} · {Display(localAi.Model, LocalAiConfig.DefaultModel)}");
     }
 
     private static string Display(string? value, string fallback)
         => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static string FormatContextWindow(int contextWindow) => contextWindow switch
+    {
+        > 0 when contextWindow % 1024 == 0 => $"{contextWindow / 1024}K",
+        > 0 => contextWindow.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        _ => "256K",
+    };
+
+    private static string FormatKvCache(string? kvCacheType) =>
+        string.Equals(kvCacheType, "f16", StringComparison.OrdinalIgnoreCase)
+            ? "FP16"
+            : Display(kvCacheType, "FP16").ToUpperInvariant();
+
+    private static string FormatDownloadSize(long sizeBytes)
+    {
+        const double mebibyte = 1024d * 1024d;
+        const double gibibyte = mebibyte * 1024d;
+        return sizeBytes >= gibibyte
+            ? $"~{sizeBytes / gibibyte:0.0} GB"
+            : $"~{sizeBytes / mebibyte:0} MB";
+    }
+
+    internal static string BuildLocalAiEngineDescription(
+        LocalAiConfig localAi,
+        Architecture architecture)
+    {
+        if (!localAi.Enabled)
+            return "Local AI is not selected";
+
+        var artifact = OllamaReleasePolicy.Resolve(architecture);
+        return $"Ollama v{localAi.Version} for Windows, {FormatDownloadSize(artifact.SizeBytes)}";
+    }
 
     private static string? TryGetHttpsHost(string installUrl)
         => Uri.TryCreate(installUrl, UriKind.Absolute, out var uri)

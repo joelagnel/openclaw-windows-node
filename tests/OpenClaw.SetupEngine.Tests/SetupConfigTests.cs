@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 namespace OpenClaw.SetupEngine.Tests;
@@ -526,6 +527,44 @@ public class SetupConfigTests : IDisposable
         var summary = SetupReviewSummaryBuilder.Build(config);
 
         Assert.Contains("trusts tailnet identity authentication", summary.GatewayDescription);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_DescribesQualifiedLocalAiInstall()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig { Enabled = true }
+        };
+
+        var summary = SetupReviewSummaryBuilder.Build(config);
+        var artifact = OllamaReleasePolicy.Resolve(RuntimeInformation.OSArchitecture);
+        var expectedEngineSize = artifact.SizeBytes >= 1024L * 1024 * 1024
+            ? "~1.4 GB"
+            : "~200 MB";
+
+        Assert.True(summary.LocalAiEnabled);
+        Assert.Equal(
+            $"Ollama v0.32.14 for Windows, {expectedEngineSize}",
+            summary.LocalAiEngineDescription);
+        Assert.Equal("qwen3.6:35b-a3b-mtp-q4_K_M, ~23 GB", summary.LocalAiModelDescription);
+        Assert.Equal("256K context, FP16 KV cache", summary.LocalAiSettingsDescription);
+        Assert.Equal(
+            "Ollama v0.32.14 · qwen3.6:35b-a3b-mtp-q4_K_M",
+            summary.CompletionLocalAiSummary);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_LeavesLocalAiDisabledForStandardSetup()
+    {
+        var summary = SetupReviewSummaryBuilder.Build(new SetupConfig());
+        var unsupportedArchitectureDescription =
+            SetupReviewSummaryBuilder.BuildLocalAiEngineDescription(
+                new LocalAiConfig { Enabled = false },
+                Architecture.X86);
+
+        Assert.False(summary.LocalAiEnabled);
+        Assert.Equal("Local AI is not selected", unsupportedArchitectureDescription);
     }
 
     [Fact]

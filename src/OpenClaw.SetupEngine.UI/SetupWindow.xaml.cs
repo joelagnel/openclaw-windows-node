@@ -324,28 +324,40 @@ public sealed partial class SetupWindow : Window
             Effect = back ? SlideNavigationTransitionEffect.FromLeft : SlideNavigationTransitionEffect.FromRight,
         });
 
-    private void NavigatePreview(string page) => RootFrame.Navigate(
-        page switch
+    private void NavigatePreview(string page)
+    {
+        if (page is "capabilities-review" or "capabilities-review-consent" or "progress-local-ai")
         {
-            "welcome" => typeof(WelcomePage),
-            "advanced" => typeof(AdvancedSetupPage),
-            "capabilities" => typeof(CapabilitiesPage),
-            "progress" => typeof(ProgressPage),
-            "milestone" => typeof(ProgressPage),
-            "wizard" => typeof(WizardPage),
-            "wizard-error" => typeof(WizardPage),
-            "complete" => typeof(CompletePage),
-            "complete-error" => typeof(CompletePage),
-            _ => typeof(SecurityNoticePage),
-        },
-        page switch
-        {
-            "complete" => new CompletePageArgs(true, TimeSpan.FromMinutes(3), null),
-            "complete-error" => new CompletePageArgs(false, TimeSpan.FromMinutes(3), null, "Setup could not finish. Review the details, then retry setup when you are ready."),
-            "progress" => CreateProgressPageArgs(showMilestoneOnly: false),
-            "milestone" => CreateProgressPageArgs(showMilestoneOnly: true),
-            _ => _config,
-        });
+            _config.LocalAi.Enabled = true;
+            _config.SkipWizard = true;
+        }
+
+        RootFrame.Navigate(
+            page switch
+            {
+                "welcome" => typeof(WelcomePage),
+                "advanced" => typeof(AdvancedSetupPage),
+                "capabilities" => typeof(CapabilitiesPage),
+                "capabilities-review" => typeof(CapabilitiesPage),
+                "capabilities-review-consent" => typeof(CapabilitiesPage),
+                "progress" => typeof(ProgressPage),
+                "progress-local-ai" => typeof(ProgressPage),
+                "milestone" => typeof(ProgressPage),
+                "wizard" => typeof(WizardPage),
+                "wizard-error" => typeof(WizardPage),
+                "complete" => typeof(CompletePage),
+                "complete-error" => typeof(CompletePage),
+                _ => typeof(SecurityNoticePage),
+            },
+            page switch
+            {
+                "complete" => new CompletePageArgs(true, TimeSpan.FromMinutes(3), null),
+                "complete-error" => new CompletePageArgs(false, TimeSpan.FromMinutes(3), null, "Setup could not finish. Review the details, then retry setup when you are ready."),
+                "progress" or "progress-local-ai" => CreateProgressPageArgs(showMilestoneOnly: false),
+                "milestone" => CreateProgressPageArgs(showMilestoneOnly: true),
+                _ => _config,
+            });
+    }
 
     public void RequestAdvancedSetup()
     {

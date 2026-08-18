@@ -61,6 +61,11 @@ public sealed partial class SetupWindow : Window
         InitializeComponent();
         Active = this;
 
+#if DEBUG
+        RootGrid.Loaded += (_, _) =>
+            XamlVisualTestCapture.ScheduleSignalCapture(RootGrid, "Setup", _lifetimeCts.Token);
+#endif
+
         Closed += async (_, _) =>
         {
             _isClosed = true;

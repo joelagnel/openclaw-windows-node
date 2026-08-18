@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 using OpenClaw.Connection.LocalAi;
@@ -94,6 +95,96 @@ public sealed class LocalAiSetupStepsTests : IDisposable
         Assert.Equal(1024, artifactProgress.Completed);
         Assert.Equal(2048, artifactProgress.Total);
         Assert.Equal(SetupDetailProgressUnit.Bytes, artifactProgress.Unit);
+    }
+
+    [Fact]
+    public async Task Acquire_UnexpectedManifestFailureCleansOnlyNewPromotionAndPreservesOriginalException()
+    {
+        var context = CreateContext();
+        var paths = new LocalAiPaths(context.LocalDataDir);
+        Directory.CreateDirectory(paths.DownloadsDirectory);
+        var siblingSentinel = Path.Combine(paths.DownloadsDirectory, "keep.bin");
+        File.WriteAllText(siblingSentinel, "keep");
+        var failure = new InvalidOperationException("unexpected manifest failure");
+        var step = new AcquireLocalAiEngineStep(
+            _ => new FakeRuntime(Snapshot(LocalAiRuntimeState.NotInstalled, LocalAiOwnership.None)),
+            CreateFakeArtifact,
+            () => Architecture.X64,
+            (_, _, _) => throw failure);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => step.ExecuteAsync(context, CancellationToken.None));
+
+        Assert.Same(failure, thrown);
+        Assert.False(Directory.Exists(Path.Combine(
+            paths.EnginesDirectory,
+            "ollama",
+            OllamaReleasePolicy.RecommendedVersion,
+            "win-x64")));
+        Assert.False(Directory.Exists(paths.ModelsDirectory));
+        Assert.True(File.Exists(siblingSentinel));
+        Assert.False(File.Exists(paths.ManifestPath));
+    }
+
+    [Fact]
+    public async Task Acquire_SecurityFailurePreservesPreExistingModelStore()
+    {
+        var context = CreateContext();
+        var paths = new LocalAiPaths(context.LocalDataDir);
+        Directory.CreateDirectory(paths.ModelsDirectory);
+        var modelSentinel = Path.Combine(paths.ModelsDirectory, "keep.bin");
+        File.WriteAllText(modelSentinel, "pre-existing");
+        var failure = new SecurityException("manifest access denied");
+        var step = new AcquireLocalAiEngineStep(
+            _ => new FakeRuntime(Snapshot(LocalAiRuntimeState.NotInstalled, LocalAiOwnership.None)),
+            CreateFakeArtifact,
+            () => Architecture.X64,
+            (_, _, _) => throw failure);
+
+        var thrown = await Assert.ThrowsAsync<SecurityException>(
+            () => step.ExecuteAsync(context, CancellationToken.None));
+
+        Assert.Same(failure, thrown);
+        Assert.False(Directory.Exists(Path.Combine(
+            paths.EnginesDirectory,
+            "ollama",
+            OllamaReleasePolicy.RecommendedVersion,
+            "win-x64")));
+        Assert.True(File.Exists(modelSentinel));
+        Assert.False(File.Exists(paths.ManifestPath));
+    }
+
+    [Fact]
+    public async Task Acquire_InvalidManifestPathNeverCleansOutsideLocalAiRoot()
+    {
+        var context = CreateContext();
+        var paths = new LocalAiPaths(context.LocalDataDir);
+        var outsideDirectory = _temp.Combine("outside-engine");
+        Directory.CreateDirectory(outsideDirectory);
+        var outsideExecutable = Path.Combine(outsideDirectory, "ollama.exe");
+        File.WriteAllText(outsideExecutable, "outside");
+        var outsideSentinel = Path.Combine(outsideDirectory, "keep.bin");
+        File.WriteAllText(outsideSentinel, "keep");
+        var step = new AcquireLocalAiEngineStep(
+            _ => new FakeRuntime(Snapshot(LocalAiRuntimeState.NotInstalled, LocalAiOwnership.None)),
+            (_, _, _, _) => Task.FromResult(new LocalAiArtifactInstallResult(
+                OllamaReleasePolicy.RecommendedVersion,
+                "win-x64",
+                outsideDirectory,
+                outsideExecutable,
+                paths.ModelsDirectory,
+                2048,
+                new string('0', 64),
+                CreatedEngineDirectory: true)),
+            () => Architecture.X64);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => step.ExecuteAsync(context, CancellationToken.None));
+
+        Assert.True(File.Exists(outsideExecutable));
+        Assert.True(File.Exists(outsideSentinel));
+        Assert.False(Directory.Exists(paths.ModelsDirectory));
+        Assert.False(File.Exists(paths.ManifestPath));
     }
 
     [Fact]

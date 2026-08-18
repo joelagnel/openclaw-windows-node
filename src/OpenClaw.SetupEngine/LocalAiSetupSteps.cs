@@ -11,6 +11,11 @@ internal delegate Task<LocalAiArtifactInstallResult> LocalAiArtifactAcquire(
     IProgress<LocalAiArtifactInstallProgress> progress,
     CancellationToken cancellationToken);
 
+internal delegate Task LocalAiManifestSave(
+    LocalAiManifestStore store,
+    LocalAiInstallManifest manifest,
+    CancellationToken cancellationToken);
+
 internal sealed class OllamaApiClientLease(IOllamaApiClient client, IDisposable? owner = null) : IDisposable
 {
     public IOllamaApiClient Client { get; } = client ?? throw new ArgumentNullException(nameof(client));
@@ -67,6 +72,7 @@ public sealed class AcquireLocalAiEngineStep : SetupStep
     private readonly Func<SetupContext, ILocalAiRuntime> _runtimeFactory;
     private readonly LocalAiArtifactAcquire _acquire;
     private readonly Func<Architecture> _architectureProvider;
+    private readonly LocalAiManifestSave _saveManifest;
 
     public AcquireLocalAiEngineStep()
         : this(
@@ -79,11 +85,13 @@ public sealed class AcquireLocalAiEngineStep : SetupStep
     internal AcquireLocalAiEngineStep(
         Func<SetupContext, ILocalAiRuntime> runtimeFactory,
         LocalAiArtifactAcquire acquire,
-        Func<Architecture> architectureProvider)
+        Func<Architecture> architectureProvider,
+        LocalAiManifestSave? saveManifest = null)
     {
         _runtimeFactory = runtimeFactory ?? throw new ArgumentNullException(nameof(runtimeFactory));
         _acquire = acquire ?? throw new ArgumentNullException(nameof(acquire));
         _architectureProvider = architectureProvider ?? throw new ArgumentNullException(nameof(architectureProvider));
+        _saveManifest = saveManifest ?? SaveManifestAsync;
     }
 
     public override string Id => StepId;
@@ -186,7 +194,7 @@ public sealed class AcquireLocalAiEngineStep : SetupStep
                 Endpoint = ctx.Config.LocalAi.Endpoint,
                 ContextLength = ctx.Config.LocalAi.ContextWindow,
             };
-            await manifestStore.SaveAsync(manifest, ct).ConfigureAwait(false);
+            await _saveManifest(manifestStore, manifest, ct).ConfigureAwait(false);
 
             ctx.LocalAiOwnership = LocalAiOwnership.Managed;
             ctx.LocalAiEngineVersion = artifact.Version;
@@ -195,19 +203,53 @@ public sealed class AcquireLocalAiEngineStep : SetupStep
         }
         catch (OperationCanceledException)
         {
-            if (installed?.RollbackDirectory is { } rollbackDirectory)
-                LocalAiManagedStorage.TryDeleteOwnedDirectory(ctx, rollbackDirectory);
-            if (modelsDirectoryCreated)
-                LocalAiManagedStorage.TryDeleteOwnedDirectory(ctx, paths.ModelsDirectory);
+            CleanupFailedPromotion(ctx, installed, modelsDirectoryCreated, paths.ModelsDirectory);
             throw;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or LocalAiArtifactInstallException or HttpRequestException)
+        catch (Exception ex)
+        {
+            CleanupFailedPromotion(ctx, installed, modelsDirectoryCreated, paths.ModelsDirectory);
+            if (ex is IOException or UnauthorizedAccessException or LocalAiArtifactInstallException or HttpRequestException)
+                return StepResult.Fail($"Managed Ollama acquisition failed: {ex.Message}", ex);
+            throw;
+        }
+    }
+
+    private static Task SaveManifestAsync(
+        LocalAiManifestStore store,
+        LocalAiInstallManifest manifest,
+        CancellationToken cancellationToken)
+        => store.SaveAsync(manifest, cancellationToken);
+
+    private static void CleanupFailedPromotion(
+        SetupContext context,
+        LocalAiArtifactInstallResult? installed,
+        bool modelsDirectoryCreated,
+        string modelsDirectory)
+    {
+        TryCleanup(() =>
         {
             if (installed?.RollbackDirectory is { } rollbackDirectory)
-                LocalAiManagedStorage.TryDeleteOwnedDirectory(ctx, rollbackDirectory);
-            if (modelsDirectoryCreated)
-                LocalAiManagedStorage.TryDeleteOwnedDirectory(ctx, paths.ModelsDirectory);
-            return StepResult.Fail($"Managed Ollama acquisition failed: {ex.Message}", ex);
+                LocalAiManagedStorage.TryDeleteOwnedDirectory(context, rollbackDirectory);
+        }, "promoted Ollama engine");
+
+        if (modelsDirectoryCreated)
+        {
+            TryCleanup(
+                () => LocalAiManagedStorage.TryDeleteOwnedDirectory(context, modelsDirectory),
+                "new managed model directory");
+        }
+
+        void TryCleanup(Action cleanup, string description)
+        {
+            try
+            {
+                cleanup();
+            }
+            catch (Exception cleanupError)
+            {
+                context.Logger.Warn($"Could not clean the {description} after acquisition failed: {cleanupError.Message}");
+            }
         }
     }
 

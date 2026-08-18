@@ -30,12 +30,14 @@ public sealed class LocalAiPageViewModelTests
         Assert.Equal(ModelTag, vm.ModelTag);
         Assert.Equal(LocalAiModelPresentationState.Unknown, vm.ModelState);
         Assert.Equal("256K", LocalAiPageViewModel.ContextLengthText);
-        Assert.Equal("FP16", LocalAiPageViewModel.KvCacheText);
+        Assert.Equal("FP16", vm.KvCacheText);
+        Assert.Null(vm.KvCacheTextResourceKey);
         Assert.False(vm.CanStart);
         Assert.True(vm.CanStop);
         Assert.True(vm.CanRestart);
         Assert.True(vm.CanOpenLogs);
         Assert.True(vm.CanRetrySetup);
+        Assert.False(vm.CanOpenChat);
         Assert.Equal(LocalAiGatewayPresentationState.Connected, vm.GatewayState);
         Assert.Equal("Test gateway", vm.GatewayDetail);
     }
@@ -60,15 +62,20 @@ public sealed class LocalAiPageViewModelTests
         Assert.False(vm.CanStop);
         Assert.False(vm.CanRestart);
         Assert.False(vm.CanOpenLogs);
-        Assert.False(vm.CanRetrySetup);
+        Assert.True(vm.CanRetrySetup);
+        Assert.Equal(string.Empty, vm.KvCacheText);
+        Assert.Equal("LocalAiPage_Value_ExternalSettings", vm.KvCacheTextResourceKey);
+        Assert.True(vm.CanOpenChat);
         Assert.False(await vm.StartAsync());
         Assert.False(await vm.StopAsync());
         Assert.False(await vm.RestartAsync());
         Assert.False(vm.OpenLogs());
+        Assert.True(vm.RetrySetup());
         Assert.Equal(0, runtime.EnsureStartedCount);
         Assert.Equal(0, runtime.StopCount);
         Assert.Equal(0, runtime.RestartCount);
         Assert.Equal(0, commands.OpenLocalAiLogsCount);
+        Assert.Equal(1, commands.ShowOnboardingCount);
     }
 
     [Fact]
@@ -133,6 +140,84 @@ public sealed class LocalAiPageViewModelTests
         Assert.True(vm.CanStart);
     }
 
+    [Theory]
+    [InlineData(LocalAiModelAvailabilityState.Unknown, (int)LocalAiModelPresentationState.Unknown, true)]
+    [InlineData(LocalAiModelAvailabilityState.NotInstalled, (int)LocalAiModelPresentationState.NotInstalled, true)]
+    [InlineData(LocalAiModelAvailabilityState.Downloaded, (int)LocalAiModelPresentationState.Downloaded, false)]
+    [InlineData(LocalAiModelAvailabilityState.Loaded, (int)LocalAiModelPresentationState.Loaded, false)]
+    public void EvidenceBackedModelAvailability_MapsHonestlyAndControlsRetry(
+        LocalAiModelAvailabilityState availability,
+        int expectedPresentationState,
+        bool expectedRetry)
+    {
+        var runtime = new ControllableLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.Managed,
+            modelTag: ModelTag,
+            modelAvailability: availability));
+        using var source = new PermissionsPageRuntimeSource(ConnectedGateway());
+        using var vm = new LocalAiPageViewModel(runtime, source, new FakeAppCommands(), new RecordingUiDispatcher());
+
+        vm.Activate(null);
+
+        Assert.Equal((LocalAiModelPresentationState)expectedPresentationState, vm.ModelState);
+        Assert.Equal(expectedRetry, vm.CanRetrySetup);
+    }
+
+    [Theory]
+    [InlineData(LocalAiRuntimeState.Stopped, LocalAiOwnership.External, LocalAiModelAvailabilityState.Unknown, false)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, LocalAiModelAvailabilityState.Unknown, false)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, LocalAiModelAvailabilityState.NotInstalled, false)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, LocalAiModelAvailabilityState.Downloaded, true)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, LocalAiModelAvailabilityState.Loaded, true)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.External, LocalAiModelAvailabilityState.Unknown, true)]
+    [InlineData(LocalAiRuntimeState.Healthy, LocalAiOwnership.External, LocalAiModelAvailabilityState.NotInstalled, false)]
+    public void OpenChat_RequiresHealthyEngineAndOwnershipAppropriateModelEvidence(
+        LocalAiRuntimeState runtimeState,
+        LocalAiOwnership ownership,
+        LocalAiModelAvailabilityState availability,
+        bool expected)
+    {
+        var runtime = new ControllableLocalAiRuntime(Snapshot(
+            runtimeState,
+            ownership,
+            modelTag: ownership == LocalAiOwnership.External && availability == LocalAiModelAvailabilityState.Unknown
+                ? null
+                : ModelTag,
+            modelAvailability: availability));
+        using var source = new PermissionsPageRuntimeSource(ConnectedGateway());
+        using var vm = new LocalAiPageViewModel(runtime, source, new FakeAppCommands(), new RecordingUiDispatcher());
+
+        vm.Activate(null);
+
+        Assert.Equal(expected, vm.CanOpenChat);
+    }
+
+    [Fact]
+    public void Activate_RefreshesLoadedResidencyInsteadOfKeepingStartupEvidenceStale()
+    {
+        var runtime = new ControllableLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.Managed,
+            modelTag: ModelTag,
+            modelAvailability: LocalAiModelAvailabilityState.Downloaded))
+        {
+            RefreshResult = Snapshot(
+                LocalAiRuntimeState.Healthy,
+                LocalAiOwnership.Managed,
+                modelTag: ModelTag,
+                modelAvailability: LocalAiModelAvailabilityState.Loaded),
+        };
+        using var source = new PermissionsPageRuntimeSource(ConnectedGateway());
+        using var vm = new LocalAiPageViewModel(runtime, source, new FakeAppCommands(), new RecordingUiDispatcher());
+
+        vm.Activate(null);
+
+        Assert.Equal(1, runtime.RefreshCount);
+        Assert.Equal(LocalAiModelPresentationState.Loaded, vm.ModelState);
+        Assert.False(vm.CanRetrySetup);
+    }
+
     [Fact]
     public void RuntimeEvents_MarshalToUiAndDeactivateReleasesSubscriptions()
     {
@@ -145,7 +230,7 @@ public sealed class LocalAiPageViewModelTests
 
         runtime.SetSnapshot(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, modelTag: ModelTag));
         Assert.Equal(LocalAiEnginePresentationState.Stopped, vm.EngineState);
-        Assert.Equal(1, dispatcher.EnqueuedCount);
+        Assert.Equal(2, dispatcher.EnqueuedCount);
 
         dispatcher.FlushPending();
         Assert.Equal(LocalAiEnginePresentationState.Running, vm.EngineState);
@@ -153,14 +238,17 @@ public sealed class LocalAiPageViewModelTests
         vm.Deactivate();
         Assert.Equal(0, runtime.SubscriberCount);
         runtime.SetSnapshot(Snapshot(LocalAiRuntimeState.Failed, LocalAiOwnership.None, modelTag: ModelTag));
-        Assert.Equal(1, dispatcher.EnqueuedCount);
+        Assert.Equal(2, dispatcher.EnqueuedCount);
         Assert.Equal(LocalAiEnginePresentationState.Running, vm.EngineState);
     }
 
     [Fact]
     public void GatewayStateAndActionsFollowAuthoritativeRuntimeSource()
     {
-        var runtime = new ControllableLocalAiRuntime(Snapshot(LocalAiRuntimeState.Stopped, LocalAiOwnership.None, modelTag: ModelTag));
+        var runtime = new ControllableLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.External,
+            modelAvailability: LocalAiModelAvailabilityState.Unknown));
         var host = new FakePermissionsPageRuntimeHost
         {
             ConnectionSnapshot = new GatewayConnectionSnapshot
@@ -224,6 +312,7 @@ public sealed class LocalAiPageViewModelTests
         LocalAiRuntimeState state,
         LocalAiOwnership ownership,
         string? modelTag = null,
+        LocalAiModelAvailabilityState? modelAvailability = null,
         string? version = null,
         int? processId = null,
         string? detail = null) =>
@@ -233,6 +322,9 @@ public sealed class LocalAiPageViewModelTests
             new Uri("http://127.0.0.1:11434"),
             version,
             modelTag,
+            modelAvailability ?? (state == LocalAiRuntimeState.NotInstalled
+                ? LocalAiModelAvailabilityState.NotInstalled
+                : LocalAiModelAvailabilityState.Unknown),
             processId,
             processId.HasValue ? DateTimeOffset.Parse("2026-08-17T12:00:00Z") : null,
             detail,
@@ -248,16 +340,19 @@ public sealed class LocalAiPageViewModelTests
             EnsureStartedResult = snapshot;
             StopResult = snapshot;
             RestartResult = snapshot;
+            RefreshResult = snapshot;
         }
 
         public LocalAiRuntimeSnapshot Snapshot { get; private set; }
         public LocalAiRuntimeSnapshot EnsureStartedResult { get; set; }
         public LocalAiRuntimeSnapshot StopResult { get; set; }
         public LocalAiRuntimeSnapshot RestartResult { get; set; }
+        public LocalAiRuntimeSnapshot RefreshResult { get; set; }
         public Exception? EnsureStartedException { get; set; }
         public int EnsureStartedCount { get; private set; }
         public int StopCount { get; private set; }
         public int RestartCount { get; private set; }
+        public int RefreshCount { get; private set; }
         public int SubscriberCount { get; private set; }
 
         public event EventHandler<LocalAiRuntimeSnapshotChangedEventArgs>? StateChanged
@@ -289,8 +384,12 @@ public sealed class LocalAiPageViewModelTests
             return Task.FromResult(Snapshot);
         }
 
-        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            RefreshCount++;
+            Snapshot = RefreshResult;
+            return Task.FromResult(Snapshot);
+        }
 
         public void SetSnapshot(LocalAiRuntimeSnapshot snapshot)
         {

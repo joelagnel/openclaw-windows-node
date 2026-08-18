@@ -30,6 +30,8 @@ public sealed class LocalAiPageContractTests
         "LocalAiPage_Engine_External",
         "LocalAiPage_Engine_NotManaged",
         "LocalAiPage_Model_NotInstalled",
+        "LocalAiPage_Model_Downloaded",
+        "LocalAiPage_Model_Loaded",
         "LocalAiPage_Model_Unknown",
         "LocalAiPage_Gateway_Connected",
         "LocalAiPage_Gateway_Connecting",
@@ -37,6 +39,7 @@ public sealed class LocalAiPageContractTests
         "LocalAiPage_Gateway_Error",
         "LocalAiPage_Gateway_Disconnected",
         "LocalAiPage_Value_Unknown",
+        "LocalAiPage_Value_ExternalSettings",
         "Command_GoToLocalAi_Title",
         "Command_GoToLocalAi_Subtitle",
     ];
@@ -85,7 +88,7 @@ public sealed class LocalAiPageContractTests
         Assert.Contains("x:Name=\"ModelStatusDot\"", xaml);
         Assert.Contains("x:Name=\"GatewayStatusDot\"", xaml);
         Assert.Contains("Text=\"256K\"", xaml);
-        Assert.Contains("Text=\"FP16\"", xaml);
+        Assert.DoesNotContain("Text=\"FP16\"", xaml);
         Assert.DoesNotContain('\u2014', xaml);
     }
 

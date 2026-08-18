@@ -57,12 +57,15 @@ public sealed partial class LocalAiPage : Page
         ModelStatusText.Text = LocalizationHelper.GetString(_viewModel.ModelStatusResourceKey);
         ModelStatusDot.Fill = ModelStatusText.Foreground = ResolveBrush(_viewModel.ModelState switch
         {
+            LocalAiModelPresentationState.Downloaded or LocalAiModelPresentationState.Loaded => "SystemFillColorSuccessBrush",
             LocalAiModelPresentationState.NotInstalled => "SystemFillColorCriticalBrush",
             _ => "SystemFillColorCautionBrush",
         });
         ModelTagText.Text = _viewModel.ModelTag ?? LocalizationHelper.GetString("LocalAiPage_Value_Unknown");
         ContextLengthText.Text = LocalAiPageViewModel.ContextLengthText;
-        KvCacheText.Text = LocalAiPageViewModel.KvCacheText;
+        KvCacheText.Text = _viewModel.KvCacheTextResourceKey is { } kvCacheResourceKey
+            ? LocalizationHelper.GetString(kvCacheResourceKey)
+            : _viewModel.KvCacheText;
 
         GatewayStatusText.Text = LocalizationHelper.GetString(_viewModel.GatewayStatusResourceKey);
         GatewayDetailText.Text = _viewModel.GatewayDetail ?? string.Empty;

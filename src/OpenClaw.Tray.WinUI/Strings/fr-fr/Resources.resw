@@ -7020,6 +7020,12 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   <data name="LocalAiPage_Model_NotInstalled" xml:space="preserve">
     <value>Non installé</value>
   </data>
+  <data name="LocalAiPage_Model_Downloaded" xml:space="preserve">
+    <value>Téléchargé</value>
+  </data>
+  <data name="LocalAiPage_Model_Loaded" xml:space="preserve">
+    <value>Chargé</value>
+  </data>
   <data name="LocalAiPage_Model_Unknown" xml:space="preserve">
     <value>Inconnu</value>
   </data>
@@ -7040,6 +7046,9 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   </data>
   <data name="LocalAiPage_Value_Unknown" xml:space="preserve">
     <value>Valeur inconnue</value>
+  </data>
+  <data name="LocalAiPage_Value_ExternalSettings" xml:space="preserve">
+    <value>Paramètres externes (non vérifiés)</value>
   </data>
   <data name="Command_GoToLocalAi_Title" xml:space="preserve">
     <value>Accéder à l’IA locale</value>

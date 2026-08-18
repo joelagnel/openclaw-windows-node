@@ -17,6 +17,8 @@ internal enum LocalAiModelPresentationState
 {
     Unknown,
     NotInstalled,
+    Downloaded,
+    Loaded,
 }
 
 internal enum LocalAiGatewayPresentationState
@@ -44,6 +46,7 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     private bool _disposed;
     private bool _isBusy;
     private string? _actionError;
+    private CancellationTokenSource? _refreshCancellation;
 
     public LocalAiPageViewModel(
         ILocalAiRuntime runtime,
@@ -91,29 +94,22 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public string? EngineDetail => _runtimeSnapshot.Detail;
     public string? ModelTag => _runtimeSnapshot.ModelTag;
     public const string ContextLengthText = "256K";
-    public const string KvCacheText = "FP16";
+    public string KvCacheText => IsExternal ? string.Empty : "FP16";
+    public string? KvCacheTextResourceKey => IsExternal ? "LocalAiPage_Value_ExternalSettings" : null;
 
-    public LocalAiModelPresentationState ModelState
+    public LocalAiModelPresentationState ModelState => _runtimeSnapshot.ModelAvailability switch
     {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(_runtimeSnapshot.ModelTag))
-            {
-                return _runtimeSnapshot.State == LocalAiRuntimeState.NotInstalled
-                    ? LocalAiModelPresentationState.NotInstalled
-                    : LocalAiModelPresentationState.Unknown;
-            }
-
-            // ModelTag is desired manifest identity. It does not prove that a pull
-            // completed, and a healthy server does not prove the model is resident.
-            // Keep this unknown until /api/tags or /api/ps evidence joins the snapshot.
-            return LocalAiModelPresentationState.Unknown;
-        }
-    }
+        LocalAiModelAvailabilityState.NotInstalled => LocalAiModelPresentationState.NotInstalled,
+        LocalAiModelAvailabilityState.Downloaded => LocalAiModelPresentationState.Downloaded,
+        LocalAiModelAvailabilityState.Loaded => LocalAiModelPresentationState.Loaded,
+        _ => LocalAiModelPresentationState.Unknown,
+    };
 
     public string ModelStatusResourceKey => ModelState switch
     {
         LocalAiModelPresentationState.NotInstalled => "LocalAiPage_Model_NotInstalled",
+        LocalAiModelPresentationState.Downloaded => "LocalAiPage_Model_Downloaded",
+        LocalAiModelPresentationState.Loaded => "LocalAiPage_Model_Loaded",
         _ => "LocalAiPage_Model_Unknown",
     };
 
@@ -147,10 +143,19 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public bool CanRestart => !IsBusy && _runtimeSnapshot.Ownership == LocalAiOwnership.Managed &&
         _runtimeSnapshot.State == LocalAiRuntimeState.Healthy;
     public bool CanOpenLogs => !IsBusy && HasManagedInstall && !IsExternal;
-    public bool CanRetrySetup => !IsBusy && !IsExternal &&
+    public bool CanRetrySetup => !IsBusy &&
         ModelState is LocalAiModelPresentationState.NotInstalled or LocalAiModelPresentationState.Unknown;
     public bool CanRepairConnection => !IsBusy && GatewayState is not (LocalAiGatewayPresentationState.Connected or LocalAiGatewayPresentationState.Connecting);
-    public bool CanOpenChat => !IsBusy && GatewayState == LocalAiGatewayPresentationState.Connected;
+    public bool CanOpenChat => !IsBusy &&
+        GatewayState == LocalAiGatewayPresentationState.Connected &&
+        _runtimeSnapshot.State == LocalAiRuntimeState.Healthy &&
+        (_runtimeSnapshot.Ownership switch
+        {
+            LocalAiOwnership.Managed =>
+                ModelState is LocalAiModelPresentationState.Downloaded or LocalAiModelPresentationState.Loaded,
+            LocalAiOwnership.External => ModelState != LocalAiModelPresentationState.NotInstalled,
+            _ => false,
+        });
 
     private bool HasManagedInstall =>
         _runtimeSnapshot.Ownership == LocalAiOwnership.Managed ||
@@ -171,10 +176,12 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
 
         ApplyRuntimeSnapshot(_runtime.Snapshot);
         ApplyGatewaySnapshot(_gatewaySource.Current.ConnectionSnapshot);
+        StartRuntimeRefresh();
     }
 
     public void Deactivate()
     {
+        CancelRuntimeRefresh();
         if (_subscribed)
         {
             _runtime.StateChanged -= OnRuntimeStateChanged;
@@ -182,6 +189,49 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
             _subscribed = false;
         }
         IsActive = false;
+    }
+
+    private void StartRuntimeRefresh()
+    {
+        CancelRuntimeRefresh();
+        var cancellation = new CancellationTokenSource();
+        _refreshCancellation = cancellation;
+        _ = RefreshRuntimeSnapshotAsync(cancellation);
+    }
+
+    private void CancelRuntimeRefresh()
+    {
+        var cancellation = _refreshCancellation;
+        _refreshCancellation = null;
+        if (cancellation is null)
+            return;
+        cancellation.Cancel();
+    }
+
+    private async Task RefreshRuntimeSnapshotAsync(CancellationTokenSource cancellation)
+    {
+        try
+        {
+            var snapshot = await _runtime.RefreshAsync(cancellation.Token).ConfigureAwait(false);
+            ApplyOnUiThread(() => ApplyRuntimeSnapshot(snapshot));
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            ApplyOnUiThread(() =>
+            {
+                _actionError = ex.Message;
+                OnPropertyChanged(null);
+            });
+        }
+        finally
+        {
+            if (ReferenceEquals(_refreshCancellation, cancellation))
+                _refreshCancellation = null;
+            cancellation.Dispose();
+        }
     }
 
     public Task<bool> StartAsync() => RunRuntimeActionAsync(CanStart, _runtime.EnsureStartedAsync);

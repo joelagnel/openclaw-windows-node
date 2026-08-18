@@ -18,6 +18,8 @@ public sealed class OllamaRuntimeServiceTests
         var snapshot = await runtime.EnsureStartedAsync();
 
         Assert.Equal(LocalAiRuntimeState.NotInstalled, snapshot.State);
+        Assert.Equal(LocalAiModelAvailabilityState.NotInstalled, snapshot.ModelAvailability);
+        Assert.Equal(0, health.ModelProbeCount);
         Assert.Equal(0, platform.StartCount);
     }
 
@@ -36,8 +38,11 @@ public sealed class OllamaRuntimeServiceTests
         var stopped = await runtime.StopAsync();
 
         Assert.Equal(LocalAiOwnership.External, started.Ownership);
+        Assert.Null(started.ModelTag);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, started.ModelAvailability);
         Assert.Equal(LocalAiOwnership.External, stopped.Ownership);
         Assert.Equal(LocalAiRuntimeState.Healthy, stopped.State);
+        Assert.Equal(0, health.ModelProbeCount);
         Assert.Equal(0, platform.StartCount);
     }
 
@@ -97,6 +102,9 @@ public sealed class OllamaRuntimeServiceTests
 
         Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
         Assert.Equal(LocalAiOwnership.Managed, snapshot.Ownership);
+        Assert.Equal("qwen3:8b", snapshot.ModelTag);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, snapshot.ModelAvailability);
+        Assert.Equal(1, health.ModelProbeCount);
         Assert.Equal(1, platform.StartCount);
         Assert.Equal("127.0.0.1:11434", platform.LastSpec!.Environment["OLLAMA_HOST"]);
         Assert.Equal(paths.ModelsDirectory, platform.LastSpec.Environment["OLLAMA_MODELS"]);
@@ -107,6 +115,85 @@ public sealed class OllamaRuntimeServiceTests
         Assert.Equal("1", platform.LastSpec.Environment["OLLAMA_MAX_LOADED_MODELS"]);
         Assert.Equal("10m", platform.LastSpec.Environment["OLLAMA_KEEP_ALIVE"]);
         Assert.Equal("cuda_v13", platform.LastSpec.Environment["OLLAMA_LLM_LIBRARY"]);
+    }
+
+    [Theory]
+    [InlineData(LocalAiModelAvailabilityState.NotInstalled)]
+    [InlineData(LocalAiModelAvailabilityState.Downloaded)]
+    [InlineData(LocalAiModelAvailabilityState.Loaded)]
+    public async Task EnsureStarted_HealthyManagedPublishesExactModelEvidence(
+        LocalAiModelAvailabilityState expectedAvailability)
+    {
+        using var temp = new TempDirectory("local-ai-runtime-");
+        var paths = await InstallAsync(temp);
+        var platform = new FakePlatform();
+        platform.ListenerFactory = () => platform.Process is null
+            ? Complete()
+            : Complete(new WindowsTcpListenerInfo(
+                IPAddress.Loopback,
+                11434,
+                platform.Process.ProcessId,
+                "ollama",
+                Path.Combine(paths.RootDirectory, "engines", "ollama", "ollama.exe"),
+                platform.Process.StartedAtUtc.UtcDateTime));
+        using var health = new FakeHealth(
+            _ => new(platform.Process is not null, platform.Process is null ? null : "0.11.7"),
+            (_, exactModelTag) =>
+            {
+                Assert.Equal("qwen3:8b", exactModelTag);
+                return expectedAvailability;
+            });
+        await using var runtime = CreateRuntime(temp, platform, health);
+
+        var snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.Equal(expectedAvailability, snapshot.ModelAvailability);
+        Assert.Equal(1, health.ModelProbeCount);
+    }
+
+    [Fact]
+    public async Task Refresh_ManifestAloneNeverInfersModelAvailability()
+    {
+        using var temp = new TempDirectory("local-ai-runtime-");
+        await InstallAsync(temp);
+        var platform = new FakePlatform();
+        using var health = new FakeHealth(_ => new(false));
+        await using var runtime = CreateRuntime(temp, platform, health);
+
+        var snapshot = await runtime.RefreshAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Stopped, snapshot.State);
+        Assert.Equal("qwen3:8b", snapshot.ModelTag);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, snapshot.ModelAvailability);
+        Assert.Equal(0, health.ModelProbeCount);
+    }
+
+    [Fact]
+    public async Task EnsureStarted_ModelEvidenceFailureDoesNotDowngradeHealthyEngine()
+    {
+        using var temp = new TempDirectory("local-ai-runtime-");
+        var paths = await InstallAsync(temp);
+        var platform = new FakePlatform();
+        platform.ListenerFactory = () => platform.Process is null
+            ? Complete()
+            : Complete(new WindowsTcpListenerInfo(
+                IPAddress.Loopback,
+                11434,
+                platform.Process.ProcessId,
+                "ollama",
+                Path.Combine(paths.RootDirectory, "engines", "ollama", "ollama.exe"),
+                platform.Process.StartedAtUtc.UtcDateTime));
+        using var health = new FakeHealth(
+            _ => new(platform.Process is not null, "0.11.7"),
+            (_, _) => LocalAiModelAvailabilityState.Unknown);
+        await using var runtime = CreateRuntime(temp, platform, health);
+
+        var snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.Equal(LocalAiOwnership.Managed, snapshot.Ownership);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, snapshot.ModelAvailability);
     }
 
     [Fact]
@@ -185,9 +272,34 @@ public sealed class OllamaRuntimeServiceTests
 
     private static WindowsTcpListenerSnapshotResult Complete(params WindowsTcpListenerInfo[] listeners) => new(listeners, true, true);
 
-    private sealed class FakeHealth(Func<Uri, LocalAiHealthResult> probe) : ILocalAiHealthClient
+    private sealed class FakeHealth : ILocalAiHealthClient
     {
-        public Task<LocalAiHealthResult> ProbeAsync(Uri endpoint, CancellationToken cancellationToken) => Task.FromResult(probe(endpoint));
+        private readonly Func<Uri, LocalAiHealthResult> _probe;
+        private readonly Func<Uri, string, LocalAiModelAvailabilityState>? _modelProbe;
+
+        public FakeHealth(
+            Func<Uri, LocalAiHealthResult> probe,
+            Func<Uri, string, LocalAiModelAvailabilityState>? modelProbe = null)
+        {
+            _probe = probe;
+            _modelProbe = modelProbe;
+        }
+
+        public int ModelProbeCount { get; private set; }
+
+        public Task<LocalAiHealthResult> ProbeAsync(Uri endpoint, CancellationToken cancellationToken) =>
+            Task.FromResult(_probe(endpoint));
+
+        public Task<LocalAiModelAvailabilityState> ProbeModelAvailabilityAsync(
+            Uri endpoint,
+            string exactModelTag,
+            CancellationToken cancellationToken)
+        {
+            ModelProbeCount++;
+            return Task.FromResult(
+                _modelProbe?.Invoke(endpoint, exactModelTag) ?? LocalAiModelAvailabilityState.Unknown);
+        }
+
         public void Dispose() { }
     }
 

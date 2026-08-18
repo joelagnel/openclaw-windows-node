@@ -2,6 +2,7 @@ using OpenClaw.Shared;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace OpenClaw.Connection.LocalAi;
 
@@ -10,20 +11,32 @@ internal sealed record LocalAiHealthResult(bool IsHealthy, string? Version = nul
 internal interface ILocalAiHealthClient : IDisposable
 {
     Task<LocalAiHealthResult> ProbeAsync(Uri endpoint, CancellationToken cancellationToken);
+    Task<LocalAiModelAvailabilityState> ProbeModelAvailabilityAsync(
+        Uri endpoint,
+        string exactModelTag,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class OllamaHealthClient : ILocalAiHealthClient
 {
+    private const int MaxEvidenceResponseBytes = 1024 * 1024;
     private readonly HttpClient _client;
 
-    public OllamaHealthClient()
+    public OllamaHealthClient() : this(new SocketsHttpHandler
     {
-        _client = new HttpClient(new SocketsHttpHandler
+        UseProxy = false,
+        AllowAutoRedirect = false,
+        ConnectTimeout = TimeSpan.FromSeconds(2),
+    })
+    {
+    }
+
+    internal OllamaHealthClient(HttpMessageHandler handler)
+    {
+        _client = new HttpClient(handler ?? throw new ArgumentNullException(nameof(handler)), disposeHandler: true)
         {
-            UseProxy = false,
-            AllowAutoRedirect = false,
-            ConnectTimeout = TimeSpan.FromSeconds(2),
-        }) { Timeout = TimeSpan.FromSeconds(3) };
+            Timeout = TimeSpan.FromSeconds(3),
+        };
     }
 
     public async Task<LocalAiHealthResult> ProbeAsync(Uri endpoint, CancellationToken cancellationToken)
@@ -41,6 +54,97 @@ internal sealed class OllamaHealthClient : ILocalAiHealthClient
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             return new(false);
+        }
+    }
+
+    public async Task<LocalAiModelAvailabilityState> ProbeModelAvailabilityAsync(
+        Uri endpoint,
+        string exactModelTag,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(exactModelTag);
+
+        try
+        {
+            var downloadedTask = ReadExactModelTagsAsync(new Uri(endpoint, "/api/tags"), cancellationToken);
+            var loadedTask = ReadExactModelTagsAsync(new Uri(endpoint, "/api/ps"), cancellationToken);
+            await Task.WhenAll(downloadedTask, loadedTask).ConfigureAwait(false);
+
+            var downloaded = await downloadedTask.ConfigureAwait(false);
+            var loaded = await loadedTask.ConfigureAwait(false);
+            if (loaded.Contains(exactModelTag))
+                return LocalAiModelAvailabilityState.Loaded;
+            return downloaded.Contains(exactModelTag)
+                ? LocalAiModelAvailabilityState.Downloaded
+                : LocalAiModelAvailabilityState.NotInstalled;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return LocalAiModelAvailabilityState.Unknown;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidDataException)
+        {
+            return LocalAiModelAvailabilityState.Unknown;
+        }
+    }
+
+    private async Task<HashSet<string>> ReadExactModelTagsAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        using var response = await _client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"Ollama model evidence endpoint returned HTTP {(int)response.StatusCode}.");
+
+        var payload = await ReadBoundedAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 16 });
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("models", out var models) ||
+            models.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("Ollama model evidence response has an invalid shape.");
+        }
+
+        var tags = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var model in models.EnumerateArray())
+        {
+            if (model.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Ollama model evidence contains an invalid model entry.");
+
+            var foundIdentity = AddStringIdentity(model, "name", tags);
+            foundIdentity |= AddStringIdentity(model, "model", tags);
+            if (!foundIdentity)
+                throw new InvalidDataException("Ollama model evidence contains an unidentified model entry.");
+        }
+        return tags;
+    }
+
+    private static bool AddStringIdentity(JsonElement model, string propertyName, HashSet<string> tags)
+    {
+        if (!model.TryGetProperty(propertyName, out var property))
+            return false;
+        if (property.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(property.GetString()))
+            throw new InvalidDataException("Ollama model evidence contains an invalid model identity.");
+        tags.Add(property.GetString()!);
+        return true;
+    }
+
+    private static async Task<byte[]> ReadBoundedAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is > MaxEvidenceResponseBytes)
+            throw new InvalidDataException("Ollama model evidence response exceeds the size limit.");
+
+        await using var input = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var output = new MemoryStream();
+        var buffer = new byte[16 * 1024];
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                return output.ToArray();
+            if (output.Length + read > MaxEvidenceResponseBytes)
+                throw new InvalidDataException("Ollama model evidence response exceeds the size limit.");
+            output.Write(buffer, 0, read);
         }
     }
 
@@ -147,7 +251,7 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
     {
         var observed = await ObserveEndpointAsync(cancellationToken).ConfigureAwait(false);
         if (observed.HasListeners)
-            return PublishObserved(observed);
+            return await PublishObservedAsync(observed, cancellationToken).ConfigureAwait(false);
         if (!observed.IsComplete)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
         if (observed.Health.IsHealthy)
@@ -175,9 +279,10 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
 
         // Close the check/start race as far as the OS API allows. A later ownership check remains authoritative.
         observed = await ObserveEndpointAsync(cancellationToken).ConfigureAwait(false);
-        if (observed.HasListeners || !observed.IsComplete || observed.Health.IsHealthy)
-            return observed.HasListeners ? PublishObserved(observed) :
-                Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The Ollama endpoint changed while startup was being prepared.");
+        if (observed.HasListeners)
+            return await PublishObservedAsync(observed, cancellationToken).ConfigureAwait(false);
+        if (!observed.IsComplete || observed.Health.IsHealthy)
+            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The Ollama endpoint changed while startup was being prepared.");
 
         var generation = ++_generation;
         Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.Managed, "Starting managed Ollama.");
@@ -225,13 +330,16 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
                         return await FailStartupAsync(LocalAiRuntimeState.Conflict, "Another process owns the configured Ollama endpoint.").ConfigureAwait(false);
                     if (observed.Health.IsHealthy)
                     {
+                        var modelAvailability = await ProbeQualifiedModelAvailabilityAsync(cancellationToken)
+                            .ConfigureAwait(false);
                         return Publish(
                             LocalAiRuntimeState.Healthy,
                             LocalAiOwnership.Managed,
                             null,
                             observed.Health.Version ?? _install.Manifest.EngineVersion,
                             _managedProcess.ProcessId,
-                            _managedProcess.StartedAtUtc);
+                            _managedProcess.StartedAtUtc,
+                            modelAvailability);
                     }
                 }
                 else if (observed.Health.IsHealthy)
@@ -265,7 +373,7 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
         if (!observed.IsComplete)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
         if (observed.HasListeners)
-            return PublishObserved(observed);
+            return await PublishObservedAsync(observed, cancellationToken).ConfigureAwait(false);
         if (observed.Health.IsHealthy)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "Ollama responded without a verifiable TCP listener.", observed.Health.Version);
 
@@ -373,17 +481,59 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
         return listener.Address.Equals(address) || listener.Address.Equals(IPAddress.Any) || listener.Address.Equals(IPAddress.IPv6Any);
     }
 
-    private LocalAiRuntimeSnapshot PublishObserved(EndpointObservation observed)
+    private async Task<LocalAiRuntimeSnapshot> PublishObservedAsync(
+        EndpointObservation observed,
+        CancellationToken cancellationToken)
     {
         if (!observed.IsComplete)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
         if (!observed.Health.IsHealthy)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The configured Ollama port is occupied by an unhealthy or unknown service.");
+
+        var modelAvailability = await ProbeQualifiedModelAvailabilityAsync(cancellationToken).ConfigureAwait(false);
         if (_managedProcess is not null && IsManagedOwnership(observed.Listeners, _managedProcess))
-            return Publish(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed, null, observed.Health.Version, _managedProcess.ProcessId, _managedProcess.StartedAtUtc);
+            return Publish(
+                LocalAiRuntimeState.Healthy,
+                LocalAiOwnership.Managed,
+                null,
+                observed.Health.Version,
+                _managedProcess.ProcessId,
+                _managedProcess.StartedAtUtc,
+                modelAvailability);
 
         var first = observed.Listeners.First();
-        return Publish(LocalAiRuntimeState.Healthy, LocalAiOwnership.External, "Using an existing healthy Ollama service.", observed.Health.Version, first.ProcessId, ToOffset(first.ProcessStartTimeUtc));
+        return Publish(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.External,
+            "Using an existing healthy Ollama service.",
+            observed.Health.Version,
+            first.ProcessId,
+            ToOffset(first.ProcessStartTimeUtc),
+            modelAvailability);
+    }
+
+    private async Task<LocalAiModelAvailabilityState> ProbeQualifiedModelAvailabilityAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_install is null)
+        {
+            try
+            {
+                _install = await _manifestStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                _logger.Warn($"Could not load a qualified local AI manifest for model evidence: {Sanitize(ex.Message)}");
+                return LocalAiModelAvailabilityState.Unknown;
+            }
+        }
+
+        var modelTag = QualifiedModelTag;
+        if (string.IsNullOrWhiteSpace(modelTag))
+            return LocalAiModelAvailabilityState.Unknown;
+
+        return await _health.ProbeModelAvailabilityAsync(_options.Endpoint, modelTag, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static bool IsManagedOwnership(IReadOnlyList<WindowsTcpListenerInfo> listeners, ILocalAiManagedProcess process) =>
@@ -398,14 +548,19 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
         string? detail,
         string? engineVersion = null,
         int? processId = null,
-        DateTimeOffset? processStartedAtUtc = null)
+        DateTimeOffset? processStartedAtUtc = null,
+        LocalAiModelAvailabilityState modelAvailability = LocalAiModelAvailabilityState.Unknown)
     {
+        if (state == LocalAiRuntimeState.NotInstalled)
+            modelAvailability = LocalAiModelAvailabilityState.NotInstalled;
+
         var value = new LocalAiRuntimeSnapshot(
             state,
             ownership,
             _options.Endpoint,
             engineVersion ?? _install?.Manifest.EngineVersion,
-            _install?.Manifest.ModelTag,
+            QualifiedModelTag,
+            modelAvailability,
             processId,
             processStartedAtUtc,
             detail,
@@ -462,6 +617,10 @@ public sealed class OllamaRuntimeService : ILocalAiRuntime
         left.Scheme == right.Scheme &&
         string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase) &&
         left.Port == right.Port;
+    private string? QualifiedModelTag =>
+        _install is not null && SameEndpoint(_install.Endpoint, _options.Endpoint)
+            ? _install.Manifest.ModelTag
+            : null;
     private static DateTimeOffset? ToOffset(DateTime? value) => value is null ? null : new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc));
     private static string FormatOllamaDuration(TimeSpan value) =>
         value.TotalMinutes == Math.Truncate(value.TotalMinutes)

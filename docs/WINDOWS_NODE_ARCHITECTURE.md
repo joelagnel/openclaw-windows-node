@@ -115,7 +115,7 @@ The gold standard. Everything works out of the box. This is what Windows should 
 | **Nodes** | None registered as node - tray app is operator-only |
 | **Capabilities** | Camera ❌ Canvas ❌ (WebChat only) Screen ❌ Notifications ⚠️ (tray-side only, not agent-driven) Browser ❌ Exec ✅ (WSL2) Location ❌ Audio/TTS ❌ |
 | **Networking** | WSL2 → Windows: `localhost:18789` usually works. Windows → WSL2: same. But HTTPS cert validation can fail for WebView2 connecting to WSL2's self-signed cert. |
-| **Setup complexity** | Medium - WSL2 + openclaw + configure tray app to point at `ws://localhost:18789` |
+| **Setup complexity** | Medium - WSL2 + openclaw + configure tray app to point at `ws://127.0.0.1:18789` |
 | **UX Rating** | ⭐⭐⭐ Nice UI wrapper but agent still can't see or interact with Windows |
 
 This operator-only mode provides Quick Send, embedded WebChat, Command Center diagnostics, activity stream, and status display. But without Node Mode it is still a viewport into the agent, not a bridge for the agent to interact with Windows.

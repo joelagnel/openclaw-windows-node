@@ -1446,6 +1446,17 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void Settings_LocalGatewayFallbackUsesSharedLoopbackClassifier()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml.cs"));
+        var loadGatewaySection = ExtractMethod(source, "LoadGatewaySection");
+
+        Assert.Contains("LocalGatewayUrlClassifier.IsLocalGatewayUrl(settings.GatewayUrl)", loadGatewaySection);
+        Assert.DoesNotContain("StartsWith(\"ws://localhost\"", loadGatewaySection);
+    }
+
+    [Fact]
     public void HubBackNavigation_PrunesUnavailableGatewayPages()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

@@ -36,7 +36,7 @@
   "LogLevel": "trace",
   // Override log file path (null = %APPDATA%\OpenClawTray\Logs\Setup\)
   "LogPath": null,
-  // Override gateway WebSocket URL (null = ws://localhost:{GatewayPort})
+  // Override gateway WebSocket URL (null = ws://127.0.0.1:{GatewayPort})
   "GatewayUrl": null,
   // Optional tailnet-only HTTPS/WSS endpoint for the generated WSL gateway.
   "Tailscale": {

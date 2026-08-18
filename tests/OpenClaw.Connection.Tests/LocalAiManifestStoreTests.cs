@@ -144,6 +144,39 @@ public sealed class LocalAiManifestStoreTests
             }));
     }
 
+    [Theory]
+    [InlineData("unsloth/Qwen3.6-35B-A3B-MTP-GGUF@main")]
+    [InlineData("unsloth/Qwen3.6-35B-A3B-MTP-GGUF")]
+    [InlineData("unsloth/extra/Qwen3.6-35B-A3B-MTP-GGUF@5bc3e238d916f48a861bac2f8a1990a0e9b7e98d")]
+    public async Task Save_RejectsModelIdentifierWithoutImmutableHuggingFaceRevision(string modelId)
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(ValidManifest() with { ModelId = modelId }));
+    }
+
+    [Fact]
+    public async Task Save_RejectsModelSourceThatDoesNotMatchPinnedRevision()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+        var manifest = ValidManifest();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(manifest with
+            {
+                ModelAsset = manifest.ModelAsset with
+                {
+                    SourceUrl = manifest.ModelAsset.SourceUrl.Replace(
+                        "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
+                        "0000000000000000000000000000000000000000",
+                        StringComparison.Ordinal),
+                },
+            }));
+    }
+
     [Fact]
     public async Task Save_RejectsMissingRuntimeAssetReceipts()
     {

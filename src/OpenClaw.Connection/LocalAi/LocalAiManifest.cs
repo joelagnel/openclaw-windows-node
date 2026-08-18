@@ -267,6 +267,7 @@ public sealed class LocalAiManifestStore
                 throw new InvalidDataException("The local AI manifest runtime asset filenames must be unique.");
         }
         ValidateAssetReceipt(manifest.ModelAsset, nameof(manifest.ModelAsset));
+        ValidateHuggingFaceModelProvenance(manifest);
 
         var executable = _paths.ResolveContainedPath(manifest.ExecutablePath, nameof(manifest.ExecutablePath));
         if (!string.Equals(Path.GetFileName(executable), "llama-server.exe", StringComparison.OrdinalIgnoreCase))
@@ -317,6 +318,43 @@ public sealed class LocalAiManifestStore
             receipt.Sha256.Length != 64 ||
             receipt.Sha256.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
             throw new InvalidDataException($"{fieldName}.Sha256 must be a lowercase SHA-256 digest.");
+    }
+
+    private static void ValidateHuggingFaceModelProvenance(LocalAiInstallManifest manifest)
+    {
+        var revisionSeparator = manifest.ModelId.LastIndexOf('@');
+        if (revisionSeparator <= 0 || revisionSeparator == manifest.ModelId.Length - 1)
+        {
+            throw new InvalidDataException(
+                "The local AI manifest model identifier must include an immutable Hugging Face revision.");
+        }
+
+        var repositoryId = manifest.ModelId[..revisionSeparator];
+        var revision = manifest.ModelId[(revisionSeparator + 1)..];
+        var repositorySegments = repositoryId.Split('/');
+        if (repositorySegments.Length != 2 ||
+            repositorySegments.Any(segment =>
+                string.IsNullOrWhiteSpace(segment) ||
+                segment.Any(character => !char.IsLetterOrDigit(character) && character is not ('-' or '_' or '.'))))
+        {
+            throw new InvalidDataException("The local AI manifest model repository identifier is invalid.");
+        }
+        if (revision.Length != 40 ||
+            revision.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+        {
+            throw new InvalidDataException(
+                "The local AI manifest model revision must be a lowercase 40-character commit digest.");
+        }
+
+        var source = new Uri(manifest.ModelAsset.SourceUrl, UriKind.Absolute);
+        var expectedPath = $"/{repositoryId}/resolve/{revision}/{manifest.ModelAsset.FileName}";
+        if (!string.Equals(source.Host, "huggingface.co", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Uri.UnescapeDataString(source.AbsolutePath), expectedPath, StringComparison.Ordinal) ||
+            !string.IsNullOrEmpty(source.Query))
+        {
+            throw new InvalidDataException(
+                "The local AI manifest model source must match its immutable Hugging Face repository, revision, and filename.");
+        }
     }
 
     private static bool IsLoopback(Uri endpoint) =>

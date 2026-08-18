@@ -77,9 +77,10 @@ public sealed class LocalAiSetupUiContractTests
 
         Assert.Contains("x:Name=\"LocalAiSummaryCard\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"SetupCompleteLocalAiSummary\"", xaml);
-        Assert.Contains("Local AI ready", xaml);
+        Assert.Contains("Local AI setup verified", xaml);
         Assert.Contains("summary.LocalAiEnabled ? \"Open chat\" : \"Finish\"", code);
-        Assert.Contains("summary.LocalAiEnabled ? \"Local AI is ready\" : \"All set!\"", code);
+        Assert.Contains("summary.LocalAiEnabled ? \"Local AI setup verified\" : \"All set!\"", code);
+        Assert.Contains("Open chat to start the companion-managed engine", code);
         Assert.Contains("LocalAiSummaryCard.Visibility = summary.LocalAiEnabled", code);
     }
 

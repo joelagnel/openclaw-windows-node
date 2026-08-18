@@ -38,9 +38,9 @@ public sealed partial class CompletePage : Page
                 LocalAiSummaryCard.Visibility = summary.LocalAiEnabled
                     ? Visibility.Visible
                     : Visibility.Collapsed;
-                TitleText.Text = summary.LocalAiEnabled ? "Local AI is ready" : "All set!";
+                TitleText.Text = summary.LocalAiEnabled ? "Local AI setup verified" : "All set!";
                 SubtitleText.Text = summary.LocalAiEnabled
-                    ? "OpenClaw is ready to chat with Qwen3.6 on this PC."
+                    ? "Open chat to start the companion-managed engine."
                     : "OpenClaw is ready to go";
                 LaunchButton.Content = summary.LocalAiEnabled ? "Open chat" : "Finish";
                 ErrorCard.Visibility = Visibility.Collapsed;

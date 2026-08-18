@@ -138,7 +138,7 @@
                                                        Style="{StaticResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             <TextBlock x:Name="LocalAiSettingsDetailText"
-                                                       Text="256K context, FP16 KV cache"
+                                                       Text="256K provider context; OpenClaw-managed Ollama uses FP16 KV cache"
                                                        Style="{StaticResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                             <TextBlock Text="OpenClaw downloads the exact model when it is not already available."

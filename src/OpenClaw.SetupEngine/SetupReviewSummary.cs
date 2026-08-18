@@ -66,7 +66,8 @@ public static class SetupReviewSummaryBuilder
             RuntimeInformation.OSArchitecture);
         var localAiModelDescription = $"{Display(localAi.Model, LocalAiConfig.DefaultModel)}, ~23 GB";
         var localAiSettingsDescription =
-            $"{FormatContextWindow(localAi.ContextWindow)} context, {FormatKvCache(localAi.KvCacheType)} KV cache";
+            $"{FormatContextWindow(localAi.ContextWindow)} provider context; " +
+            $"OpenClaw-managed Ollama uses {FormatKvCache(localAi.KvCacheType)} KV cache";
 
         return new SetupReviewSummary(
             DistroTitle: $"Install an isolated {baseDistro} instance",

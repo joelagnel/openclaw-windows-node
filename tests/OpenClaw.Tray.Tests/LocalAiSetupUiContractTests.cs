@@ -16,7 +16,7 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("uses a healthy Ollama already running on Windows", xaml);
         Assert.Contains("downloads the exact model when it is not already available", xaml);
         Assert.Contains("qwen3.6:35b-a3b-mtp-q4_K_M, ~23 GB", xaml);
-        Assert.Contains("256K context, FP16 KV cache", xaml);
+        Assert.Contains("256K provider context; OpenClaw-managed Ollama uses FP16 KV cache", xaml);
         Assert.Contains("global WSL change and one-time shutdown", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Assertive\"", xaml);
         Assert.Contains("new WslGlobalConfigManager(configPath, backupDirectory).Inspect()", code);
@@ -43,7 +43,7 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("configure-local-ai-gateway", code);
         Assert.Contains("Preparing Ollama for Local AI", code);
         Assert.Contains("Downloading Qwen3.6 35B", code);
-        Assert.Contains("256K context with FP16 KV cache", code);
+        Assert.Contains("Configuring the 256K provider context", code);
         Assert.Contains("if (!localAiEnabled)", code);
         Assert.Contains("return StandardStepGroups", code);
         Assert.Contains("group.ShowsDeterminateProgress", code);

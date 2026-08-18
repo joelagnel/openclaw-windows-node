@@ -75,7 +75,7 @@ public sealed partial class ProgressPage : Page
         "local-ai-gateway",
         "Connecting OpenClaw to Local AI",
         ["configure-local-ai-gateway"],
-        "256K context with FP16 KV cache");
+        "Configuring the 256K provider context");
 
     public ProgressPage()
     {
@@ -174,7 +174,7 @@ public sealed partial class ProgressPage : Page
             "[12:04:03] [info] Ollama v0.32.14 installed on Windows\n" +
             "[12:04:05] [info] starting fresh managed model download\n" +
             "[12:04:38] [info] qwen3.6:35b-a3b-mtp-q4_K_M download in progress\n" +
-            "[12:04:38] [info] target: 256K context, FP16 KV cache\n";
+            "[12:04:38] [info] target: 256K provider context\n";
     }
 
     private void BuildStepRows()

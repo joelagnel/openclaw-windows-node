@@ -548,7 +548,9 @@ public class SetupConfigTests : IDisposable
             $"Ollama v0.32.14 for Windows, {expectedEngineSize}",
             summary.LocalAiEngineDescription);
         Assert.Equal("qwen3.6:35b-a3b-mtp-q4_K_M, ~23 GB", summary.LocalAiModelDescription);
-        Assert.Equal("256K context, FP16 KV cache", summary.LocalAiSettingsDescription);
+        Assert.Equal(
+            "256K provider context; OpenClaw-managed Ollama uses FP16 KV cache",
+            summary.LocalAiSettingsDescription);
         Assert.Equal(
             "Ollama v0.32.14 · qwen3.6:35b-a3b-mtp-q4_K_M",
             summary.CompletionLocalAiSummary);

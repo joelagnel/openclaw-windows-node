@@ -10,8 +10,9 @@
     to launch with Package.appxmanifest for packaged/MSIX-adjacent validation.
 
     Use -Isolated (or -DataDir) to avoid sharing settings, logs, run markers,
-    and device identities. Use -Dev to opt into the side-by-side dev app
-    identity with separate mutex, protocol, gateway distro, and gateway port.
+    device identities, setup state, and Local AI artifacts. Use -Dev to opt
+    into the side-by-side dev app identity with separate mutex, protocol,
+    gateway distro, and gateway port.
 
     By default this helper refuses to run outside `main` to avoid accidentally
     launching a stale or experimental worktree. Use -AllowNonMain when you
@@ -31,11 +32,19 @@
     Allow launching from a branch other than main.
 
 .PARAMETER Isolated
-    Set OPENCLAW_TRAY_DATA_DIR to a stable temp directory unique to this worktree
-    and branch so multiple local launches can run side-by-side.
+    Set OPENCLAW_TRAY_DATA_DIR and OPENCLAW_TRAY_LOCAL_DATA_DIR to stable temp
+    directories unique to this worktree and branch so multiple local launches
+    can run side-by-side.
 
 .PARAMETER DataDir
-    Set OPENCLAW_TRAY_DATA_DIR to an explicit directory for this launch.
+    Set OPENCLAW_TRAY_DATA_DIR to an explicit directory for this launch. Unless
+    LocalDataDir or an inherited local-data override is present, setup and Local
+    AI state use a "local" child directory beneath this path.
+
+.PARAMETER LocalDataDir
+    Set OPENCLAW_TRAY_LOCAL_DATA_DIR to an explicit setup and Local AI data
+    directory for this launch. This explicit value takes precedence over an
+    inherited OPENCLAW_TRAY_LOCALAPPDATA_DIR for the launched process only.
 
 .PARAMETER UpdateChannel
     Set OPENCLAW_UPDATE_CHANNEL for this launch. Use alpha for prerelease update
@@ -87,6 +96,8 @@ param(
     [switch]$Isolated,
 
     [string]$DataDir,
+
+    [string]$LocalDataDir,
 
     [ValidateSet("stable", "alpha", "prerelease")]
     [string]$UpdateChannel,
@@ -207,6 +218,8 @@ if ($UseWinApp -and -not (Test-Path $manifestPath)) {
 }
 
 $previousDataDir = $env:OPENCLAW_TRAY_DATA_DIR
+$previousLocalDataDir = $env:OPENCLAW_TRAY_LOCAL_DATA_DIR
+$previousLocalAppDataDir = $env:OPENCLAW_TRAY_LOCALAPPDATA_DIR
 $previousUpdateChannel = $env:OPENCLAW_UPDATE_CHANNEL
 $exitCode = 0
 
@@ -224,6 +237,27 @@ try {
     if ($effectiveDataDir) {
         New-Item -ItemType Directory -Path $effectiveDataDir -Force | Out-Null
         $env:OPENCLAW_TRAY_DATA_DIR = $effectiveDataDir
+    }
+
+    $effectiveLocalDataDir = $null
+    if ($LocalDataDir) {
+        $effectiveLocalDataDir = Resolve-FullPath $LocalDataDir
+        # The app resolves LOCALAPPDATA_DIR before LOCAL_DATA_DIR. Clear the
+        # inherited root for this launch so the explicit direct path wins.
+        $env:OPENCLAW_TRAY_LOCALAPPDATA_DIR = $null
+    } elseif ($previousLocalAppDataDir) {
+        $dataDirectoryName = if ($actualIdentity -eq "dev") { "OpenClawTray-Dev" } else { "OpenClawTray" }
+        $effectiveLocalDataDir = Join-Path $previousLocalAppDataDir $dataDirectoryName
+    } elseif ($previousLocalDataDir) {
+        # Preserve an explicit caller-owned direct override.
+        $effectiveLocalDataDir = $previousLocalDataDir
+    } elseif ($effectiveDataDir) {
+        $effectiveLocalDataDir = Join-Path $effectiveDataDir "local"
+    }
+
+    if ($effectiveLocalDataDir -and (-not $previousLocalAppDataDir -or $LocalDataDir)) {
+        New-Item -ItemType Directory -Path $effectiveLocalDataDir -Force | Out-Null
+        $env:OPENCLAW_TRAY_LOCAL_DATA_DIR = $effectiveLocalDataDir
     }
 
     if ($UpdateChannel) {
@@ -246,6 +280,9 @@ try {
     Write-Host "  Mode:          $(if ($UseWinApp) { 'WinAppCLI manifest activation' } else { 'Direct unpackaged executable' })"
     if ($env:OPENCLAW_TRAY_DATA_DIR) {
         Write-Host "  Data dir:      $env:OPENCLAW_TRAY_DATA_DIR"
+    }
+    if ($effectiveLocalDataDir) {
+        Write-Host "  Local data dir: $effectiveLocalDataDir"
     }
     if ($env:OPENCLAW_UPDATE_CHANNEL) {
         Write-Host "  Update channel: $env:OPENCLAW_UPDATE_CHANNEL"
@@ -275,6 +312,8 @@ try {
     }
 } finally {
     $env:OPENCLAW_TRAY_DATA_DIR = $previousDataDir
+    $env:OPENCLAW_TRAY_LOCAL_DATA_DIR = $previousLocalDataDir
+    $env:OPENCLAW_TRAY_LOCALAPPDATA_DIR = $previousLocalAppDataDir
     $env:OPENCLAW_UPDATE_CHANNEL = $previousUpdateChannel
 }
 

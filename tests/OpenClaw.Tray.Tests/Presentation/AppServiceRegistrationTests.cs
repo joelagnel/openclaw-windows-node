@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClaw.Shared;
 using OpenClaw.Shared.ExecApprovals;
+using OpenClaw.Connection.LocalAi;
 using OpenClawTray.Presentation;
 using OpenClawTray.Services;
 
@@ -21,6 +22,7 @@ public sealed class AppServiceRegistrationTests
         out SettingsManager settings,
         out ExecApprovalsStore execApprovalsStore,
         out FakePermissionsPageRuntimeHost runtimeHost,
+        out FakeLocalAiRuntime localAiRuntime,
         out TempDir temp)
     {
         temp = new TempDir();
@@ -29,6 +31,7 @@ public sealed class AppServiceRegistrationTests
         settings = new SettingsManager(temp.Path);
         execApprovalsStore = new ExecApprovalsStore(temp.Path, NullLogger.Instance);
         runtimeHost = new FakePermissionsPageRuntimeHost();
+        localAiRuntime = new FakeLocalAiRuntime();
 
         var services = new ServiceCollection();
         services.AddOpenClawTrayCore(new AppServiceContext(
@@ -36,7 +39,8 @@ public sealed class AppServiceRegistrationTests
             commands,
             settings,
             execApprovalsStore,
-            runtimeHost));
+            runtimeHost,
+            localAiRuntime));
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateScopes = true,
@@ -47,7 +51,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void Build_ValidatesOnBuild_WithoutThrowing()
     {
-        var provider = BuildProvider(out _, out _, out _, out _, out _, out var temp);
+        var provider = BuildProvider(out _, out _, out _, out _, out _, out _, out var temp);
         using (provider)
         using (temp)
         {
@@ -58,7 +62,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void AppOwnedSingletons_ResolveToTheProvidedInstances()
     {
-        var provider = BuildProvider(out var dispatcher, out var commands, out var settings, out var execApprovalsStore, out var runtimeHost, out var temp);
+        var provider = BuildProvider(out var dispatcher, out var commands, out var settings, out var execApprovalsStore, out var runtimeHost, out var localAiRuntime, out var temp);
         using (provider)
         using (temp)
         {
@@ -67,6 +71,7 @@ public sealed class AppServiceRegistrationTests
             Assert.Same(settings, provider.GetRequiredService<SettingsManager>());
             Assert.Same(execApprovalsStore, provider.GetRequiredService<IExecApprovalsPresentationStore>());
             Assert.Same(runtimeHost, provider.GetRequiredService<IPermissionsPageRuntimeHost>());
+            Assert.Same(localAiRuntime, provider.GetRequiredService<ILocalAiRuntime>());
             Assert.Same(provider.GetRequiredService<ISettingsStore>(), provider.GetRequiredService<ISettingsStore>());
             Assert.Same(provider.GetRequiredService<IPermissionsPageRuntimeSource>(), provider.GetRequiredService<IPermissionsPageRuntimeSource>());
         }
@@ -75,7 +80,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void PageViewModels_AreTransient_AndReceiveInjectedServices()
     {
-        var provider = BuildProvider(out var dispatcher, out var commands, out _, out var execApprovalsStore, out _, out var temp);
+        var provider = BuildProvider(out var dispatcher, out var commands, out _, out var execApprovalsStore, out _, out _, out var temp);
         using (provider)
         using (temp)
         using (var scope = provider.CreateScope())
@@ -95,7 +100,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void PageViewModel_ResolvedFromScope_IsDisposedWithScope()
     {
-        var provider = BuildProvider(out _, out _, out _, out _, out _, out var temp);
+        var provider = BuildProvider(out _, out _, out _, out _, out _, out _, out var temp);
         using (provider)
         using (temp)
         {
@@ -113,7 +118,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void Dispose_DoesNotDisposeAppOwnedInstanceSingletons()
     {
-        var provider = BuildProvider(out var dispatcher, out var commands, out _, out _, out _, out var temp);
+        var provider = BuildProvider(out var dispatcher, out var commands, out _, out _, out _, out var localAiRuntime, out var temp);
         using (temp)
         {
             var manager = provider.GetRequiredService<NavigationScopeManager>();
@@ -122,6 +127,7 @@ public sealed class AppServiceRegistrationTests
 
             Assert.False(dispatcher.Disposed);
             Assert.False(commands.Disposed);
+            Assert.False(localAiRuntime.Disposed);
             Assert.True(manager.IsDisposed);
         }
     }
@@ -129,7 +135,7 @@ public sealed class AppServiceRegistrationTests
     [Fact]
     public void ResolvingExecApprovalsStore_IsPure_AndSingleton()
     {
-        var provider = BuildProvider(out _, out _, out _, out var execApprovalsStore, out _, out var temp);
+        var provider = BuildProvider(out _, out _, out _, out var execApprovalsStore, out _, out _, out var temp);
         using (provider)
         using (temp)
         {

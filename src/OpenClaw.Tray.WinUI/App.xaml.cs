@@ -15,6 +15,7 @@ using OpenClawTray.Helpers;
 using OpenClawTray.Services;
 using OpenClawTray.Windows;
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClawTray.Presentation;
 using OpenClawTray.Presentation.Adapters;
@@ -56,6 +57,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     private OpenClawTray.Services.ManagedLocalGatewayAutoRepairMonitor? _managedLocalAutoRepairMonitor;
     private ManagedLocalGatewayPortProvenanceService? _managedLocalPortProvenance;
     private OpenClawTray.Chat.OpenClawChatCoordinator? _chatCoordinator;
+    private ILocalAiRuntime? _localAiRuntime;
 
     /// <summary>
     /// Root DI composition root, built once during startup and disposed during
@@ -437,7 +439,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
     /// <summary>
     /// Builds the root DI composition root exactly once. Registers the WinUI-free
-    /// core (dispatcher/app-commands/settings as pre-built instances, the navigation
+    /// core (dispatcher/app-commands/settings/local AI runtime as pre-built instances, the navigation
     /// scope manager, and transient page view models) plus the WinUI-bound adapters
     /// (navigation service + page activator). Built with scope and build-time
     /// validation so wiring errors surface at startup rather than first use. No
@@ -457,7 +459,19 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         }
 
         var dispatcher = new WinUIDispatcher(_dispatcherQueue);
-        var context = new AppServiceContext(dispatcher, this, _settings, ExecApprovalsStore, this);
+        if (_localAiRuntime is null)
+        {
+            Logger.Warn("Skipping service provider init: local AI runtime not ready.");
+            return;
+        }
+
+        var context = new AppServiceContext(
+            dispatcher,
+            this,
+            _settings,
+            ExecApprovalsStore,
+            this,
+            _localAiRuntime);
 
         var services = new ServiceCollection();
         services.AddOpenClawTrayCore(context);
@@ -586,6 +600,12 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         // Initialize settings before update check so skip selections can be remembered.
         _settings = new SettingsManager();
+        _localAiRuntime = new OllamaRuntimeService(
+            new OllamaRuntimeOptions
+            {
+                Paths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()),
+            },
+            new AppLogger());
         // Seed chat tool-call visibility from persisted settings so the timeline
         // honors the Settings > Chat "Show tool calls and usage" toggle on launch.
         OpenClawTray.Chat.OpenClawReactorChatRoot.SetToolCallsVisible(_settings.ShowChatToolCalls);
@@ -719,7 +739,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         // Build the DI composition root AFTER the tray is up, so additive plumbing
         // can never delay or preempt tray initialization. It only needs the
-        // dispatcher + settings (created above) and failures are non-fatal.
+        // dispatcher + settings + local AI runtime (created above) and failures are non-fatal.
         InitializeServiceProvider();
 
         // Initialize connection manager before setup flow.
@@ -901,6 +921,18 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
             appLogger,
             isAutomaticRepairAllowed: gatewayId => _connectionManager?.IsAutomaticReconnectAllowed(gatewayId) ?? false);
         _managedLocalAutoRepairMonitor.Start();
+
+        try
+        {
+            var localAiSnapshot = await _localAiRuntime.EnsureStartedAsync();
+            Logger.Info($"Local AI runtime startup completed with state {localAiSnapshot.State} and ownership {localAiSnapshot.Ownership}.");
+        }
+        catch (Exception ex)
+        {
+            // Local inference is additive. Gateway and tray startup must remain available
+            // when its manifest, listener inspection, or native process startup fails.
+            Logger.Warn($"Local AI runtime startup failed; continuing companion startup: {ex.Message}");
+        }
 
         InitializeGatewayClient();
 

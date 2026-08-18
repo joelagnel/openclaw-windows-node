@@ -24,7 +24,8 @@ public sealed class UiDispatcherContractTests
             new FakeAppCommands(),
             new SettingsManager(temp.Path),
             execApprovalsStore,
-            new FakePermissionsPageRuntimeHost()));
+            new FakePermissionsPageRuntimeHost(),
+            new FakeLocalAiRuntime()));
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateScopes = true,

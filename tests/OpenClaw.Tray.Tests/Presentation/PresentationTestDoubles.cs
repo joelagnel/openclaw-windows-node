@@ -1,4 +1,5 @@
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared;
 using OpenClawTray.Presentation;
 using OpenClawTray.Services;
@@ -110,6 +111,34 @@ internal sealed class FakePermissionsPageRuntimeHost : IPermissionsPageRuntimeHo
     public PermissionsVoiceSetupRequirement VoiceSetupRequirement { get; set; }
 
     public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+}
+
+internal sealed class FakeLocalAiRuntime : ILocalAiRuntime
+{
+    private static readonly Uri Endpoint = new("http://127.0.0.1:11434");
+
+    public LocalAiRuntimeSnapshot Snapshot { get; private set; } =
+        LocalAiRuntimeSnapshot.Initial(Endpoint, DateTimeOffset.UtcNow);
+    public bool Disposed { get; private set; }
+    public event EventHandler<LocalAiRuntimeSnapshotChangedEventArgs>? StateChanged
+    {
+        add { }
+        remove { }
+    }
+
+    public Task<LocalAiRuntimeSnapshot> EnsureStartedAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Snapshot);
+    public Task<LocalAiRuntimeSnapshot> StopAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Snapshot);
+    public Task<LocalAiRuntimeSnapshot> RestartAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Snapshot);
+    public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Snapshot);
+    public ValueTask DisposeAsync()
+    {
+        Disposed = true;
+        return ValueTask.CompletedTask;
+    }
 }
 
 /// <summary>

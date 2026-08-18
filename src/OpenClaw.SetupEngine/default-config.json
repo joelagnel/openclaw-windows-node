@@ -114,6 +114,8 @@
     "AllowGlobalWslNetworkingChange": false,
     "Model": "qwen3.6:35b-a3b-mtp-q4_K_M",
     "ModelDownloadSizeBytes": 22621302688,
+    "ModelApiSizeBytes": 22621314717,
+    "ModelDigest": "c7bd058dd9774cae7dae32ef8cf3822aaacddd21e635e3cb6ec38effca0dc57f",
     "ContextWindow": 262144,
     "MaxTokens": 8192,
     "Reasoning": true,

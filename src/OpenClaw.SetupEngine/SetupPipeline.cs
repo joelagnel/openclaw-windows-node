@@ -66,6 +66,7 @@ public static class SetupStepFactory
             new InstallCliStep(),
             new AcquireLocalAiEngineStep(),
             new DownloadLocalAiModelStep(),
+            new VerifyLocalAiInferenceStep(),
             new VerifyLocalAiWslStep(),
             new InstallTailscaleStep(),
             new AuthorizeTailscaleStep(),

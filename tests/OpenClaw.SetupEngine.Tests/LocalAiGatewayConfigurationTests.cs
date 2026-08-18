@@ -48,6 +48,18 @@ public sealed class LocalAiGatewayConfigurationTests : IDisposable
     }
 
     [Fact]
+    public void Validate_RejectsUnqualifiedModelDigestAndApiSize()
+    {
+        var wrongDigest = EnabledConfig();
+        wrongDigest.ModelDigest = new string('0', 64);
+        var wrongSize = EnabledConfig();
+        wrongSize.ModelApiSizeBytes--;
+
+        Assert.Contains("digest", LocalAiSetupPolicy.Validate(wrongDigest), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("API model size", LocalAiSetupPolicy.Validate(wrongSize), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Execute_UsesOneValidatedBatchFileThroughStdinScript()
     {
         var commands = new RecordingCommandRunner

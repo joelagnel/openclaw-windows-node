@@ -50,6 +50,8 @@ public class SetupConfigTests : IDisposable
         Assert.Equal("http://127.0.0.1:11434", config.LocalAi.Endpoint);
         Assert.Equal("qwen3.6:35b-a3b-mtp-q4_K_M", config.LocalAi.Model);
         Assert.Equal(22_621_302_688, config.LocalAi.ModelDownloadSizeBytes);
+        Assert.Equal(22_621_314_717, config.LocalAi.ModelApiSizeBytes);
+        Assert.Equal("c7bd058dd9774cae7dae32ef8cf3822aaacddd21e635e3cb6ec38effca0dc57f", config.LocalAi.ModelDigest);
         Assert.Equal(262_144, config.LocalAi.ContextWindow);
         Assert.Equal(8_192, config.LocalAi.MaxTokens);
         Assert.Equal("f16", config.LocalAi.KvCacheType);
@@ -78,6 +80,8 @@ public class SetupConfigTests : IDisposable
                 AllowGlobalWslNetworkingChange = true,
                 Model = "test:model",
                 ModelDownloadSizeBytes = 123,
+                ModelApiSizeBytes = 456,
+                ModelDigest = new string('a', 64),
                 ContextWindow = 65_536,
                 MaxTokens = 4_096,
                 Reasoning = false,
@@ -96,6 +100,8 @@ public class SetupConfigTests : IDisposable
         Assert.NotNull(loaded);
         Assert.True(loaded.LocalAi.Enabled);
         Assert.Equal("test:model", loaded.LocalAi.Model);
+        Assert.Equal(456, loaded.LocalAi.ModelApiSizeBytes);
+        Assert.Equal(new string('a', 64), loaded.LocalAi.ModelDigest);
         Assert.Equal(65_536, loaded.LocalAi.ContextWindow);
         Assert.Equal(9_000, loaded.LocalAi.PullTimeoutSeconds);
         Assert.True(loaded.LocalAi.AllowGlobalWslNetworkingChange);
@@ -116,6 +122,9 @@ public class SetupConfigTests : IDisposable
         Assert.True(config.LocalAi.Enabled);
         Assert.Equal(OllamaReleasePolicy.RecommendedVersion, config.LocalAi.Version);
         Assert.Equal(LocalAiConfig.DefaultModel, config.LocalAi.Model);
+        Assert.Equal(LocalAiConfig.DefaultModelDownloadSizeBytes, config.LocalAi.ModelDownloadSizeBytes);
+        Assert.Equal(LocalAiConfig.DefaultModelApiSizeBytes, config.LocalAi.ModelApiSizeBytes);
+        Assert.Equal(LocalAiConfig.DefaultModelDigest, config.LocalAi.ModelDigest);
         Assert.Equal(262_144, config.LocalAi.ContextWindow);
         Assert.Equal("f16", config.LocalAi.KvCacheType);
         Assert.False(config.LocalAi.AllowGlobalWslNetworkingChange);

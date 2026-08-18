@@ -178,6 +178,8 @@ public sealed class LocalAiConfig
     public const string DefaultEndpoint = "http://127.0.0.1:11434";
     public const string DefaultModel = "qwen3.6:35b-a3b-mtp-q4_K_M";
     public const long DefaultModelDownloadSizeBytes = 22_621_302_688;
+    public const long DefaultModelApiSizeBytes = 22_621_314_717;
+    public const string DefaultModelDigest = "c7bd058dd9774cae7dae32ef8cf3822aaacddd21e635e3cb6ec38effca0dc57f";
 
     // Keep the CLR default disabled so older custom setup files that omit this
     // section do not unexpectedly install a large model. The bundled product
@@ -193,6 +195,8 @@ public sealed class LocalAiConfig
 
     public string Model { get; set; } = DefaultModel;
     public long ModelDownloadSizeBytes { get; set; } = DefaultModelDownloadSizeBytes;
+    public long ModelApiSizeBytes { get; set; } = DefaultModelApiSizeBytes;
+    public string ModelDigest { get; set; } = DefaultModelDigest;
     public int ContextWindow { get; set; } = 262_144;
     public int MaxTokens { get; set; } = 8_192;
     public bool Reasoning { get; set; } = true;

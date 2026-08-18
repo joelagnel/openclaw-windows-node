@@ -39,11 +39,14 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("configure-local-ai-wsl-networking", code);
         Assert.Contains("acquire-local-ai-engine", code);
         Assert.Contains("download-local-ai-model", code);
+        Assert.Contains("verify-local-ai-inference", code);
         Assert.Contains("verify-local-ai-wsl", code);
         Assert.Contains("configure-local-ai-gateway", code);
         Assert.Contains("Preparing Ollama for Local AI", code);
         Assert.Contains("Downloading Qwen3.6 35B", code);
         Assert.Contains("Configuring the 256K provider context", code);
+        Assert.Contains("Verifying Local AI inference on GPU", code);
+        Assert.Contains("\"inference\" => \"local-ai-inference\"", code);
         Assert.Contains("if (!localAiEnabled)", code);
         Assert.Contains("return StandardStepGroups", code);
         Assert.Contains("group.ShowsDeterminateProgress", code);

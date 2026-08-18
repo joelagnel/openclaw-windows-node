@@ -33,6 +33,7 @@ public sealed class SetupConfig
     // Nested config sections — everything is configurable
     public WslConfig Wsl { get; set; } = new();
     public GatewayConfig Gateway { get; set; } = new();
+    public LocalAiConfig LocalAi { get; set; } = new();
     public CapabilitiesConfig Capabilities { get; set; } = new();
     public TraySettingsConfig Settings { get; set; } = new();
     public PairingConfig Pairing { get; set; } = new();
@@ -166,6 +167,41 @@ public sealed class GatewayConfig
     public Dictionary<string, string>? ExtraConfig { get; set; }
     [JsonIgnore]
     public GatewayReleaseResolution? ResolvedRelease { get; set; }
+}
+
+// ─── Local AI Configuration ───
+
+public sealed class LocalAiConfig
+{
+    public const string DefaultEngine = "ollama";
+    public const string DefaultEndpoint = "http://127.0.0.1:11434";
+    public const string DefaultModel = "qwen3.6:35b-a3b-mtp-q4_K_M";
+    public const long DefaultModelDownloadSizeBytes = 22_621_302_688;
+
+    // Keep the CLR default disabled so older custom setup files that omit this
+    // section do not unexpectedly install a large model. The bundled product
+    // configuration opts in explicitly.
+    public bool Enabled { get; set; }
+    public string Engine { get; set; } = DefaultEngine;
+    public string Version { get; set; } = OllamaReleasePolicy.RecommendedVersion;
+    public string Endpoint { get; set; } = DefaultEndpoint;
+    public int HealthTimeoutSeconds { get; set; } = 60;
+    public int ProviderTimeoutSeconds { get; set; } = 300;
+    public int PullTimeoutSeconds { get; set; } = 7_200;
+    public bool AllowGlobalWslNetworkingChange { get; set; }
+
+    public string Model { get; set; } = DefaultModel;
+    public long ModelDownloadSizeBytes { get; set; } = DefaultModelDownloadSizeBytes;
+    public int ContextWindow { get; set; } = 262_144;
+    public int MaxTokens { get; set; } = 8_192;
+    public bool Reasoning { get; set; } = true;
+
+    public string KvCacheType { get; set; } = "f16";
+    public bool FlashAttention { get; set; } = true;
+    public int NumParallel { get; set; } = 1;
+    public int MaxLoadedModels { get; set; } = 1;
+    public string KeepAlive { get; set; } = "10m";
+    public string LlmLibrary { get; set; } = "cuda_v13";
 }
 
 // ─── Capabilities Configuration ───

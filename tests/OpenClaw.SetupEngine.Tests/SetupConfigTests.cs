@@ -43,6 +43,81 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+        Assert.Equal("ollama", config.LocalAi.Engine);
+        Assert.Equal(OllamaReleasePolicy.RecommendedVersion, config.LocalAi.Version);
+        Assert.Equal("http://127.0.0.1:11434", config.LocalAi.Endpoint);
+        Assert.Equal("qwen3.6:35b-a3b-mtp-q4_K_M", config.LocalAi.Model);
+        Assert.Equal(22_621_302_688, config.LocalAi.ModelDownloadSizeBytes);
+        Assert.Equal(262_144, config.LocalAi.ContextWindow);
+        Assert.Equal(8_192, config.LocalAi.MaxTokens);
+        Assert.Equal("f16", config.LocalAi.KvCacheType);
+        Assert.True(config.LocalAi.FlashAttention);
+        Assert.Equal(1, config.LocalAi.NumParallel);
+        Assert.Equal(1, config.LocalAi.MaxLoadedModels);
+        Assert.Equal("10m", config.LocalAi.KeepAlive);
+        Assert.Equal("cuda_v13", config.LocalAi.LlmLibrary);
+        Assert.False(config.LocalAi.AllowGlobalWslNetworkingChange);
+    }
+
+    [Fact]
+    public void LocalAiConfig_RoundTripsAllProductSettings()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig
+            {
+                Enabled = true,
+                Engine = "ollama",
+                Version = "0.32.14",
+                Endpoint = "http://127.0.0.1:11434",
+                HealthTimeoutSeconds = 45,
+                ProviderTimeoutSeconds = 360,
+                PullTimeoutSeconds = 9_000,
+                AllowGlobalWslNetworkingChange = true,
+                Model = "test:model",
+                ModelDownloadSizeBytes = 123,
+                ContextWindow = 65_536,
+                MaxTokens = 4_096,
+                Reasoning = false,
+                KvCacheType = "f16",
+                FlashAttention = false,
+                NumParallel = 2,
+                MaxLoadedModels = 2,
+                KeepAlive = "5m",
+                LlmLibrary = "cuda_v13",
+            },
+        };
+
+        var json = JsonSerializer.Serialize(config, SetupConfig.JsonWriteOptions);
+        var loaded = JsonSerializer.Deserialize<SetupConfig>(json, SetupConfig.JsonOptions);
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded.LocalAi.Enabled);
+        Assert.Equal("test:model", loaded.LocalAi.Model);
+        Assert.Equal(65_536, loaded.LocalAi.ContextWindow);
+        Assert.Equal(9_000, loaded.LocalAi.PullTimeoutSeconds);
+        Assert.True(loaded.LocalAi.AllowGlobalWslNetworkingChange);
+        Assert.Equal(2, loaded.LocalAi.NumParallel);
+    }
+
+    [Fact]
+    public void BundledConfig_OptsIntoPinnedLocalAiExperience()
+    {
+        var configPath = Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "OpenClaw.SetupEngine",
+            "default-config.json");
+
+        var config = SetupConfig.LoadFromFile(configPath);
+
+        Assert.True(config.LocalAi.Enabled);
+        Assert.Equal(OllamaReleasePolicy.RecommendedVersion, config.LocalAi.Version);
+        Assert.Equal(LocalAiConfig.DefaultModel, config.LocalAi.Model);
+        Assert.Equal(262_144, config.LocalAi.ContextWindow);
+        Assert.Equal("f16", config.LocalAi.KvCacheType);
+        Assert.False(config.LocalAi.AllowGlobalWslNetworkingChange);
     }
 
     [Fact]
@@ -609,5 +684,24 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(0, new PipelineResult(PipelineOutcome.Success).ExitCode);
         Assert.Equal(1, new PipelineResult(PipelineOutcome.Failed).ExitCode);
         Assert.Equal(3, new PipelineResult(PipelineOutcome.Cancelled).ExitCode);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        if (Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT") is { Length: > 0 } configuredRoot &&
+            File.Exists(Path.Combine(configuredRoot, "src", "OpenClaw.SetupEngine", "default-config.json")))
+        {
+            return configuredRoot;
+        }
+
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "src", "OpenClaw.SetupEngine", "default-config.json")))
+                return directory.FullName;
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the repository root for default-config.json.");
     }
 }

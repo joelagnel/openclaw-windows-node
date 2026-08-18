@@ -99,6 +99,9 @@ public sealed partial class HubWindow : WindowEx
     public HubWindow()
     {
         InitializeComponent();
+#if DEBUG
+        RootGrid.Loaded += (_, _) => VisualTestCapture.ScheduleSignalCapture(RootGrid, "Hub");
+#endif
         Title = AppIdentity.DisplayName;
         RefreshDiagnosticsNavVisibility();
         ApplyHighContrastFallbackIfNeeded();

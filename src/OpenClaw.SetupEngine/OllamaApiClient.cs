@@ -28,6 +28,19 @@ internal sealed record OllamaPullResult(
     long TransferredBytes,
     long? ExpectedBytes);
 
+internal sealed record OllamaGenerateResult(
+    string? Model,
+    string Response,
+    bool Done);
+
+internal sealed record OllamaRunningModelInfo(
+    string Name,
+    string Model,
+    long SizeBytes,
+    long SizeVramBytes,
+    string? Digest,
+    int ContextLength);
+
 internal sealed class OllamaApiException : Exception
 {
     public OllamaApiException(string message)
@@ -51,6 +64,15 @@ internal interface IOllamaApiClient
         long? expectedBytes,
         IProgress<OllamaPullProgress>? progress,
         CancellationToken cancellationToken);
+    Task<OllamaGenerateResult> GenerateAsync(
+        string model,
+        string prompt,
+        int contextLength,
+        int predictionTokens,
+        int gpuLayers,
+        string keepAlive,
+        CancellationToken cancellationToken);
+    Task<IReadOnlyList<OllamaRunningModelInfo>> ListRunningModelsAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -172,6 +194,99 @@ internal sealed class OllamaApiClient : IOllamaApiClient
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OllamaGenerateResult> GenerateAsync(
+        string model,
+        string prompt,
+        int contextLength,
+        int predictionTokens,
+        int gpuLayers,
+        string keepAlive,
+        CancellationToken cancellationToken)
+    {
+        ValidateModelName(model);
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keepAlive);
+        if (contextLength <= 0 || predictionTokens <= 0 || gpuLayers <= 0)
+            throw new ArgumentOutOfRangeException(nameof(contextLength), "Inference sizing values must be positive.");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildUri("api/generate"))
+        {
+            Content = JsonContent.Create(
+                new OllamaGenerateRequest(
+                    model.Trim(),
+                    prompt,
+                    Stream: false,
+                    Think: false,
+                    keepAlive,
+                    new(contextLength, predictionTokens, gpuLayers)),
+                options: JsonOptions),
+        };
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+
+        OllamaGenerateResponse? payload;
+        try
+        {
+            payload = await response.Content.ReadFromJsonAsync<OllamaGenerateResponse>(
+                JsonOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new OllamaApiException("Ollama returned an invalid generation response.", ex);
+        }
+
+        if (payload is null)
+            throw new OllamaApiException("Ollama returned an empty generation response.");
+        return new(payload.Model, payload.Response ?? string.Empty, payload.Done);
+    }
+
+    public async Task<IReadOnlyList<OllamaRunningModelInfo>> ListRunningModelsAsync(
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri("api/ps"));
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+
+        OllamaPsResponse? payload;
+        try
+        {
+            payload = await response.Content.ReadFromJsonAsync<OllamaPsResponse>(
+                JsonOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new OllamaApiException("Ollama returned an invalid running-model response.", ex);
+        }
+
+        if (payload?.Models is not { } models)
+            return Array.Empty<OllamaRunningModelInfo>();
+
+        var result = new List<OllamaRunningModelInfo>(models.Count);
+        foreach (var model in models)
+        {
+            var name = FirstNonEmpty(model.Name, model.Model);
+            var canonicalModel = FirstNonEmpty(model.Model, model.Name);
+            if (name is null || canonicalModel is null)
+                continue;
+            result.Add(new(
+                name,
+                canonicalModel,
+                Math.Max(0, model.Size),
+                Math.Max(0, model.SizeVram),
+                string.IsNullOrWhiteSpace(model.Digest) ? null : model.Digest.Trim(),
+                Math.Max(0, model.ContextLength)));
+        }
+        return result;
     }
 
     public async Task<OllamaPullResult> PullModelAsync(
@@ -353,6 +468,35 @@ internal sealed class OllamaApiClient : IOllamaApiClient
 
     private sealed record OllamaDeleteRequest(
         [property: JsonPropertyName("model")] string Model);
+
+    private sealed record OllamaGenerateRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("prompt")] string Prompt,
+        [property: JsonPropertyName("stream")] bool Stream,
+        [property: JsonPropertyName("think")] bool Think,
+        [property: JsonPropertyName("keep_alive")] string KeepAlive,
+        [property: JsonPropertyName("options")] OllamaGenerateOptions Options);
+
+    private sealed record OllamaGenerateOptions(
+        [property: JsonPropertyName("num_ctx")] int ContextLength,
+        [property: JsonPropertyName("num_predict")] int PredictionTokens,
+        [property: JsonPropertyName("num_gpu")] int GpuLayers);
+
+    private sealed record OllamaGenerateResponse(
+        [property: JsonPropertyName("model")] string? Model,
+        [property: JsonPropertyName("response")] string? Response,
+        [property: JsonPropertyName("done")] bool Done);
+
+    private sealed record OllamaPsResponse(
+        [property: JsonPropertyName("models")] List<OllamaRunningModelResponse>? Models);
+
+    private sealed record OllamaRunningModelResponse(
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("model")] string? Model,
+        [property: JsonPropertyName("size")] long Size,
+        [property: JsonPropertyName("size_vram")] long SizeVram,
+        [property: JsonPropertyName("digest")] string? Digest,
+        [property: JsonPropertyName("context_length")] int ContextLength);
 
     private sealed record OllamaPullResponse(
         [property: JsonPropertyName("status")] string? Status,

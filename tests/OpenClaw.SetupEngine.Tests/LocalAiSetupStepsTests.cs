@@ -286,6 +286,44 @@ public sealed class LocalAiSetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task Download_DoesNotSkipExactTagWithWrongDigestOrApiSize()
+    {
+        var context = CreateContext();
+        await CreateManagedManifestAsync(context);
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([
+            Model(LocalAiConfig.DefaultModel, sizeBytes: 123, digest: "sha256:wrong"),
+        ]);
+        api.ListResponses.Enqueue([Model(LocalAiConfig.DefaultModel)]);
+        var step = new DownloadLocalAiModelStep(_ => runtime, _ => new(api));
+
+        var result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(api.PullCalled);
+    }
+
+    [Fact]
+    public async Task Download_FailsWhenPulledTagHasWrongPinnedDigest()
+    {
+        var context = CreateContext();
+        await CreateManagedManifestAsync(context);
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([]);
+        api.ListResponses.Enqueue([
+            Model(LocalAiConfig.DefaultModel, digest: new string('0', 64)),
+        ]);
+        var step = new DownloadLocalAiModelStep(_ => runtime, _ => new(api));
+
+        var result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("unexpected digest", result.Message);
+    }
+
+    [Fact]
     public async Task Download_CancellationCleansManagedPartialDataAfterRuntimeDisposal()
     {
         var context = CreateContext();
@@ -354,6 +392,100 @@ public sealed class LocalAiSetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyInference_GeneratesWithQualifiedOptionsAndRequiresFullGpuResidency()
+    {
+        const long loadedSize = 22_857_174_219;
+        var context = CreateContext();
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([Model(LocalAiConfig.DefaultModel)]);
+        api.GenerateResult = new(LocalAiConfig.DefaultModel, "ready", Done: true);
+        api.RunningResponses.Enqueue([
+            RunningModel(LocalAiConfig.DefaultModel, loadedSize, loadedSize, contextLength: 262_144),
+        ]);
+        var details = new List<SetupDetailProgressEvent>();
+        context.DetailProgress += (_, value) => details.Add(value);
+        var step = new VerifyLocalAiInferenceStep(_ => runtime, _ => new(api));
+
+        var result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(LocalAiConfig.DefaultModel, api.GeneratedModel);
+        Assert.Equal(VerifyLocalAiInferenceStep.VerificationPrompt, api.GeneratedPrompt);
+        Assert.Equal(262_144, api.GeneratedContextLength);
+        Assert.Equal(1, api.GeneratedPredictionTokens);
+        Assert.Equal(999, api.GeneratedGpuLayers);
+        Assert.Equal("10m", api.GeneratedKeepAlive);
+        Assert.Equal(1, runtime.DisposeCount);
+        Assert.Contains(details, value => value.Phase == "inference" && value.Status == "loading model on GPU");
+        Assert.Contains(details, value => value.Phase == "inference" && value.Status == "complete");
+    }
+
+    [Fact]
+    public async Task VerifyInference_FailsWhenModelIsNotFullyGpuResident()
+    {
+        var context = CreateContext();
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.External));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([Model(LocalAiConfig.DefaultModel)]);
+        api.GenerateResult = new(LocalAiConfig.DefaultModel, "ready", Done: true);
+        api.RunningResponses.Enqueue([
+            RunningModel(LocalAiConfig.DefaultModel, sizeBytes: 100, sizeVramBytes: 99, contextLength: 262_144),
+        ]);
+        var step = new VerifyLocalAiInferenceStep(_ => runtime, _ => new(api));
+
+        var result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("did not fully load", result.Message);
+        Assert.Equal(1, runtime.DisposeCount);
+        Assert.Equal(0, runtime.StopCount);
+    }
+
+    [Fact]
+    public async Task VerifyInference_UserCancellationPropagatesAndDisposesRuntime()
+    {
+        var context = CreateContext();
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([Model(LocalAiConfig.DefaultModel)]);
+        using var cancellation = new CancellationTokenSource();
+        api.GenerateHandler = token =>
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<OllamaGenerateResult>(token);
+        };
+        var step = new VerifyLocalAiInferenceStep(_ => runtime, _ => new(api));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => step.ExecuteAsync(context, cancellation.Token));
+
+        Assert.Equal(1, runtime.DisposeCount);
+    }
+
+    [Fact]
+    public async Task VerifyInference_InternalTimeoutReturnsClearFailure()
+    {
+        var context = CreateContext();
+        context.Config.LocalAi.ProviderTimeoutSeconds = 1;
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var api = new FakeOllamaApiClient();
+        api.ListResponses.Enqueue([Model(LocalAiConfig.DefaultModel)]);
+        api.GenerateHandler = async token =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            return new(LocalAiConfig.DefaultModel, "ready", Done: true);
+        };
+        var step = new VerifyLocalAiInferenceStep(_ => runtime, _ => new(api));
+
+        var result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("timed out after 1 seconds", result.Message);
+        Assert.Equal(1, runtime.DisposeCount);
+    }
+
+    [Fact]
     public async Task VerifyWsl_UsesStdinSafeScriptAndRequiresVersionAndExactTag()
     {
         var commands = new RecordingCommandRunner
@@ -394,6 +526,26 @@ public sealed class LocalAiSetupStepsTests : IDisposable
         Assert.Contains("exact qualified model", result.Message);
         Assert.Equal(1, runtime.DisposeCount);
         Assert.Equal(0, runtime.StopCount);
+    }
+
+    [Fact]
+    public async Task VerifyWsl_FailsWhenExactTagHasWrongDigestOrApiSize()
+    {
+        var commands = new RecordingCommandRunner
+        {
+            WslResult = BuildWslVerificationResult(
+                LocalAiConfig.DefaultModel,
+                digest: new string('0', 64),
+                sizeBytes: 123),
+        };
+        var runtime = new FakeRuntime(Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.Managed));
+        var step = new VerifyLocalAiWslStep(_ => runtime);
+
+        var result = await step.ExecuteAsync(CreateContext(commands), CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("tag, digest, and size", result.Message);
+        Assert.Equal(1, runtime.DisposeCount);
     }
 
     [Fact]
@@ -663,15 +815,40 @@ public sealed class LocalAiSetupStepsTests : IDisposable
             detail,
             DateTimeOffset.UtcNow);
 
-    private static OllamaModelInfo Model(string tag)
-        => new(tag, tag, DateTimeOffset.UtcNow, LocalAiConfig.DefaultModelDownloadSizeBytes, "sha256:test");
+    private static OllamaModelInfo Model(
+        string tag,
+        long? sizeBytes = null,
+        string? digest = null)
+        => new(
+            tag,
+            tag,
+            DateTimeOffset.UtcNow,
+            sizeBytes ?? LocalAiConfig.DefaultModelApiSizeBytes,
+            digest ?? LocalAiConfig.DefaultModelDigest);
 
-    private static CommandResult BuildWslVerificationResult(string model)
+    private static OllamaRunningModelInfo RunningModel(
+        string tag,
+        long sizeBytes,
+        long sizeVramBytes,
+        int contextLength,
+        string? digest = null)
+        => new(
+            tag,
+            tag,
+            sizeBytes,
+            sizeVramBytes,
+            digest ?? LocalAiConfig.DefaultModelDigest,
+            contextLength);
+
+    private static CommandResult BuildWslVerificationResult(
+        string model,
+        string? digest = null,
+        long? sizeBytes = null)
     {
         var version = Convert.ToBase64String(Encoding.UTF8.GetBytes(
             $$"""{"version":"{{OllamaReleasePolicy.RecommendedVersion}}"}"""));
         var tags = Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            $$"""{"models":[{"name":"{{model}}","model":"{{model}}"}]}"""));
+            $$"""{"models":[{"name":"{{model}}","model":"{{model}}","size":{{sizeBytes ?? LocalAiConfig.DefaultModelApiSizeBytes}},"digest":"{{digest ?? LocalAiConfig.DefaultModelDigest}}"}]}"""));
         return new(
             0,
             $"OPENCLAW_OLLAMA_VERSION_B64={version}\nOPENCLAW_OLLAMA_TAGS_B64={tags}\n",
@@ -738,10 +915,20 @@ public sealed class LocalAiSetupStepsTests : IDisposable
         public Queue<IReadOnlyList<OllamaModelInfo>> ListResponses { get; } = new();
         public Func<string, long?, IProgress<OllamaPullProgress>?, CancellationToken, Task<OllamaPullResult>>?
             PullHandler { get; set; }
+        public Func<CancellationToken, Task<OllamaGenerateResult>>? GenerateHandler { get; set; }
+        public OllamaGenerateResult GenerateResult { get; set; } =
+            new(LocalAiConfig.DefaultModel, "ready", Done: true);
+        public Queue<IReadOnlyList<OllamaRunningModelInfo>> RunningResponses { get; } = new();
         public string? PulledModel { get; private set; }
         public long? ExpectedBytes { get; private set; }
         public bool PullCalled => PulledModel is not null;
         public bool DeleteCalled { get; private set; }
+        public string? GeneratedModel { get; private set; }
+        public string? GeneratedPrompt { get; private set; }
+        public int GeneratedContextLength { get; private set; }
+        public int GeneratedPredictionTokens { get; private set; }
+        public int GeneratedGpuLayers { get; private set; }
+        public string? GeneratedKeepAlive { get; private set; }
 
         public Task<OllamaVersionInfo> GetVersionAsync(CancellationToken cancellationToken)
             => Task.FromResult(new OllamaVersionInfo(OllamaReleasePolicy.RecommendedVersion));
@@ -772,6 +959,33 @@ public sealed class LocalAiSetupStepsTests : IDisposable
             ExpectedBytes = expectedBytes;
             return PullHandler?.Invoke(model, expectedBytes, progress, cancellationToken)
                 ?? Task.FromResult(new OllamaPullResult(model, expectedBytes ?? 0, expectedBytes));
+        }
+
+        public Task<OllamaGenerateResult> GenerateAsync(
+            string model,
+            string prompt,
+            int contextLength,
+            int predictionTokens,
+            int gpuLayers,
+            string keepAlive,
+            CancellationToken cancellationToken)
+        {
+            GeneratedModel = model;
+            GeneratedPrompt = prompt;
+            GeneratedContextLength = contextLength;
+            GeneratedPredictionTokens = predictionTokens;
+            GeneratedGpuLayers = gpuLayers;
+            GeneratedKeepAlive = keepAlive;
+            return GenerateHandler?.Invoke(cancellationToken) ?? Task.FromResult(GenerateResult);
+        }
+
+        public Task<IReadOnlyList<OllamaRunningModelInfo>> ListRunningModelsAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(RunningResponses.Count > 0
+                ? RunningResponses.Dequeue()
+                : (IReadOnlyList<OllamaRunningModelInfo>)[]);
         }
     }
 

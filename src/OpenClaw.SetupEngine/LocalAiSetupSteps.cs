@@ -383,7 +383,7 @@ public sealed class DownloadLocalAiModelStep : SetupStep
             timeout.CancelAfter(TimeSpan.FromSeconds(ctx.Config.LocalAi.PullTimeoutSeconds));
             var operationToken = timeout.Token;
             var models = await apiLease.Client.ListModelsAsync(operationToken).ConfigureAwait(false);
-            if (HasExactModel(models, ctx.Config.LocalAi.Model))
+            if (LocalAiModelQualification.FindQualifiedTag(models, ctx.Config.LocalAi) is not null)
             {
                 completed = true;
                 ctx.ReportDetailProgress(new(
@@ -423,8 +423,8 @@ public sealed class DownloadLocalAiModelStep : SetupStep
             ctx.DownloadedManagedLocalAiModelThisRun = snapshot.Ownership == LocalAiOwnership.Managed;
 
             var verifiedModels = await apiLease.Client.ListModelsAsync(operationToken).ConfigureAwait(false);
-            if (!HasExactModel(verifiedModels, ctx.Config.LocalAi.Model))
-                return StepResult.Fail("Ollama completed the pull but did not report the exact qualified model tag.");
+            if (LocalAiModelQualification.ValidateTagList(verifiedModels, ctx.Config.LocalAi) is { } modelError)
+                return StepResult.Fail($"Ollama completed the pull but {modelError}");
 
             completed = true;
             return StepResult.Ok($"Downloaded {ctx.Config.LocalAi.Model}");
@@ -483,11 +483,6 @@ public sealed class DownloadLocalAiModelStep : SetupStep
         }
     }
 
-    private static bool HasExactModel(IReadOnlyList<OllamaModelInfo> models, string requiredTag)
-        => models.Any(model =>
-            string.Equals(model.Name, requiredTag, StringComparison.Ordinal) ||
-            string.Equals(model.Model, requiredTag, StringComparison.Ordinal));
-
     private static async Task<string?> ValidateManagedModelStoreAsync(
         SetupContext context,
         CancellationToken cancellationToken)
@@ -506,6 +501,176 @@ public sealed class DownloadLocalAiModelStep : SetupStep
         {
             return $"The managed Ollama manifest is invalid: {ex.Message}";
         }
+    }
+}
+
+public sealed class VerifyLocalAiInferenceStep : SetupStep
+{
+    internal const string StepId = "verify-local-ai-inference";
+    internal const int VerificationPredictionTokens = 1;
+    internal const int VerificationGpuLayers = 999;
+    internal const string VerificationPrompt = "Reply with one word: ready.";
+
+    private readonly Func<SetupContext, ILocalAiRuntime> _runtimeFactory;
+    private readonly Func<SetupContext, OllamaApiClientLease> _apiClientFactory;
+
+    public VerifyLocalAiInferenceStep()
+        : this(LocalAiSetupRuntimeFactory.Create, LocalAiSetupRuntimeFactory.CreateApiClient)
+    {
+    }
+
+    internal VerifyLocalAiInferenceStep(
+        Func<SetupContext, ILocalAiRuntime> runtimeFactory,
+        Func<SetupContext, OllamaApiClientLease> apiClientFactory)
+    {
+        _runtimeFactory = runtimeFactory ?? throw new ArgumentNullException(nameof(runtimeFactory));
+        _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
+    }
+
+    public override string Id => StepId;
+    public override string DisplayName => "Verify Local AI inference on GPU";
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+    public override bool CanRetry => false;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (LocalAiSetupPolicy.Validate(ctx.Config.LocalAi) is { } validationError)
+            return StepResult.Terminal(validationError);
+
+        ILocalAiRuntime? runtime = null;
+        OllamaApiClientLease? apiLease = null;
+        CancellationTokenSource? timeout = null;
+        try
+        {
+            ctx.ReportDetailProgress(new("inference", "starting", null, null, SetupDetailProgressUnit.None));
+            runtime = _runtimeFactory(ctx);
+            var snapshot = await runtime.EnsureStartedAsync(ct).ConfigureAwait(false);
+            ctx.LocalAiOwnership = snapshot.Ownership;
+            ctx.LocalAiEngineVersion = snapshot.EngineVersion;
+            if (snapshot.State != LocalAiRuntimeState.Healthy ||
+                snapshot.Ownership is not (LocalAiOwnership.Managed or LocalAiOwnership.External))
+            {
+                return StepResult.Terminal(snapshot.Detail ?? "Ollama did not become healthy for inference verification.");
+            }
+
+            apiLease = _apiClientFactory(ctx);
+            timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(ctx.Config.LocalAi.ProviderTimeoutSeconds));
+            var operationToken = timeout.Token;
+
+            var models = await apiLease.Client.ListModelsAsync(operationToken).ConfigureAwait(false);
+            if (LocalAiModelQualification.ValidateTagList(models, ctx.Config.LocalAi) is { } tagError)
+                return StepResult.Fail($"Local AI inference verification cannot start because {tagError}");
+
+            ctx.ReportDetailProgress(new("inference", "loading model on GPU", null, null, SetupDetailProgressUnit.None));
+            var generation = await apiLease.Client.GenerateAsync(
+                ctx.Config.LocalAi.Model,
+                VerificationPrompt,
+                ctx.Config.LocalAi.ContextWindow,
+                VerificationPredictionTokens,
+                VerificationGpuLayers,
+                ctx.Config.LocalAi.KeepAlive,
+                operationToken).ConfigureAwait(false);
+            if (!string.Equals(generation.Model, ctx.Config.LocalAi.Model, StringComparison.Ordinal))
+                return StepResult.Fail("Ollama generated with a model other than the exact qualified tag.");
+            if (!generation.Done || string.IsNullOrWhiteSpace(generation.Response))
+                return StepResult.Fail("Ollama did not return a successful nonempty verification generation.");
+
+            ctx.ReportDetailProgress(new("inference", "checking GPU residency", null, null, SetupDetailProgressUnit.None));
+            var runningModels = await apiLease.Client.ListRunningModelsAsync(operationToken).ConfigureAwait(false);
+            var running = LocalAiModelQualification.FindQualifiedRunningModel(runningModels, ctx.Config.LocalAi);
+            if (running is null)
+                return StepResult.Fail("Ollama /api/ps did not report the exact qualified model and digest as loaded.");
+            if (running.ContextLength != ctx.Config.LocalAi.ContextWindow)
+            {
+                return StepResult.Fail(
+                    $"Ollama loaded context_length {running.ContextLength}, but {ctx.Config.LocalAi.ContextWindow} is required.");
+            }
+            if (running.SizeBytes <= 0 ||
+                running.SizeVramBytes <= 0 ||
+                running.SizeVramBytes != running.SizeBytes)
+            {
+                return StepResult.Fail(
+                    $"Ollama did not fully load the model on GPU (size={running.SizeBytes}, size_vram={running.SizeVramBytes}).");
+            }
+
+            ctx.ReportDetailProgress(new("inference", "complete", 1, 1, SetupDetailProgressUnit.None));
+            return StepResult.Ok(
+                $"Generated with {ctx.Config.LocalAi.Model} at {running.ContextLength} context with {running.SizeVramBytes} bytes resident on GPU");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException ex) when (timeout?.IsCancellationRequested == true)
+        {
+            return StepResult.Fail(
+                $"Local AI inference verification timed out after {ctx.Config.LocalAi.ProviderTimeoutSeconds} seconds.",
+                ex);
+        }
+        catch (Exception ex) when (ex is OllamaApiException or IOException or UnauthorizedAccessException or HttpRequestException)
+        {
+            return StepResult.Fail($"Local AI inference verification failed: {ex.Message}", ex);
+        }
+        finally
+        {
+            timeout?.Dispose();
+            apiLease?.Dispose();
+            if (runtime is not null)
+            {
+                try { await runtime.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { ctx.Logger.Warn($"Could not dispose the inference verification runtime: {ex.Message}"); }
+            }
+        }
+    }
+}
+
+internal static class LocalAiModelQualification
+{
+    public static OllamaModelInfo? FindQualifiedTag(
+        IReadOnlyList<OllamaModelInfo> models,
+        LocalAiConfig config)
+        => models.FirstOrDefault(model =>
+            HasExactTag(model.Name, model.Model, config.Model) &&
+            model.SizeBytes == config.ModelApiSizeBytes &&
+            HasDigest(model.Digest, config.ModelDigest));
+
+    public static OllamaRunningModelInfo? FindQualifiedRunningModel(
+        IReadOnlyList<OllamaRunningModelInfo> models,
+        LocalAiConfig config)
+        => models.FirstOrDefault(model =>
+            HasExactTag(model.Name, model.Model, config.Model) &&
+            HasDigest(model.Digest, config.ModelDigest));
+
+    public static string? ValidateTagList(
+        IReadOnlyList<OllamaModelInfo> models,
+        LocalAiConfig config)
+    {
+        if (FindQualifiedTag(models, config) is not null)
+            return null;
+        var exactTag = models.FirstOrDefault(model => HasExactTag(model.Name, model.Model, config.Model));
+        if (exactTag is null)
+            return $"the exact qualified model tag {config.Model} is missing.";
+        if (!HasDigest(exactTag.Digest, config.ModelDigest))
+            return $"model {config.Model} has an unexpected digest.";
+        return $"model {config.Model} reports size {exactTag.SizeBytes}, but {config.ModelApiSizeBytes} is required.";
+    }
+
+    public static bool HasExactTag(string? name, string? model, string requiredTag)
+        => string.Equals(name, requiredTag, StringComparison.Ordinal) ||
+           string.Equals(model, requiredTag, StringComparison.Ordinal);
+
+    public static bool HasDigest(string? observed, string required)
+        => string.Equals(NormalizeDigest(observed), NormalizeDigest(required), StringComparison.Ordinal);
+
+    private static string? NormalizeDigest(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var normalized = value.Trim();
+        if (normalized.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["sha256:".Length..];
+        return normalized.ToLowerInvariant();
     }
 }
 
@@ -589,8 +754,8 @@ public sealed class VerifyLocalAiWslStep : SetupStep
                     $"WSL reached managed Ollama {version.GetString()}, but qualified version {ctx.Config.LocalAi.Version} is required.");
             }
 
-            if (!TagsContainExactModel(tagsJson, ctx.Config.LocalAi.Model))
-                return StepResult.Fail("WSL reached Ollama but the exact qualified model tag is missing.");
+            if (!TagsContainQualifiedModel(tagsJson, ctx.Config.LocalAi))
+                return StepResult.Fail("WSL reached Ollama but the exact qualified model tag, digest, and size are missing.");
 
             ctx.ReportDetailProgress(new("verification", "complete", 1, 1, SetupDetailProgressUnit.None));
             return StepResult.Ok($"WSL reached Ollama {version.GetString()} and {ctx.Config.LocalAi.Model}");
@@ -610,7 +775,7 @@ public sealed class VerifyLocalAiWslStep : SetupStep
         return Encoding.UTF8.GetString(Convert.FromBase64String(line[marker.Length..]));
     }
 
-    private static bool TagsContainExactModel(string json, string requiredTag)
+    private static bool TagsContainQualifiedModel(string json, LocalAiConfig config)
     {
         using var document = JsonDocument.Parse(json);
         if (!document.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array)
@@ -620,7 +785,12 @@ public sealed class VerifyLocalAiWslStep : SetupStep
             foreach (var propertyName in new[] { "name", "model" })
             {
                 if (model.TryGetProperty(propertyName, out var value) &&
-                    string.Equals(value.GetString(), requiredTag, StringComparison.Ordinal))
+                    string.Equals(value.GetString(), config.Model, StringComparison.Ordinal) &&
+                    model.TryGetProperty("digest", out var digest) &&
+                    LocalAiModelQualification.HasDigest(digest.GetString(), config.ModelDigest) &&
+                    model.TryGetProperty("size", out var size) &&
+                    size.TryGetInt64(out var sizeBytes) &&
+                    sizeBytes == config.ModelApiSizeBytes)
                 {
                     return true;
                 }

@@ -71,6 +71,12 @@ public sealed partial class ProgressPage : Page
         ["verify-local-ai-wsl"],
         "Checking the native Ollama endpoint from the gateway");
 
+    private static readonly StepGroup LocalAiInferenceGroup = new(
+        "local-ai-inference",
+        "Verifying Local AI inference on GPU",
+        ["verify-local-ai-inference"],
+        "One-token generation at 256K context with full GPU residency");
+
     private static readonly StepGroup LocalAiGatewayGroup = new(
         "local-ai-gateway",
         "Connecting OpenClaw to Local AI",
@@ -196,7 +202,7 @@ public sealed partial class ProgressPage : Page
         if (!localAiEnabled)
             return StandardStepGroups;
 
-        var groups = new List<StepGroup>(StandardStepGroups.Length + 5);
+        var groups = new List<StepGroup>(StandardStepGroups.Length + 6);
         foreach (var group in StandardStepGroups)
         {
             if (group.GroupId == "configure")
@@ -222,6 +228,7 @@ public sealed partial class ProgressPage : Page
                         ? "Uses a healthy existing engine or installs the pinned managed engine"
                         : $"Managed install when needed: {localAiEngineDescription}"));
                 groups.Add(LocalAiModelGroup);
+                groups.Add(LocalAiInferenceGroup);
                 groups.Add(LocalAiWslVerificationGroup);
             }
         }
@@ -396,6 +403,7 @@ public sealed partial class ProgressPage : Page
             {
                 "artifact" => "local-ai-engine",
                 "model" => "local-ai-model",
+                "inference" => "local-ai-inference",
                 "verification" => "local-ai-wsl-verification",
                 _ => null,
             };
@@ -414,6 +422,10 @@ public sealed partial class ProgressPage : Page
             else if (e.Phase == "artifact")
             {
                 SubtitleText.Text = $"Preparing Ollama for Local AI: {detail}";
+            }
+            else if (e.Phase == "inference")
+            {
+                SubtitleText.Text = $"Verifying Local AI inference on GPU: {detail}";
             }
         });
     }

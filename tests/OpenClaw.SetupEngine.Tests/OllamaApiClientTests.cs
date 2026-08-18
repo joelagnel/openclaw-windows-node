@@ -38,7 +38,7 @@ public sealed class OllamaApiClientTests
                       "name": "qwen3.6:35b-a3b-mtp-q4_K_M",
                       "model": "qwen3.6:35b-a3b-mtp-q4_K_M",
                       "modified_at": "2026-08-17T12:34:56Z",
-                      "size": 22621302688,
+                      "size": 22621314717,
                       "digest": "sha256:abc"
                     },
                     { "size": -10 }
@@ -53,7 +53,7 @@ public sealed class OllamaApiClientTests
 
         var model = Assert.Single(models);
         Assert.Equal(LocalAiConfig.DefaultModel, model.Name);
-        Assert.Equal(22_621_302_688, model.SizeBytes);
+        Assert.Equal(LocalAiConfig.DefaultModelApiSizeBytes, model.SizeBytes);
         Assert.Equal("sha256:abc", model.Digest);
         Assert.Equal(DateTimeOffset.Parse("2026-08-17T12:34:56Z"), model.ModifiedAt);
     }
@@ -74,6 +74,77 @@ public sealed class OllamaApiClientTests
         var client = new OllamaApiClient(httpClient, Endpoint);
 
         await client.DeleteModelAsync(LocalAiConfig.DefaultModel, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_SendsQualifiedNonStreamingGpuProbe()
+    {
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/generate", request.RequestUri?.AbsolutePath);
+            var requestJson = await request.Content!.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(requestJson);
+            var root = document.RootElement;
+            Assert.Equal(LocalAiConfig.DefaultModel, root.GetProperty("model").GetString());
+            Assert.Equal("probe", root.GetProperty("prompt").GetString());
+            Assert.False(root.GetProperty("stream").GetBoolean());
+            Assert.False(root.GetProperty("think").GetBoolean());
+            Assert.Equal("10m", root.GetProperty("keep_alive").GetString());
+            var options = root.GetProperty("options");
+            Assert.Equal(262_144, options.GetProperty("num_ctx").GetInt32());
+            Assert.Equal(1, options.GetProperty("num_predict").GetInt32());
+            Assert.Equal(999, options.GetProperty("num_gpu").GetInt32());
+            return JsonResponse($$"""{"model":"{{LocalAiConfig.DefaultModel}}","response":"ready","done":true}""");
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new OllamaApiClient(httpClient, Endpoint);
+
+        var result = await client.GenerateAsync(
+            LocalAiConfig.DefaultModel,
+            "probe",
+            262_144,
+            1,
+            999,
+            "10m",
+            CancellationToken.None);
+
+        Assert.True(result.Done);
+        Assert.Equal("ready", result.Response);
+    }
+
+    [Fact]
+    public async Task ListRunningModelsAsync_ParsesGpuResidencyAndContext()
+    {
+        const long loadedSize = 22_857_174_219;
+        var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/ps", request.RequestUri?.AbsolutePath);
+            return JsonResponse($$"""
+                {
+                  "models": [{
+                    "name": "{{LocalAiConfig.DefaultModel}}",
+                    "model": "{{LocalAiConfig.DefaultModel}}",
+                    "size": {{loadedSize}},
+                    "size_vram": {{loadedSize}},
+                    "digest": "{{LocalAiConfig.DefaultModelDigest}}",
+                    "context_length": 262144
+                  }]
+                }
+                """);
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new OllamaApiClient(httpClient, Endpoint);
+
+        var models = await client.ListRunningModelsAsync(CancellationToken.None);
+
+        var model = Assert.Single(models);
+        Assert.Equal(LocalAiConfig.DefaultModel, model.Name);
+        Assert.Equal(loadedSize, model.SizeBytes);
+        Assert.Equal(loadedSize, model.SizeVramBytes);
+        Assert.Equal(LocalAiConfig.DefaultModelDigest, model.Digest);
+        Assert.Equal(262_144, model.ContextLength);
     }
 
     [Fact]

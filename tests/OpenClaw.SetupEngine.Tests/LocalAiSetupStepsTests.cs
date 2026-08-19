@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
+using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
+using OpenClaw.TestSupport;
 
 namespace OpenClaw.SetupEngine.Tests;
 
@@ -320,7 +322,81 @@ public sealed class LocalAiSetupStepsTests
         Assert.Null(context.LocalAiModelInstall);
     }
 
-    private static SetupContext CreateContext(LocalAiConfig localAi, ICommandRunner? commands = null)
+    [Fact]
+    public async Task Manifest_PersistsExactQualifiedPlanAndOwnedPaths()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true },
+            localDataDirectory: temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiPort = 49_151;
+        context.LocalAiRuntimeInstall = RuntimeInstall(temp.Path);
+        context.LocalAiModelInstall = ModelInstall(temp.Path, LocalModelCatalog.Default);
+        var step = new PersistLocalAiManifestStep();
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+        LocalAiResolvedInstall? loaded = await new LocalAiManifestStore(new LocalAiPaths(temp.Path)).LoadAsync();
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.NotNull(loaded);
+        Assert.Equal(LlamaRuntimeCatalog.Arm64RuntimeId, loaded.Manifest.RuntimeId);
+        Assert.Equal(LocalModelCatalog.Qwen35BModelId, loaded.Manifest.ModelCatalogId);
+        Assert.Equal("GPU-SPARK", loaded.Manifest.SelectedGpuId);
+        Assert.Equal(49_151, loaded.Endpoint.Port);
+        Assert.Equal(2, loaded.Manifest.RuntimeAssets.Length);
+        Assert.Equal(LocalModelCatalog.NativeContextTokens, loaded.Manifest.ContextLength);
+        Assert.True(context.LocalAiManifestCreatedThisRun);
+    }
+
+    [Fact]
+    public async Task Manifest_RollbackDeletesOnlyReceiptCreatedThisRun()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true },
+            localDataDirectory: temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiPort = 49_151;
+        context.LocalAiRuntimeInstall = RuntimeInstall(temp.Path);
+        context.LocalAiModelInstall = ModelInstall(temp.Path, LocalModelCatalog.Default);
+        var step = new PersistLocalAiManifestStep();
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.False(File.Exists(new LocalAiPaths(temp.Path).ManifestPath));
+        Assert.False(context.LocalAiManifestCreatedThisRun);
+    }
+
+    [Fact]
+    public async Task Manifest_RefusesToOverwriteExistingReceipt()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        var paths = new LocalAiPaths(temp.Path);
+        Directory.CreateDirectory(paths.RootDirectory);
+        await File.WriteAllTextAsync(paths.ManifestPath, "existing receipt");
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true },
+            localDataDirectory: temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiPort = 49_151;
+        context.LocalAiRuntimeInstall = RuntimeInstall(temp.Path);
+        context.LocalAiModelInstall = ModelInstall(temp.Path, LocalModelCatalog.Default);
+
+        StepResult result = await new PersistLocalAiManifestStep().ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Equal("existing receipt", await File.ReadAllTextAsync(paths.ManifestPath));
+        Assert.False(context.LocalAiManifestCreatedThisRun);
+    }
+
+    private static SetupContext CreateContext(
+        LocalAiConfig localAi,
+        ICommandRunner? commands = null,
+        string? localDataDirectory = null)
     {
         var config = new SetupConfig { LocalAi = localAi };
         var logger = new SetupLogger(filePath: null, LogLevel.Trace);
@@ -329,7 +405,8 @@ public sealed class LocalAiSetupStepsTests
             logger,
             new TransactionJournal(filePath: null),
             commands ?? new CommandRunner(logger),
-            CancellationToken.None);
+            CancellationToken.None,
+            localDataDir: localDataDirectory);
     }
 
     private static HostHardwareInfo CreateSparkHardware() =>
@@ -349,15 +426,29 @@ public sealed class LocalAiSetupStepsTests
             ],
             VulkanAvailable: false);
 
-    private static LlamaRuntimeInstallResult RuntimeInstall(string localDataDirectory) =>
-        new(
+    private static LlamaRuntimeInstallResult RuntimeInstall(string localDataDirectory)
+    {
+        LlamaRuntimeVariant runtime = LlamaRuntimeCatalog.Find(Architecture.Arm64)!;
+        return new(
             Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"),
             Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server", "llama-server.exe"),
             LlamaRuntimeInstallDisposition.Installed,
             CreatedThisRun: true,
-            VerifiedArchives: [],
+            VerifiedArchives: runtime.Artifacts.Select(artifact => new LocalAiVerifiedArchive(
+                Path.GetFileName(artifact.RelativePath),
+                artifact.SizeBytes,
+                artifact.Sha256.Value)).ToArray(),
             Rollback: new LocalAiArtifactRollbackMetadata(
                 Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server")));
+    }
+
+    private static HuggingFaceModelInstallResult ModelInstall(
+        string localDataDirectory,
+        LocalModelInfo model) =>
+        new(
+            Path.Combine(localDataDirectory, "LocalAI", "models", model.Weights.RelativePath),
+            HuggingFaceModelInstallDisposition.Downloaded,
+            CreatedThisRun: true);
 
     private sealed class FakeHardwareProbe(HostHardwareInfo hardware, bool throwOnProbe = false) : IHostHardwareProbe
     {

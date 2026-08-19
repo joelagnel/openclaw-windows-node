@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Collections.Immutable;
+using System.Runtime.InteropServices;
 using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
@@ -434,5 +436,132 @@ public sealed class AcquireLocalAiModelStep : SetupStep
         }
 
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>Persists one immutable ownership and qualification receipt.</summary>
+public sealed class PersistLocalAiManifestStep : SetupStep
+{
+    public override string Id => "persist-local-ai-manifest";
+    public override string DisplayName => "Recording Local AI installation";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiEligibility?.Plan is not { } plan ||
+            ctx.LocalAiEligibility.SelectedGpu is not { StableId: { Length: > 0 } gpuId } ||
+            ctx.LocalAiPort is not > 0 ||
+            ctx.LocalAiRuntimeInstall is not { } runtimeInstall ||
+            ctx.LocalAiModelInstall is not { } modelInstall)
+        {
+            return StepResult.Terminal(
+                "The Local AI installation receipt requires completed hardware, runtime, and model steps.");
+        }
+
+        if (plan.Model.Weights.Source is not HuggingFaceRevisionSource modelSource)
+            return StepResult.Terminal("The selected Local AI model does not have immutable Hugging Face provenance.");
+
+        var paths = new LocalAiPaths(ctx.LocalDataDir);
+        if (File.Exists(paths.ManifestPath))
+            return StepResult.Terminal("A managed Local AI installation receipt already exists.");
+
+        ImmutableArray<LocalAiAssetReceipt> runtimeAssets;
+        try
+        {
+            runtimeAssets = BuildRuntimeReceipts(plan.Runtime, runtimeInstall);
+        }
+        catch (InvalidDataException ex)
+        {
+            return StepResult.Terminal(ex.Message, ex);
+        }
+
+        var manifest = new LocalAiInstallManifest
+        {
+            EngineVersion = LlamaRuntimeCatalog.ReleaseTag,
+            Architecture = plan.Runtime.Architecture switch
+            {
+                Architecture.X64 => "x64",
+                Architecture.Arm64 => "arm64",
+                _ => throw new InvalidDataException("The selected Local AI runtime architecture is unsupported."),
+            },
+            HardwareProfileId = plan.HardwareProfile.Id,
+            RuntimeId = plan.Runtime.Id,
+            ModelCatalogId = plan.Model.Id,
+            SelectedGpuId = gpuId,
+            ExecutablePath = Path.GetRelativePath(paths.RootDirectory, runtimeInstall.ExecutablePath),
+            RuntimeAssets = runtimeAssets,
+            ModelPath = Path.GetRelativePath(paths.RootDirectory, modelInstall.ModelPath),
+            ModelId = $"{modelSource.RepositoryId}@{modelSource.RevisionSha}",
+            ModelAlias = plan.Model.Id,
+            ModelAsset = new LocalAiAssetReceipt
+            {
+                FileName = Path.GetFileName(plan.Model.Weights.RelativePath),
+                SourceUrl = plan.Model.Weights.DownloadUri.AbsoluteUri,
+                SizeBytes = plan.Model.Weights.SizeBytes,
+                Sha256 = plan.Model.Weights.Sha256.Value,
+            },
+            Endpoint = $"http://127.0.0.1:{ctx.LocalAiPort.Value}/v1",
+            ContextLength = plan.Model.Recipe.ContextTokens,
+        };
+
+        var store = new LocalAiManifestStore(paths);
+        try
+        {
+            await store.SaveAsync(manifest, ct);
+            ctx.LocalAiResolvedInstall = store.ResolveAndValidate(manifest);
+            ctx.LocalAiManifestCreatedThisRun = true;
+            return StepResult.Ok("Recorded the verified llama-server and Hugging Face installation.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return StepResult.Fail($"The Local AI installation receipt could not be saved: {ex.Message}", ex);
+        }
+    }
+
+    public override async Task RollbackAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (!ctx.LocalAiManifestCreatedThisRun)
+            return;
+
+        await new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir)).DeleteAsync(ct);
+        ctx.LocalAiResolvedInstall = null;
+        ctx.LocalAiManifestCreatedThisRun = false;
+    }
+
+    private static ImmutableArray<LocalAiAssetReceipt> BuildRuntimeReceipts(
+        LlamaRuntimeVariant runtime,
+        LlamaRuntimeInstallResult install)
+    {
+        if (install.VerifiedArchives.Count != runtime.Artifacts.Count)
+            throw new InvalidDataException("The installed llama-server archive receipt set is incomplete.");
+
+        var receipts = ImmutableArray.CreateBuilder<LocalAiAssetReceipt>(runtime.Artifacts.Count);
+        foreach (PinnedArtifact artifact in runtime.Artifacts)
+        {
+            string fileName = Path.GetFileName(artifact.RelativePath);
+            LocalAiVerifiedArchive verified = install.VerifiedArchives.SingleOrDefault(
+                candidate => string.Equals(candidate.FileName, fileName, StringComparison.Ordinal))
+                ?? throw new InvalidDataException(
+                    $"The installed llama-server archive receipt for '{fileName}' is missing.");
+            if (verified.SizeBytes != artifact.SizeBytes ||
+                !string.Equals(verified.Sha256, artifact.Sha256.Value, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"The installed llama-server archive receipt for '{fileName}' does not match its pin.");
+            }
+
+            receipts.Add(new LocalAiAssetReceipt
+            {
+                FileName = fileName,
+                SourceUrl = artifact.DownloadUri.AbsoluteUri,
+                SizeBytes = verified.SizeBytes,
+                Sha256 = verified.Sha256,
+            });
+        }
+
+        return receipts.MoveToImmutable();
     }
 }

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
@@ -482,6 +483,8 @@ public sealed class SetupContext
     public int? LocalAiPort { get; set; }
     internal LlamaRuntimeInstallResult? LocalAiRuntimeInstall { get; set; }
     internal HuggingFaceModelInstallResult? LocalAiModelInstall { get; set; }
+    internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
+    internal bool LocalAiManifestCreatedThisRun { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

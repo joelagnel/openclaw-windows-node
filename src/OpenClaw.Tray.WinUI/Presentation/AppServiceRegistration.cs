@@ -53,6 +53,8 @@ internal static class AppServiceRegistration
         // Transient page view models resolved per navigation scope.
         services.AddTransient<SettingsPageViewModel>();
         services.AddTransient<PermissionsPageViewModel>();
+        if (context.LocalAiRuntime is not null)
+            services.AddTransient<LocalAiPageViewModel>();
 
         return services;
     }

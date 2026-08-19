@@ -15,6 +15,7 @@ using OpenClawTray.Helpers;
 using OpenClawTray.Services;
 using OpenClawTray.Windows;
 using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClawTray.Presentation;
 using OpenClawTray.Presentation.Adapters;
@@ -56,6 +57,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     private OpenClawTray.Services.ManagedLocalGatewayAutoRepairMonitor? _managedLocalAutoRepairMonitor;
     private ManagedLocalGatewayPortProvenanceService? _managedLocalPortProvenance;
     private OpenClawTray.Chat.OpenClawChatCoordinator? _chatCoordinator;
+    private ILocalAiRuntime? _localAiRuntime;
 
     /// <summary>
     /// Root DI composition root, built once during startup and disposed during
@@ -76,6 +78,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             [typeof(Pages.SettingsPage)] = typeof(SettingsPageViewModel),
             [typeof(Pages.PermissionsPage)] = typeof(PermissionsPageViewModel),
+            [typeof(Pages.LocalAiPage)] = typeof(LocalAiPageViewModel),
         };
 
     /// <summary>The root service provider, or null before startup / after shutdown.</summary>
@@ -457,7 +460,13 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         }
 
         var dispatcher = new WinUIDispatcher(_dispatcherQueue);
-        var context = new AppServiceContext(dispatcher, this, _settings, ExecApprovalsStore, this);
+        var context = new AppServiceContext(
+            dispatcher,
+            this,
+            _settings,
+            ExecApprovalsStore,
+            this,
+            _localAiRuntime);
 
         var services = new ServiceCollection();
         services.AddOpenClawTrayCore(context);
@@ -708,6 +717,12 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         _sshTunnelService = new SshTunnelService(new AppLogger());
         _sshTunnelService.TunnelExited += OnSshTunnelExited;
+        _localAiRuntime = new LlamaServerRuntimeService(
+            new LlamaServerRuntimeOptions
+            {
+                Paths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()),
+            },
+            new AppLogger());
 
         // Initialize tray icon FIRST (window-less pattern from WinUIEx).
         // The tray is application chrome and must always survive any failure
@@ -721,6 +736,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         // can never delay or preempt tray initialization. It only needs the
         // dispatcher + settings (created above) and failures are non-fatal.
         InitializeServiceProvider();
+        StartLocalAiRouterInBackground();
 
         // Initialize connection manager before setup flow.
         _gatewayRegistry = new GatewayRegistry(SettingsManager.SettingsDirectoryPath, logger: new AppLogger());
@@ -934,6 +950,35 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         await _activationRouter.DispatchPlanAsync(launchPlan, this, CancellationToken.None);
 
         Logger.Info("Application started (WinUI 3)");
+    }
+
+    /// <summary>
+    /// Starts only the lightweight llama-server router. The verified model preset is
+    /// explicitly load-on-startup=false, so the first inference request owns model load.
+    /// This observed background task must never delay tray or gateway startup.
+    /// </summary>
+    private void StartLocalAiRouterInBackground()
+    {
+        ILocalAiRuntime? runtime = _localAiRuntime;
+        if (runtime is null)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+                Logger.Info($"Local AI router startup state: {snapshot.State}");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Shutdown won the race with background router startup.
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Local AI router startup failed: {ex.Message}");
+            }
+        });
     }
 
     private void InitializeTrayIcon()
@@ -3253,7 +3298,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             if (_settings?.EnableNodeMode == true && _nodeService?.IsConnected == true)
             {
-                _appState!.LastCheckTime = DateTime.Now;
+                RecordHealthCheckTime();
                 OnUiThread(UpdateStatusDetailWindow);
                 if (userInitiated)
                 {
@@ -3275,7 +3320,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         try
         {
-            _appState!.LastCheckTime = DateTime.Now;
+            RecordHealthCheckTime();
             await client.CheckHealthAsync();
             if (userInitiated)
             {
@@ -3294,6 +3339,15 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                     .AddText(ex.Message));
             }
         }
+    }
+
+    private void RecordHealthCheckTime()
+    {
+        OnUiThread(() =>
+        {
+            if (_appState is not null)
+                _appState.LastCheckTime = DateTime.Now;
+        });
     }
 
     #endregion
@@ -3842,6 +3896,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     void IAppCommands.ShowChat() => ShowChatWindow();
     void IAppCommands.CheckForUpdates() => _ = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync();
     void IAppCommands.ShowOnboarding() => _ = ShowOnboardingAsync();
+    void IAppCommands.OpenLocalAiLogs() =>
+        OpenFolder(new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()).LogsDirectory, "Local AI logs");
     void IAppCommands.ShowGatewayWizard() => _ = ShowGatewayWizardAsync();
     void IAppCommands.ShowConnectionStatus() => ShowConnectionStatusWindow();
     void IAppCommands.NotifySettingsSaved() => OnSettingsSaved(this, EventArgs.Empty);

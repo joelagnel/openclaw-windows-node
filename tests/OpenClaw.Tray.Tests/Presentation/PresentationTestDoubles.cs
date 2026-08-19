@@ -69,12 +69,13 @@ internal sealed class FakeAppCommands : IAppCommands, IDisposable
 
     public void OpenDashboard(string? path = null) { }
     public void Navigate(string pageTag) => Navigations.Add(pageTag);
-    public void Reconnect() { }
+    public void Reconnect() => ReconnectCount++;
     public void Disconnect() { }
     public void ShowVoiceOverlay() { }
-    public void ShowChat() { }
+    public void ShowChat() => ShowChatCount++;
     public void CheckForUpdates() { }
-    public void ShowOnboarding() { }
+    public void ShowOnboarding() => ShowOnboardingCount++;
+    public void OpenLocalAiLogs() => OpenLocalAiLogsCount++;
     public void ShowGatewayWizard() { }
     public void ShowConnectionStatus() { }
     public void NotifySettingsSaved()
@@ -99,6 +100,10 @@ internal sealed class FakeAppCommands : IAppCommands, IDisposable
     /// <summary>Result returned by <see cref="ApplyAutoStart"/> so tests can simulate OS-write failure.</summary>
     public bool AutoStartResult { get; set; } = true;
     public int NotifySettingsSavedCount { get; private set; }
+    public int OpenLocalAiLogsCount { get; private set; }
+    public int ReconnectCount { get; private set; }
+    public int ShowChatCount { get; private set; }
+    public int ShowOnboardingCount { get; private set; }
 
     public void Dispose() => Disposed = true;
 }
@@ -142,6 +147,7 @@ internal sealed class SelfWritingAppCommands : IAppCommands
     public void ShowChat() { }
     public void CheckForUpdates() { }
     public void ShowOnboarding() { }
+    public void OpenLocalAiLogs() { }
     public void ShowGatewayWizard() { }
     public void ShowConnectionStatus() { }
     public void NotifySettingsSaved() { }

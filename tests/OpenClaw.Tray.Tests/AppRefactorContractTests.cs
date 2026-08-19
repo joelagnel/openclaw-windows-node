@@ -441,6 +441,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void HealthCheckTimestamp_IsMarshaledToUiThread()
+    {
+        var source = ReadAppSources();
+        var healthCheck = ExtractMethod(source, "RunHealthCheckAsync");
+        var timestampWriter = ExtractMethod(source, "RecordHealthCheckTime");
+
+        Assert.Equal(2, Regex.Matches(healthCheck, @"\bRecordHealthCheckTime\(\)").Count);
+        Assert.DoesNotContain("LastCheckTime =", healthCheck);
+        Assert.Contains("OnUiThread(() =>", timestampWriter);
+        Assert.Contains("_appState.LastCheckTime = DateTime.Now", timestampWriter);
+    }
+
+    [Fact]
     public void Dashboard_SurfacesSshTunnelConfigurationFailure()
     {
         var source = ReadAppSources();
@@ -1443,6 +1456,17 @@ public sealed class AppRefactorContractTests
         Assert.Contains("OpenClawOnboardCard.Visibility = activeGatewayAccess.CanControlWslGateway", code);
         Assert.Contains("CurrentApp.Registry?.Load();", code);
         Assert.Contains("OpenClawOnboardCard.Visibility = Visibility.Collapsed;", code);
+    }
+
+    [Fact]
+    public void Settings_LocalGatewayFallbackUsesSharedLoopbackClassifier()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "SettingsPage.xaml.cs"));
+        var loadGatewaySection = ExtractMethod(source, "LoadGatewaySection");
+
+        Assert.Contains("LocalGatewayUrlClassifier.IsLocalGatewayUrl(settings.GatewayUrl)", loadGatewaySection);
+        Assert.DoesNotContain("StartsWith(\"ws://localhost\"", loadGatewaySection);
     }
 
     [Fact]

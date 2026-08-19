@@ -78,6 +78,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             [typeof(Pages.SettingsPage)] = typeof(SettingsPageViewModel),
             [typeof(Pages.PermissionsPage)] = typeof(PermissionsPageViewModel),
+            [typeof(Pages.LocalAiPage)] = typeof(LocalAiPageViewModel),
         };
 
     /// <summary>The root service provider, or null before startup / after shutdown.</summary>
@@ -3308,7 +3309,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             if (_settings?.EnableNodeMode == true && _nodeService?.IsConnected == true)
             {
-                _appState!.LastCheckTime = DateTime.Now;
+                RecordHealthCheckTime();
                 OnUiThread(UpdateStatusDetailWindow);
                 if (userInitiated)
                 {
@@ -3330,7 +3331,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         try
         {
-            _appState!.LastCheckTime = DateTime.Now;
+            RecordHealthCheckTime();
             await client.CheckHealthAsync();
             if (userInitiated)
             {
@@ -3349,6 +3350,15 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                     .AddText(ex.Message));
             }
         }
+    }
+
+    private void RecordHealthCheckTime()
+    {
+        OnUiThread(() =>
+        {
+            if (_appState is not null)
+                _appState.LastCheckTime = DateTime.Now;
+        });
     }
 
     #endregion
@@ -3897,6 +3907,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     void IAppCommands.ShowChat() => ShowChatWindow();
     void IAppCommands.CheckForUpdates() => _ = _updateCoordinator!.CheckForUpdatesUserInitiatedAsync();
     void IAppCommands.ShowOnboarding() => _ = ShowOnboardingAsync();
+    void IAppCommands.OpenLocalAiLogs() =>
+        OpenFolder(new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()).LogsDirectory, "Local AI logs");
     void IAppCommands.ShowGatewayWizard() => _ = ShowGatewayWizardAsync();
     void IAppCommands.ShowConnectionStatus() => ShowConnectionStatusWindow();
     void IAppCommands.NotifySettingsSaved() => OnSettingsSaved(this, EventArgs.Empty);

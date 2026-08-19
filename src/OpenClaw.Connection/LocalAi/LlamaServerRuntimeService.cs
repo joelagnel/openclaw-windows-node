@@ -182,15 +182,6 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return Publish(LocalAiRuntimeState.Failed, LocalAiOwnership.None, Sanitize(ex.Message));
         }
 
-        WindowsTcpListenerSnapshotResult beforeStart = _platform.CaptureListeners();
-        if (!beforeStart.Ipv4Complete)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
-        if (install.Manifest.RequestedPort != LocalAiPortPolicy.Automatic &&
-            FindLoopbackListeners(beforeStart, install.Manifest.RequestedPort).Count > 0)
-        {
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The configured llama-server port is already in use.");
-        }
-
         LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
             .QuiesceAsync(install, cancellationToken)
             .ConfigureAwait(false);
@@ -200,6 +191,15 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 LocalAiRuntimeState.Failed,
                 LocalAiOwnership.None,
                 quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.");
+        }
+
+        WindowsTcpListenerSnapshotResult beforeStart = _platform.CaptureListeners();
+        if (!beforeStart.Ipv4Complete)
+            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
+        if (install.Manifest.RequestedPort != LocalAiPortPolicy.Automatic &&
+            FindEndpointListeners(beforeStart, install.Manifest.RequestedPort).Count > 0)
+        {
+            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The configured llama-server port is already in use.");
         }
 
         long generation = ++_generation;
@@ -315,7 +315,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 WindowsTcpListenerSnapshotResult snapshot = _platform.CaptureListeners();
                 if (!snapshot.Ipv4Complete)
                     return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
-                if (FindLoopbackListeners(snapshot, persistedEndpoint.Port).Count > 0)
+                if (FindEndpointListeners(snapshot, persistedEndpoint.Port).Count > 0)
                 {
                     return Publish(
                         LocalAiRuntimeState.Conflict,
@@ -578,6 +578,16 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         WindowsTcpListenerInfo[] loopbackListeners = snapshot.Listeners
             .Where(IsIpv4LoopbackListener)
             .ToArray();
+        if (snapshot.Listeners.Any(listener =>
+                listener.ProcessId == process.ProcessId &&
+                listener.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                !IsIpv4LoopbackListener(listener)))
+        {
+            return new(
+                true,
+                null,
+                "Managed llama-server opened an IPv4 listener outside the loopback interface.");
+        }
         WindowsTcpListenerInfo[] processListeners = loopbackListeners
             .Where(listener => listener.ProcessId == process.ProcessId)
             .ToArray();
@@ -595,7 +605,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         int requestedPort = install.Manifest.RequestedPort;
         if (requestedPort != LocalAiPortPolicy.Automatic)
         {
-            IReadOnlyList<WindowsTcpListenerInfo> requestedListeners = FindLoopbackListeners(snapshot, requestedPort);
+            IReadOnlyList<WindowsTcpListenerInfo> requestedListeners = FindEndpointListeners(snapshot, requestedPort);
             if (requestedListeners.Any(listener => !IsManagedListener(listener, process)))
                 return new(true, null, "Another process owns the configured llama-server endpoint.");
             if (ownedListeners.Any(listener => listener.Port != requestedPort))
@@ -612,19 +622,22 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return new(true, null, "Managed llama-server opened more than one candidate loopback endpoint.");
 
         int selectedPort = ownedPorts[0];
-        if (FindLoopbackListeners(snapshot, selectedPort).Any(listener => !IsManagedListener(listener, process)))
+        if (FindEndpointListeners(snapshot, selectedPort).Any(listener => !IsManagedListener(listener, process)))
             return new(true, null, "Another process shares the managed llama-server endpoint.");
         return new(true, BuildEndpoint(selectedPort), null);
     }
 
-    private static IReadOnlyList<WindowsTcpListenerInfo> FindLoopbackListeners(
+    private static IReadOnlyList<WindowsTcpListenerInfo> FindEndpointListeners(
         WindowsTcpListenerSnapshotResult snapshot,
         int port) => snapshot.Listeners
-            .Where(listener => listener.Port == port && IsIpv4LoopbackListener(listener))
+            .Where(listener => listener.Port == port && IsIpv4EndpointListener(listener))
             .ToArray();
 
+    private static bool IsIpv4EndpointListener(WindowsTcpListenerInfo listener) =>
+        IsIpv4LoopbackListener(listener) || listener.Address.Equals(IPAddress.Any);
+
     private static bool IsIpv4LoopbackListener(WindowsTcpListenerInfo listener) =>
-        listener.Address.Equals(IPAddress.Loopback) || listener.Address.Equals(IPAddress.Any);
+        listener.Address.Equals(IPAddress.Loopback);
 
     private static Uri BuildEndpoint(int port) =>
         new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri;

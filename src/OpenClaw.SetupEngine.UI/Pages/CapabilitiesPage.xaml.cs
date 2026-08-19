@@ -272,7 +272,7 @@ public sealed partial class CapabilitiesPage : Page
             ? setupWindow.GetWslViabilityAsync()
             : InspectWslViabilityAsync();
 
-        var unavailableReasons = new List<string>();
+        string? hardwareReason = null;
         LocalInferenceEligibilityResult? eligibility = null;
         try
         {
@@ -281,13 +281,13 @@ public sealed partial class CapabilitiesPage : Page
                 _localAiHardware,
                 _config!.LocalAi.SelectedModelId);
             if (!eligibility.CanInstall || eligibility.Plan is null || eligibility.SelectedGpu is null)
-                unavailableReasons.Add($"Hardware: {DescribeLocalAiUnavailable(eligibility)}");
+                hardwareReason = DescribeLocalAiUnavailable(eligibility);
         }
         catch
         {
-            unavailableReasons.Add(
-                "Hardware: OpenClaw could not read the NVIDIA GPU, driver, CUDA, or memory information. " +
-                "Check the NVIDIA driver installation and try setup again.");
+            hardwareReason =
+                "OpenClaw could not read the NVIDIA GPU, driver, CUDA, or memory information. " +
+                "Check the NVIDIA driver installation and try setup again.";
         }
 
         WslViabilityResult wslViability;
@@ -303,9 +303,7 @@ public sealed partial class CapabilitiesPage : Page
                 "Run wsl --status in PowerShell, resolve the reported problem, and try setup again.");
         }
 
-        if (wslViability.BlocksSetup)
-            unavailableReasons.Add($"WSL: {wslViability.Description}");
-
+        string? wslNetworkingReason = null;
         try
         {
             _localAiNetworkingStatus = forceNetworkingConsent
@@ -315,17 +313,21 @@ public sealed partial class CapabilitiesPage : Page
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             Debug.WriteLine($"WSL networking inspection failed: {ex}");
-            unavailableReasons.Add(
-                "WSL networking: OpenClaw cannot safely read the global .wslconfig file. " +
-                "Check that the file is valid and readable, then try setup again.");
+            wslNetworkingReason =
+                "OpenClaw cannot safely read the global .wslconfig file. " +
+                "Check that the file is valid and readable, then try setup again.";
         }
 
         if (_setupWindow is null && setupWindow is not null)
             return;
 
-        if (unavailableReasons.Count > 0)
+        string? unavailableReason = LocalAiAvailabilityReasons.Build(
+            hardwareReason,
+            wslViability,
+            wslNetworkingReason);
+        if (unavailableReason is not null)
         {
-            ShowLocalAiUnavailable(string.Join(Environment.NewLine + Environment.NewLine, unavailableReasons));
+            ShowLocalAiUnavailable(unavailableReason);
             return;
         }
 

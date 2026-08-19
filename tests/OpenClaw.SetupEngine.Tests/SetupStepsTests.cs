@@ -1221,6 +1221,80 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task PreflightWsl_MissingPlatformIsInstallableWithoutMutation()
+    {
+        var commands = new FakeCommandRunner(args =>
+            args is ["--version"]
+                ? new CommandResult(
+                    1,
+                    "",
+                    "Windows Subsystem for Linux is not installed. See https://aka.ms/wslinstall",
+                    TimeSpan.Zero,
+                    TimedOut: false)
+                : Fail($"unexpected args: {string.Join(' ', args)}"));
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(WslViabilityKind.Installable, ctx.WslViability?.Kind);
+        Assert.Contains("after Local AI is verified", result.Message);
+        Assert.DoesNotContain(commands.Calls, call => call.Arguments.Contains("--install"));
+        Assert.Single(commands.Calls);
+    }
+
+    [Fact]
+    public async Task EnsureWslPlatform_InstallsOnlyAfterReadOnlyPreflight()
+    {
+        var installed = false;
+        var installCalls = 0;
+        var commands = new FakeCommandRunner(args => args switch
+        {
+            ["--version"] when !installed => new CommandResult(
+                1,
+                "",
+                "Windows Subsystem for Linux is not installed. See https://aka.ms/wslinstall",
+                TimeSpan.Zero,
+                TimedOut: false),
+            ["--version"] => Ok("WSL version: 2.7.3.0\n"),
+            ["--status"] => Ok("Default Version: 2\n"),
+            _ => Fail($"unexpected args: {string.Join(' ', args)}"),
+        });
+        var ctx = CreateContext(commands: commands);
+        var step = new EnsureWslPlatformStep((_, _) =>
+        {
+            installCalls++;
+            installed = true;
+            return Task.FromResult(StepResult.Ok("installed"));
+        });
+
+        var result = await step.ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(1, installCalls);
+        Assert.Equal(WslViabilityKind.Ready, ctx.WslViability?.Kind);
+        Assert.Equal(3, commands.Calls.Count);
+    }
+
+    [Fact]
+    public async Task PreflightWsl_UnclassifiedStatusFailureFailsClosed()
+    {
+        var commands = new FakeCommandRunner(args => args switch
+        {
+            ["--version"] => Ok("WSL version: 2.7.3.0\n"),
+            ["--status"] => Fail("Access denied"),
+            _ => Fail($"unexpected args: {string.Join(' ', args)}"),
+        });
+        var ctx = CreateContext(commands: commands);
+
+        var result = await new PreflightWslStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Equal(WslViabilityKind.InspectionFailed, ctx.WslViability?.Kind);
+        Assert.Contains("could not safely verify", result.Message);
+    }
+
+    [Fact]
     public async Task CreateWslInstance_UsesDirectFreshInstallAndDoesNotExportBaseDistro()
     {
         var installed = false;

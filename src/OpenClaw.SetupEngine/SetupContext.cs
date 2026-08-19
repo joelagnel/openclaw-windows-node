@@ -480,6 +480,7 @@ public sealed class SetupContext
     public IProgress<SetupDetailProgressEvent>? DetailProgress { get; set; }
     public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
         EndpointProvenanceProbe { get; set; }
+    internal WslViabilityResult? WslViability { get; set; }
     public HostHardwareInfo? LocalAiHardware { get; set; }
     public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
     public int? LocalAiPort { get; set; }

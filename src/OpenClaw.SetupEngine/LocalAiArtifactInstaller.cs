@@ -149,6 +149,8 @@ internal sealed class LocalAiArtifactInstaller
                 resolvedArchives,
                 stagingDirectory);
 
+            RemoveStaleStagingEntries(localDataDirectory, paths.StagingDirectory);
+
             foreach (var resolved in resolvedArchives)
                 RemoveStalePartial(localDataDirectory, resolved.PartialArchivePath);
 
@@ -771,14 +773,12 @@ internal sealed class LocalAiArtifactInstaller
         {
             if (!Directory.Exists(path))
                 return;
-            if (LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+            if (LocalAiPathPolicy.TryDeleteManagedTree(
                     localDataDirectory,
                     path,
-                    out var deletePath,
+                    allowRoot: false,
                     out _))
-            {
-                Directory.Delete(deletePath, recursive: true);
-            }
+                return;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
@@ -786,6 +786,24 @@ internal sealed class LocalAiArtifactInstaller
                 "Could not clean Local AI staging directory '{0}': {1}",
                 path,
                 ex.Message);
+        }
+    }
+
+    private static void RemoveStaleStagingEntries(
+        string localDataDirectory,
+        string stagingDirectory)
+    {
+        foreach (string entry in Directory.EnumerateFileSystemEntries(stagingDirectory))
+        {
+            if (!LocalAiPathPolicy.TryDeleteManagedTree(
+                    localDataDirectory,
+                    entry,
+                    allowRoot: false,
+                    out string error))
+            {
+                throw new LocalAiArtifactInstallException(
+                    $"A stale Local AI staging entry could not be removed safely: {error}");
+            }
         }
     }
 

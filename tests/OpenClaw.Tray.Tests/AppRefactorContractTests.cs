@@ -1343,10 +1343,7 @@ public sealed class AppRefactorContractTests
         Assert.Contains("LocalAiUnavailableDetailsButton", xaml);
         Assert.Contains("Why Local AI is unavailable", source);
         Assert.Contains("LocalAiInstallReviewCard.Visibility = Visibility.Visible", ExtractMethod(source, "ShowLocalAiUnavailable"));
-        Assert.Contains("wslViability.BlocksSetup", source);
-        Assert.Contains("unavailableReasons.Add($\"Hardware:", source);
-        Assert.Contains("unavailableReasons.Add($\"WSL:", source);
-        Assert.Contains("string.Join(Environment.NewLine + Environment.NewLine, unavailableReasons)", source);
+        Assert.Contains("LocalAiAvailabilityReasons.Build", source);
         Assert.Contains("One or more Local AI requirements are unavailable.", xaml);
     }
 

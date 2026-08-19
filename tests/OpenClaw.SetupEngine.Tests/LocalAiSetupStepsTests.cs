@@ -374,10 +374,13 @@ public sealed class LocalAiSetupStepsTests
         context.LocalAiModelInstall = ModelInstall(temp.Path, LocalModelCatalog.Default);
         var step = new PersistLocalAiManifestStep();
         await step.ExecuteAsync(context, CancellationToken.None);
+        var paths = new LocalAiPaths(temp.Path);
+        await File.WriteAllTextAsync(paths.RouterPresetPath, "generated router preset");
 
         await step.RollbackAsync(context, CancellationToken.None);
 
-        Assert.False(File.Exists(new LocalAiPaths(temp.Path).ManifestPath));
+        Assert.False(File.Exists(paths.ManifestPath));
+        Assert.False(File.Exists(paths.RouterPresetPath));
         Assert.False(context.LocalAiManifestCreatedThisRun);
     }
 

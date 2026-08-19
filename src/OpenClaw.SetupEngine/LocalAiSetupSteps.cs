@@ -554,7 +554,10 @@ public sealed class PersistLocalAiManifestStep : SetupStep
         if (!ctx.LocalAiManifestCreatedThisRun)
             return;
 
-        await new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir)).DeleteAsync(ct);
+        var paths = new LocalAiPaths(ctx.LocalDataDir);
+        await new LocalAiManifestStore(paths).DeleteAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        File.Delete(paths.RouterPresetPath);
         ctx.LocalAiResolvedInstall = null;
         ctx.LocalAiManifestCreatedThisRun = false;
     }

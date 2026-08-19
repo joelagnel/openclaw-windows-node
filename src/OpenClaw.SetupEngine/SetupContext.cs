@@ -3,6 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenClaw.Connection;
 using OpenClaw.Shared;
+using OpenClaw.Shared.Inference;
+using OpenClaw.Shared.Inference.Catalog;
 
 namespace OpenClaw.SetupEngine;
 
@@ -475,6 +477,9 @@ public sealed class SetupContext
     public IExternalAuthorizationPresenter? ExternalAuthorizationPresenter { get; set; }
     public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
         EndpointProvenanceProbe { get; set; }
+    public HostHardwareInfo? LocalAiHardware { get; set; }
+    public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
+    public int? LocalAiPort { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

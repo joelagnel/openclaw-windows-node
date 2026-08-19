@@ -1,0 +1,138 @@
+using System.Net;
+using System.Net.Sockets;
+using OpenClaw.Shared.Inference;
+using OpenClaw.Shared.Inference.Catalog;
+
+namespace OpenClaw.SetupEngine;
+
+internal interface ILocalAiPortSelector
+{
+    bool TrySelect(int requestedPort, out int selectedPort, out string? error);
+}
+
+internal sealed class LoopbackLocalAiPortSelector : ILocalAiPortSelector
+{
+    public bool TrySelect(int requestedPort, out int selectedPort, out string? error)
+    {
+        selectedPort = 0;
+        error = null;
+        if (requestedPort is < 0 or > 65_535)
+        {
+            error = "The local inference port must be zero or between 1 and 65535.";
+            return false;
+        }
+
+        try
+        {
+            var listener = new TcpListener(IPAddress.Loopback, requestedPort)
+            {
+                ExclusiveAddressUse = true,
+            };
+            listener.Start();
+            selectedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return true;
+        }
+        catch (Exception ex) when (ex is SocketException or UnauthorizedAccessException)
+        {
+            error = requestedPort == 0
+                ? "Windows could not allocate a loopback port for local inference."
+                : $"Loopback port {requestedPort} is not available for local inference.";
+            return false;
+        }
+    }
+}
+
+/// <summary>
+/// Selects one qualified SKU/runtime/model plan before setup mutates WSL,
+/// downloads artifacts, or changes gateway configuration.
+/// </summary>
+public sealed class PreflightLocalAiHardwareStep : SetupStep
+{
+    private readonly IHostHardwareProbe _hardwareProbe;
+    private readonly ILocalAiPortSelector _portSelector;
+
+    public PreflightLocalAiHardwareStep()
+        : this(new NvmlHostHardwareProbe(), new LoopbackLocalAiPortSelector())
+    {
+    }
+
+    internal PreflightLocalAiHardwareStep(
+        IHostHardwareProbe hardwareProbe,
+        ILocalAiPortSelector portSelector)
+    {
+        _hardwareProbe = hardwareProbe ?? throw new ArgumentNullException(nameof(hardwareProbe));
+        _portSelector = portSelector ?? throw new ArgumentNullException(nameof(portSelector));
+    }
+
+    public override string Id => "preflight-local-ai-hardware";
+    public override string DisplayName => "Checking Local AI compatibility";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        HostHardwareInfo hardware;
+        try
+        {
+            hardware = _hardwareProbe.Probe();
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(StepResult.Terminal(
+                "Local AI hardware detection failed. No setup changes were made.",
+                ex));
+        }
+
+        LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
+            hardware,
+            ctx.Config.LocalAi.SelectedModelId);
+        ctx.LocalAiHardware = hardware;
+        ctx.LocalAiEligibility = eligibility;
+
+        if (eligibility.Status == LocalInferenceEligibilityStatus.Unsupported)
+        {
+            return Task.FromResult(StepResult.Terminal(
+                $"This system does not match a qualified Local AI recipe " +
+                $"({eligibility.FailureCode}, {eligibility.SelectionFailureCode})."));
+        }
+
+        if (eligibility.Status == LocalInferenceEligibilityStatus.EligibleButBusy)
+        {
+            long requiredMiB = eligibility.RequiredFreeMemoryBytes / (1024 * 1024);
+            long availableMiB = (eligibility.AvailableFreeMemoryBytes ?? 0) / (1024 * 1024);
+            return Task.FromResult(StepResult.Terminal(
+                $"The selected GPU is supported but currently busy. Local AI needs {requiredMiB:N0} MiB free; " +
+                $"{availableMiB:N0} MiB is available. Close GPU applications and retry."));
+        }
+
+        if (eligibility.Plan is null || eligibility.SelectedGpu is null)
+        {
+            return Task.FromResult(StepResult.Terminal(
+                "Local AI compatibility was inconclusive. No setup changes were made."));
+        }
+
+        if (!_portSelector.TrySelect(ctx.Config.LocalAi.Port, out int port, out string? portError))
+            return Task.FromResult(StepResult.Terminal(portError ?? "Local inference port selection failed."));
+
+        ctx.LocalAiPort = port;
+        ctx.Logger.Info(
+            "Selected qualified Local AI plan",
+            new
+            {
+                profile = eligibility.Plan.HardwareProfile.Id,
+                runtime = eligibility.Plan.Runtime.Id,
+                model = eligibility.Plan.Model.Id,
+                selection = eligibility.Plan.ModelSelectionOrigin.ToString(),
+                gpu = eligibility.SelectedGpu.StableId,
+                port,
+            });
+
+        return Task.FromResult(StepResult.Ok(
+            $"Selected {eligibility.Plan.Model.DisplayName} for {eligibility.Plan.HardwareProfile.DisplayName}."));
+    }
+}

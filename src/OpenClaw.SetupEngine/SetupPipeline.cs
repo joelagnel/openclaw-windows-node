@@ -56,6 +56,7 @@ public static class SetupStepFactory
             new PreflightOsStep(),
             new PreflightWslStep(),
             new PreflightWindowsTailscaleStep(),
+            new PreflightLocalAiHardwareStep(),
             new CleanupStaleDistroStep(),
             new CleanupStaleGatewayStep(),
             new PreflightPortStep(),

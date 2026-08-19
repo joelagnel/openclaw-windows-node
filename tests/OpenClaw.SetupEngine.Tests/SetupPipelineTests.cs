@@ -79,13 +79,14 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(24, steps.Count);
+        Assert.Equal(25, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightWslStep>(steps[2]);
         Assert.IsType<PreflightWindowsTailscaleStep>(steps[3]);
-        Assert.IsType<CleanupStaleDistroStep>(steps[4]);
-        Assert.IsType<CleanupStaleGatewayStep>(steps[5]);
+        Assert.IsType<PreflightLocalAiHardwareStep>(steps[4]);
+        Assert.IsType<CleanupStaleDistroStep>(steps[5]);
+        Assert.IsType<CleanupStaleGatewayStep>(steps[6]);
         Assert.Contains(steps, s => s is ValidateWslLockdownStep);
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);

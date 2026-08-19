@@ -1065,7 +1065,16 @@ public sealed class LocalAiSetupStepsTests
             {
                 data = new[]
                 {
-                    new { id = alias, path = install.ModelPath, status = new { value = "unloaded" } },
+                    new
+                    {
+                        id = alias,
+                        status = new
+                        {
+                            value = "unloaded",
+                            args = new[] { "llama-server.exe", "--model", install.ModelPath },
+                        },
+                        source = "preset",
+                    },
                 },
             });
             string models = Convert.ToBase64String(Encoding.UTF8.GetBytes(modelsJson));

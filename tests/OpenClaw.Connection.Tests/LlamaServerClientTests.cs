@@ -40,6 +40,45 @@ public sealed class LlamaServerClientTests
     }
 
     [Fact]
+    public async Task ProbeRouter_AcceptsB10488UnloadedPresetPathFromStatusArguments()
+    {
+        using var client = Client(request => request.RequestUri!.AbsolutePath == "/health"
+            ? Json("{\"status\":\"ok\"}")
+            : Json(B10488PresetResponse(Alias, ModelPath, "unloaded")));
+
+        LlamaServerRouterProbeResult result = await client.ProbeRouterAsync(Endpoint, Alias, ModelPath);
+
+        Assert.True(result.IsHealthy);
+        Assert.Equal(LocalAiModelAvailabilityState.Verified, result.ModelState);
+        Assert.Equal(ModelPath, result.ReportedModelPath);
+    }
+
+    [Fact]
+    public async Task ProbeRouter_RejectsConflictingTopLevelAndArgumentPaths()
+    {
+        string response = JsonSerializer.Serialize(new
+        {
+            data = new[]
+            {
+                new
+                {
+                    id = Alias,
+                    path = ModelPath,
+                    status = new { value = "unloaded", args = new[] { "llama-server.exe", "--model", @"C:\outside\wrong.gguf" } },
+                },
+            },
+        });
+        using var client = Client(request => request.RequestUri!.AbsolutePath == "/health"
+            ? Json("{\"status\":\"ok\"}")
+            : Json(response));
+
+        LlamaServerRouterProbeResult result = await client.ProbeRouterAsync(Endpoint, Alias, ModelPath);
+
+        Assert.True(result.IsHealthy);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, result.ModelState);
+    }
+
+    [Fact]
     public async Task ProbeRouter_ReturnsNotInstalledWhenAliasIsAbsent()
     {
         using var client = Client(request => request.RequestUri!.AbsolutePath == "/health"
@@ -108,6 +147,20 @@ public sealed class LlamaServerClientTests
             data = new[]
             {
                 new { id = alias, path, status = new { value = state } },
+            },
+        });
+
+    private static string B10488PresetResponse(string alias, string path, string state) =>
+        JsonSerializer.Serialize(new
+        {
+            data = new[]
+            {
+                new
+                {
+                    id = alias,
+                    status = new { value = state, args = new[] { "llama-server.exe", "--model", path } },
+                    source = "preset",
+                },
             },
         });
 

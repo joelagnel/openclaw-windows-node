@@ -871,51 +871,7 @@ public sealed class VerifyLocalAiWslStep : SetupStep
 
     private static void ValidateModel(JsonElement root, string alias, string expectedPath)
     {
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("data", out JsonElement models) ||
-            models.ValueKind != JsonValueKind.Array)
-        {
-            throw new InvalidDataException("llama-server returned an invalid model list to WSL.");
-        }
-
-        JsonElement? match = null;
-        foreach (JsonElement model in models.EnumerateArray())
-        {
-            if (model.ValueKind != JsonValueKind.Object ||
-                !model.TryGetProperty("id", out JsonElement id) ||
-                id.ValueKind != JsonValueKind.String ||
-                !string.Equals(id.GetString(), alias, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (match is not null)
-                throw new InvalidDataException("llama-server returned the selected model more than once.");
-            match = model;
-        }
-
-        if (match is null ||
-            !match.Value.TryGetProperty("path", out JsonElement path) ||
-            path.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(path.GetString()) ||
-            !PathsEqual(path.GetString()!, expectedPath))
-        {
+        if (LlamaServerModelStatusParser.Parse(root, alias, expectedPath) is null)
             throw new InvalidDataException("llama-server did not expose the selected managed model to WSL.");
-        }
-    }
-
-    private static bool PathsEqual(string left, string right)
-    {
-        try
-        {
-            return string.Equals(
-                Path.GetFullPath(left),
-                Path.GetFullPath(right),
-                StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            throw new InvalidDataException("llama-server returned an invalid model path.", ex);
-        }
     }
 }

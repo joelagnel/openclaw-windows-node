@@ -31,6 +31,13 @@ public enum GpuVendor
 /// 32-bit <c>Win32_VideoController.AdapterRAM</c> field.
 /// </param>
 /// <param name="FreeGpuVisibleMemoryBytes">Currently free CUDA-visible memory, or null when unknown.</param>
+/// <param name="SharedGpuMemoryBytes">
+/// GPU-addressable shared system memory reported by DXGI, or null when unknown.
+/// This is not general available system RAM.
+/// </param>
+/// <param name="FreeSharedGpuMemoryBytes">
+/// Currently available shared GPU memory reported by DXGI, or null when unknown.
+/// </param>
 /// <param name="DriverVersion">Display driver version, when known.</param>
 /// <param name="CudaMajorVersion">
 /// Major version of the CUDA driver API the display driver supports, when known.
@@ -41,6 +48,8 @@ public sealed record GpuInfo(
     string Name,
     long? GpuVisibleMemoryBytes = null,
     long? FreeGpuVisibleMemoryBytes = null,
+    long? SharedGpuMemoryBytes = null,
+    long? FreeSharedGpuMemoryBytes = null,
     string? DriverVersion = null,
     int? CudaMajorVersion = null,
     string? StableId = null);

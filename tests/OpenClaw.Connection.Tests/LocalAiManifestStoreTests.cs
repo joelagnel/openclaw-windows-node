@@ -177,6 +177,22 @@ public sealed class LocalAiManifestStoreTests
             }));
     }
 
+    [Theory]
+    [InlineData("http://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf?download=true")]
+    [InlineData("https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf?download=1")]
+    public async Task Save_RejectsUntrustedModelSourceVariant(string sourceUrl)
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+        var manifest = ValidManifest();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(manifest with
+            {
+                ModelAsset = manifest.ModelAsset with { SourceUrl = sourceUrl },
+            }));
+    }
+
     [Fact]
     public async Task Save_RejectsMissingRuntimeAssetReceipts()
     {
@@ -248,7 +264,7 @@ public sealed class LocalAiManifestStoreTests
         ModelAsset = new LocalAiAssetReceipt
         {
             FileName = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-            SourceUrl = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+            SourceUrl = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf?download=true",
             SizeBytes = 22_663_387_424,
             Sha256 = "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b",
         },

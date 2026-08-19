@@ -348,9 +348,10 @@ public sealed class LocalAiManifestStore
 
         var source = new Uri(manifest.ModelAsset.SourceUrl, UriKind.Absolute);
         var expectedPath = $"/{repositoryId}/resolve/{revision}/{manifest.ModelAsset.FileName}";
-        if (!string.Equals(source.Host, "huggingface.co", StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(source.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(source.Host, "huggingface.co", StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(Uri.UnescapeDataString(source.AbsolutePath), expectedPath, StringComparison.Ordinal) ||
-            !string.IsNullOrEmpty(source.Query))
+            source.Query is not ("" or "?download=true"))
         {
             throw new InvalidDataException(
                 "The local AI manifest model source must match its immutable Hugging Face repository, revision, and filename.");

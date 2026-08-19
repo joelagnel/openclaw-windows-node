@@ -125,6 +125,10 @@ public sealed record LocalAiInstallManifest
     public string Engine { get; init; } = SupportedEngine;
     public required string EngineVersion { get; init; }
     public required string Architecture { get; init; }
+    public required string HardwareProfileId { get; init; }
+    public required string RuntimeId { get; init; }
+    public required string ModelCatalogId { get; init; }
+    public required string SelectedGpuId { get; init; }
     public required string ExecutablePath { get; init; }
     public required ImmutableArray<LocalAiAssetReceipt> RuntimeAssets { get; init; }
     public required string ModelPath { get; init; }
@@ -246,6 +250,14 @@ public sealed class LocalAiManifestStore
             throw new InvalidDataException("The local AI manifest engine version is required.");
         if (manifest.Architecture is not ("x64" or "arm64"))
             throw new InvalidDataException("The local AI manifest architecture must be x64 or arm64.");
+        ValidatePlanIdentifier(manifest.HardwareProfileId, nameof(manifest.HardwareProfileId));
+        ValidatePlanIdentifier(manifest.RuntimeId, nameof(manifest.RuntimeId));
+        ValidatePlanIdentifier(manifest.ModelCatalogId, nameof(manifest.ModelCatalogId));
+        if (string.IsNullOrWhiteSpace(manifest.SelectedGpuId) ||
+            manifest.SelectedGpuId.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)))
+        {
+            throw new InvalidDataException("The local AI manifest selected GPU identifier is invalid.");
+        }
         if (string.IsNullOrWhiteSpace(manifest.ModelId))
             throw new InvalidDataException("The local AI manifest model identifier is required.");
         if (string.IsNullOrWhiteSpace(manifest.ModelAlias) ||
@@ -292,6 +304,16 @@ public sealed class LocalAiManifestStore
         }
 
         return new LocalAiResolvedInstall(manifest, executable, model, endpoint);
+    }
+
+    private static void ValidatePlanIdentifier(string? identifier, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(identifier) ||
+            identifier.Any(character =>
+                !char.IsAsciiLetterOrDigit(character) && character is not ('-' or '_' or '.')))
+        {
+            throw new InvalidDataException($"The local AI manifest {fieldName} is invalid.");
+        }
     }
 
     private static void ValidateAssetReceipt(LocalAiAssetReceipt? receipt, string fieldName)

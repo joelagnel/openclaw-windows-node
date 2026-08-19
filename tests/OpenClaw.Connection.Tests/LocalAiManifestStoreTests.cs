@@ -24,6 +24,10 @@ public sealed class LocalAiManifestStoreTests
             Path.Combine(paths.RootDirectory, "models", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
             loaded.ModelPath);
         Assert.Equal(18803, loaded.Endpoint.Port);
+        Assert.Equal("nvidia-rtx-spark-n1x", loaded.Manifest.HardwareProfileId);
+        Assert.Equal("b10488-cuda13-arm64", loaded.Manifest.RuntimeId);
+        Assert.Equal("qwen3.6-35b-a3b-mtp-q4-k-m", loaded.Manifest.ModelCatalogId);
+        Assert.Equal("GPU-01234567-89ab-cdef-0123-456789abcdef", loaded.Manifest.SelectedGpuId);
         Assert.Equal(2, loaded.Manifest.RuntimeAssets.Length);
         Assert.Contains(
             loaded.Manifest.RuntimeAssets,
@@ -177,6 +181,26 @@ public sealed class LocalAiManifestStoreTests
             }));
     }
 
+    [Fact]
+    public async Task Save_RejectsMissingQualifiedPlanIdentity()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+        LocalAiInstallManifest manifest = ValidManifest();
+        LocalAiInstallManifest[] invalid =
+        [
+            manifest with { HardwareProfileId = "" },
+            manifest with { RuntimeId = "../runtime" },
+            manifest with { ModelCatalogId = "model id" },
+            manifest with { SelectedGpuId = "GPU id" },
+        ];
+
+        foreach (LocalAiInstallManifest candidate in invalid)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.SaveAsync(candidate));
+        }
+    }
+
     [Theory]
     [InlineData("http://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf?download=true")]
     [InlineData("https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/5bc3e238d916f48a861bac2f8a1990a0e9b7e98d/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf?download=1")]
@@ -240,6 +264,10 @@ public sealed class LocalAiManifestStoreTests
     {
         EngineVersion = "b10488",
         Architecture = "arm64",
+        HardwareProfileId = "nvidia-rtx-spark-n1x",
+        RuntimeId = "b10488-cuda13-arm64",
+        ModelCatalogId = "qwen3.6-35b-a3b-mtp-q4-k-m",
+        SelectedGpuId = "GPU-01234567-89ab-cdef-0123-456789abcdef",
         ExecutablePath = Path.Combine("engines", "llama-b10488", "llama-server.exe"),
         RuntimeAssets =
         [

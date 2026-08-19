@@ -16,7 +16,8 @@ public sealed record SupportedHardwareProfile
         Architecture architecture,
         string runtimeId,
         IReadOnlyList<string> reportedGpuNames,
-        CatalogProvenance catalogProvenance)
+        CatalogProvenance catalogProvenance,
+        bool usesSharedGpuMemory = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -34,6 +35,7 @@ public sealed record SupportedHardwareProfile
         RuntimeId = runtimeId;
         ReportedGpuNames = Array.AsReadOnly(reportedGpuNames.ToArray());
         CatalogProvenance = catalogProvenance;
+        UsesSharedGpuMemory = usesSharedGpuMemory;
     }
 
     public string Id { get; }
@@ -42,6 +44,7 @@ public sealed record SupportedHardwareProfile
     public string RuntimeId { get; }
     public IReadOnlyList<string> ReportedGpuNames { get; }
     public CatalogProvenance CatalogProvenance { get; }
+    public bool UsesSharedGpuMemory { get; }
 }
 
 /// <summary>
@@ -63,20 +66,23 @@ public static class SupportedHardwareProfiles
                 "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
                 Architecture.X64,
                 LlamaRuntimeCatalog.X64RuntimeId,
-                "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
+                ["NVIDIA RTX PRO 6000 Blackwell Workstation Edition"]),
             Profile(
                 Rtx5090ProfileId,
                 "NVIDIA GeForce RTX 5090",
                 Architecture.X64,
                 LlamaRuntimeCatalog.X64RuntimeId,
-                "NVIDIA GeForce RTX 5090"),
+                ["NVIDIA GeForce RTX 5090"]),
             Profile(
                 RtxSparkN1XProfileId,
                 "NVIDIA RTX Spark N1X",
                 Architecture.Arm64,
                 LlamaRuntimeCatalog.Arm64RuntimeId,
-                "NVIDIA RTX Spark N1X",
-                "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)"),
+                [
+                    "NVIDIA RTX Spark N1X",
+                    "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
+                ],
+                usesSharedGpuMemory: true),
         });
 
     public static IReadOnlyList<SupportedHardwareProfile> Profiles => s_profiles;
@@ -120,12 +126,14 @@ public static class SupportedHardwareProfiles
         string displayName,
         Architecture architecture,
         string runtimeId,
-        params string[] reportedGpuNames) =>
+        string[] reportedGpuNames,
+        bool usesSharedGpuMemory = false) =>
         new(
             id,
             displayName,
             architecture,
             runtimeId,
             reportedGpuNames,
-            LocalInferenceCatalogProvenance.NvidiaCair);
+            LocalInferenceCatalogProvenance.NvidiaCair,
+            usesSharedGpuMemory);
 }

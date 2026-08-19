@@ -1,5 +1,7 @@
 namespace OpenClaw.SetupEngine;
 
+using OpenClaw.Shared.Inference.Catalog;
+
 public sealed record SetupReviewSummary(
     string DistroTitle,
     string DistroDescription,
@@ -53,6 +55,18 @@ public static class SetupReviewSummaryBuilder
             : $" --node-version {GatewayReleasePolicy.NodeVersion}";
         var installCommand =
             $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {release.Version}{runtimeArgument}";
+        LocalModelInfo localAiModel =
+            LocalModelCatalog.Find(config.LocalAi.SelectedModelId) ?? LocalModelCatalog.Default;
+        string[] localAiCommands = config.LocalAi.Enabled
+            ?
+            [
+                $"download verified llama-server {LlamaRuntimeCatalog.ReleaseTag} + CUDA runtime for Windows",
+                $"download {localAiModel.Weights.RelativePath} from Hugging Face revision " +
+                    ((HuggingFaceRevisionSource)localAiModel.Weights.Source).RevisionSha,
+                $"llama-server router on dynamic 127.0.0.1 port; model loads on first request",
+                $"openclaw provider llamacpp -> /v1; primary llamacpp/{localAiModel.Id}",
+            ]
+            : [];
 
         return new SetupReviewSummary(
             DistroTitle: $"Install an isolated {baseDistro} instance",
@@ -74,9 +88,11 @@ public static class SetupReviewSummaryBuilder
                             : "install signed Tailscale package · root owns tailscale up/serve"
                         : null,
                     "openclaw gateway install --force   (systemd --user service)",
+                }.Concat(localAiCommands).Concat(new[]
+                {
                     $"writes -> {installPath}",
                     $"writes -> {gatewayDataPath} + identity"
-                }.Where(line => line is not null)),
+                }).Where(line => line is not null)),
             CompletionGatewaySummary: $"{distroName} · {gatewayEndpoint}");
     }
 

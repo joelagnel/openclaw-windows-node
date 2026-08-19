@@ -491,6 +491,40 @@ public class SetupConfigTests : IDisposable
     }
 
     [Fact]
+    public void SetupReviewSummary_DescribesSelectedLocalAiRecipe()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig
+            {
+                Enabled = true,
+                SelectedModelId = "qwen3.6-27b-mtp-q4-k-m",
+            },
+        };
+
+        SetupReviewSummary summary = SetupReviewSummaryBuilder.Build(config, _tempDir, _tempDir);
+
+        Assert.Contains("llama-server b10488", summary.ExactCommands);
+        Assert.Contains("Qwen3.6-27B-Q4_K_M.gguf", summary.ExactCommands);
+        Assert.Contains("5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace", summary.ExactCommands);
+        Assert.Contains("model loads on first request", summary.ExactCommands);
+        Assert.Contains("primary llamacpp/qwen3.6-27b-mtp-q4-k-m", summary.ExactCommands);
+        Assert.DoesNotContain("Ollama", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_OmitsLocalAiWhenDisabled()
+    {
+        var config = new SetupConfig { LocalAi = new LocalAiConfig { Enabled = false } };
+
+        SetupReviewSummary summary = SetupReviewSummaryBuilder.Build(config, _tempDir, _tempDir);
+
+        Assert.DoesNotContain("llama-server", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Hugging Face", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("provider llamacpp", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SetupConfig_UsesBundledDefaultConfig_IsRuntimeOnly()
     {
         var config = new SetupConfig { UsesBundledDefaultConfig = true };

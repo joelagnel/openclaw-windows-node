@@ -4,8 +4,11 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using OpenClaw.Shared;
+using OpenClaw.Shared.Inference;
+using OpenClaw.Shared.Inference.Catalog;
 using OpenClaw.SetupEngine.UI;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace OpenClaw.SetupEngine.UI.Pages;
 
@@ -18,7 +21,15 @@ public sealed partial class CapabilitiesPage : Page
     private SetupWindow? _setupWindow;
     private Task? _permissionsTask;
     private bool _suppressProfile;
+    private bool _suppressLocalAiToggle;
+    private bool _suppressLocalAiSelection;
+    private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
+    private bool _skipWizardWithoutLocalAi;
+    private bool _localAiSelectionEligible;
+    private bool _localAiNetworkingConsentRequired;
+    private bool _localAiNetworkingInspectionFailed;
+    private HostHardwareInfo? _localAiHardware;
     private bool _treatBundledAllOnAsPlaceholder;
     private int _step = 1;
 
@@ -61,6 +72,7 @@ public sealed partial class CapabilitiesPage : Page
         // setup declaration and gateway allowlist aligned with that runtime contract.
         _config.Capabilities.Device = true;
         _skipPermissions = _config.SkipPermissions;
+        _skipWizardWithoutLocalAi = _config.SkipWizard;
         _treatBundledAllOnAsPlaceholder = _config.UsesBundledDefaultConfig;
         BuildToggles();
         _suppressProfile = true;
@@ -81,12 +93,19 @@ public sealed partial class CapabilitiesPage : Page
         _setupWindow = SetupWindow.Active;
         if (_setupWindow is not null)
             _setupWindow.Activated += SetupWindow_Activated;
-        ApplySetupReviewSummary(_config);
         TailscaleToggle.IsOn = _config.Tailscale.Enabled;
         TailscaleTrustAuthToggle.IsOn = _config.Tailscale.TrustTailscaleAuth;
         TailscaleAuthModeSelector.SelectedIndex = _config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey ? 1 : 0;
         UpdateTailscaleOptions();
-        GoToStep(1);
+        var previewPage = SetupPreview.RequestedPage;
+        var localAiReviewPreview = previewPage is "capabilities-review" or "capabilities-review-consent";
+        if (localAiReviewPreview)
+            _config.LocalAi.Enabled = true;
+        InitializeLocalAiReview(forceNetworkingConsent: previewPage == "capabilities-review-consent");
+        ApplySetupReviewSummary(_config);
+        GoToStep(localAiReviewPreview ? 3 : 1);
+        if (localAiReviewPreview)
+            DispatcherQueue.TryEnqueue(() => Scroller.ChangeView(null, 0, null, disableAnimation: true));
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -138,6 +157,7 @@ public sealed partial class CapabilitiesPage : Page
         PrimaryButton.Content = step == 3 ? "Install & set up" : "Next";
         // Back is always available — from step 1 it returns to the Welcome screen.
         BackButton.Visibility = Visibility.Visible;
+        UpdatePrimaryButtonState();
 
         ScrollActiveIntoView();
     }
@@ -214,6 +234,12 @@ public sealed partial class CapabilitiesPage : Page
         config.Tailscale.AuthKey = config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey
             ? TailscaleAuthKeyBox.Password
             : null;
+        config.LocalAi.Enabled = LocalAiToggle.IsOn == true;
+        config.SkipWizard = config.LocalAi.Enabled || _skipWizardWithoutLocalAi;
+        config.LocalAi.WslMirroredNetworkingConsent =
+            config.LocalAi.Enabled &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
     }
 
     private void ApplySetupReviewSummary(SetupConfig config)
@@ -230,6 +256,199 @@ public sealed partial class CapabilitiesPage : Page
         GatewayEndpointText.Text = summary.GatewayEndpoint;
         ExactCommandsText.Text = summary.ExactCommands;
     }
+
+    private void InitializeLocalAiReview(bool forceNetworkingConsent)
+    {
+        try
+        {
+            _localAiHardware = new NvmlHostHardwareProbe().Probe();
+            LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
+                _localAiHardware,
+                _config!.LocalAi.SelectedModelId);
+            if (!eligibility.CanInstall || eligibility.Plan is null || eligibility.SelectedGpu is null)
+            {
+                _localAiSelectionEligible = false;
+                LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
+                _config.LocalAi.Enabled = false;
+                _config.SkipWizard = _skipWizardWithoutLocalAi;
+                return;
+            }
+
+            LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+            _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
+            PopulateLocalAiModels();
+            _suppressLocalAiToggle = true;
+            LocalAiToggle.IsOn = _config.LocalAi.Enabled;
+            _suppressLocalAiToggle = false;
+            UpdateLocalAiOptions(forceNetworkingConsent);
+        }
+        catch
+        {
+            _localAiSelectionEligible = false;
+            LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
+            _config!.LocalAi.Enabled = false;
+            _config.SkipWizard = _skipWizardWithoutLocalAi;
+        }
+    }
+
+    private void PopulateLocalAiModels()
+    {
+        _suppressLocalAiSelection = true;
+        LocalAiModelSelector.Items.Clear();
+        int selectedIndex = 0;
+        for (int index = 0; index < LocalModelCatalog.Models.Count; index++)
+        {
+            LocalModelInfo model = LocalModelCatalog.Models[index];
+            LocalAiModelSelector.Items.Add(new ComboBoxItem
+            {
+                Content = $"{model.DisplayName} ({FormatSize(model.Weights.SizeBytes)})" +
+                    (model.IsDefault ? " - Recommended" : string.Empty),
+                Tag = model.Id,
+            });
+            if (string.Equals(_config!.LocalAi.SelectedModelId, model.Id, StringComparison.OrdinalIgnoreCase))
+                selectedIndex = index;
+        }
+        LocalAiModelSelector.SelectedIndex = selectedIndex;
+        _suppressLocalAiSelection = false;
+    }
+
+    private void LocalAiToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_suppressLocalAiToggle || _config is null)
+            return;
+        UpdateLocalAiOptions();
+        ApplySetupReviewSummary(_config);
+    }
+
+    private void LocalAiModelSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressLocalAiSelection || _config is null ||
+            LocalAiModelSelector.SelectedItem is not ComboBoxItem { Tag: string modelId })
+        {
+            return;
+        }
+        _config.LocalAi.SelectedModelId = modelId;
+        UpdateLocalAiModelDetails();
+        ApplySetupReviewSummary(_config);
+    }
+
+    private void LocalAiNetworkingConsent_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressLocalAiConsent || _config is null)
+            return;
+        _config.LocalAi.WslMirroredNetworkingConsent =
+            LocalAiToggle.IsOn == true &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
+        UpdatePrimaryButtonState();
+    }
+
+    private void UpdateLocalAiOptions(bool forceNetworkingConsent = false)
+    {
+        var config = _config!;
+        bool enabled = LocalAiToggle.IsOn == true;
+        config.LocalAi.Enabled = enabled;
+        config.SkipWizard = enabled || _skipWizardWithoutLocalAi;
+        LocalAiDetailsPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
+        LocalAiNetworkingReadyText.Visibility = Visibility.Collapsed;
+        _localAiNetworkingConsentRequired = false;
+        _localAiNetworkingInspectionFailed = false;
+
+        if (!enabled)
+        {
+            LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.WslMirroredNetworkingConsent = false;
+            UpdatePrimaryButtonState();
+            return;
+        }
+
+        UpdateLocalAiModelDetails();
+        try
+        {
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var configPath = Path.Combine(profile, ".wslconfig");
+            var localDataDir = SetupWindow.Active?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
+            var manager = new WslGlobalConfigManager(
+                configPath,
+                Path.Combine(localDataDir, "LocalAI", "network-backup"));
+            WslGlobalConfigStatus status = forceNetworkingConsent
+                ? new(false, false)
+                : manager.Inspect();
+            _localAiNetworkingConsentRequired = !status.IsMirrored;
+            LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            LocalAiNetworkingReadyText.Visibility = status.IsMirrored
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.WslMirroredNetworkingConsent = false;
+        }
+        catch (Exception ex)
+        {
+            _localAiNetworkingInspectionFailed = true;
+            LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
+            config.LocalAi.WslMirroredNetworkingConsent = false;
+            LocalAiNetworkingInspectionError.Message =
+                $"Setup cannot continue with Local AI until the global WSL configuration can be read. {ex.Message}";
+            LocalAiNetworkingInspectionError.Visibility = Visibility.Visible;
+        }
+        UpdatePrimaryButtonState();
+    }
+
+    private void UpdateLocalAiModelDetails()
+    {
+        if (_localAiHardware is null ||
+            LocalAiModelSelector.SelectedItem is not ComboBoxItem { Tag: string modelId })
+        {
+            return;
+        }
+
+        LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(_localAiHardware, modelId);
+        if (eligibility.Plan is not { } plan || eligibility.SelectedGpu is not { } gpu)
+        {
+            _localAiSelectionEligible = false;
+            LocalAiHardwareStatusText.Text = "This model is not qualified for the detected hardware.";
+            UpdatePrimaryButtonState();
+            return;
+        }
+
+        _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
+        LocalAiHardwareStatusText.Text = _localAiSelectionEligible
+            ? $"Detected {gpu.Name}. Using the {plan.HardwareProfile.DisplayName} recipe."
+            : $"Detected {gpu.Name}, but the GPU is currently busy. Close GPU applications and retry setup.";
+        LocalAiEngineDetailText.Text =
+            $"llama-server {LlamaRuntimeCatalog.ReleaseTag} for Windows {RuntimeInformation.OSArchitecture}; " +
+            $"{FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))} verified download";
+        LocalAiModelDetailText.Text =
+            $"{plan.Model.DisplayName}, {FormatSize(plan.Model.Weights.SizeBytes)} from Hugging Face at an immutable revision";
+        LocalAiSettingsDetailText.Text =
+            $"{plan.Model.Recipe.ContextTokens / 1024}K context, FP16 KV cache, full CUDA offload, loads on first request";
+        UpdatePrimaryButtonState();
+    }
+
+    private void SetLocalAiNetworkingConsent(bool value)
+    {
+        _suppressLocalAiConsent = true;
+        LocalAiNetworkingConsentCheckBox.IsChecked = value;
+        _suppressLocalAiConsent = false;
+    }
+
+    private void UpdatePrimaryButtonState()
+    {
+        PrimaryButton.IsEnabled =
+            _step != 3 ||
+            LocalAiToggle.IsOn != true ||
+            (_localAiSelectionEligible &&
+             !_localAiNetworkingInspectionFailed &&
+             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
+    }
+
+    private static string FormatSize(long bytes) =>
+        $"{bytes / 1_000_000_000d:0.#} GB";
 
     private void TailscaleToggle_Toggled(object sender, RoutedEventArgs e)
     {

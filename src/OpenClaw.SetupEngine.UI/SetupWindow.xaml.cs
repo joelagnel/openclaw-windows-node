@@ -330,6 +330,8 @@ public sealed partial class SetupWindow : Window
             "welcome" => typeof(WelcomePage),
             "advanced" => typeof(AdvancedSetupPage),
             "capabilities" => typeof(CapabilitiesPage),
+            "capabilities-review" => typeof(CapabilitiesPage),
+            "capabilities-review-consent" => typeof(CapabilitiesPage),
             "progress" => typeof(ProgressPage),
             "milestone" => typeof(ProgressPage),
             "wizard" => typeof(WizardPage),

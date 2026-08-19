@@ -28,6 +28,8 @@ public sealed partial class SetupWindow : Window
     private readonly string _localDataDir;
     private readonly object _localAiHardwareProbeLock = new();
     private Task<HostHardwareInfo>? _localAiHardwareProbeTask;
+    private readonly object _wslViabilityLock = new();
+    private Task<WslViabilityResult>? _wslViabilityTask;
 
     public static SetupWindow? Active { get; private set; }
 
@@ -204,6 +206,23 @@ public sealed partial class SetupWindow : Window
             return _localAiHardwareProbeTask ??=
                 Task.Run(() => new NvmlHostHardwareProbe().Probe());
         }
+    }
+
+    internal Task<WslViabilityResult> GetWslViabilityAsync()
+    {
+        lock (_wslViabilityLock)
+        {
+            return _wslViabilityTask ??= InspectWslViabilityAsync();
+        }
+    }
+
+    private static async Task<WslViabilityResult> InspectWslViabilityAsync()
+    {
+        using var logger = new SetupLogger(filePath: null);
+        return await WslViabilityInspector.InspectAsync(
+            new CommandRunner(logger),
+            logger,
+            CancellationToken.None);
     }
 
     public void NavigateToAdvancedSetup() => NavigateTo(typeof(AdvancedSetupPage), _config);

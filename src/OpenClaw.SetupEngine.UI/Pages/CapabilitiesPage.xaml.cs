@@ -28,8 +28,9 @@ public sealed partial class CapabilitiesPage : Page
     private bool _skipWizardWithoutLocalAi;
     private bool _localAiSelectionEligible;
     private bool _localAiNetworkingConsentRequired;
-    private bool _localAiNetworkingInspectionFailed;
     private HostHardwareInfo? _localAiHardware;
+    private WslGlobalConfigStatus? _localAiNetworkingStatus;
+    private string _localAiUnavailableReason = string.Empty;
     private bool _treatBundledAllOnAsPlaceholder;
     private int _step = 1;
 
@@ -263,43 +264,171 @@ public sealed partial class CapabilitiesPage : Page
 
     private async Task InitializeLocalAiReviewAsync(bool forceNetworkingConsent)
     {
+        SetupWindow? setupWindow = _setupWindow;
+        Task<HostHardwareInfo> hardwareTask = setupWindow is not null
+            ? setupWindow.GetLocalAiHardwareAsync()
+            : Task.Run(() => new NvmlHostHardwareProbe().Probe());
+        Task<WslViabilityResult> wslTask = setupWindow is not null
+            ? setupWindow.GetWslViabilityAsync()
+            : InspectWslViabilityAsync();
+
+        string? hardwareReason = null;
+        LocalInferenceEligibilityResult? eligibility = null;
         try
         {
-            SetupWindow? setupWindow = _setupWindow;
-            _localAiHardware = setupWindow is not null
-                ? await setupWindow.GetLocalAiHardwareAsync()
-                : await Task.Run(() => new NvmlHostHardwareProbe().Probe());
-            if (_setupWindow is null && setupWindow is not null)
-                return;
-
-            LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
+            _localAiHardware = await hardwareTask;
+            eligibility = LocalInferenceEligibility.Evaluate(
                 _localAiHardware,
                 _config!.LocalAi.SelectedModelId);
             if (!eligibility.CanInstall || eligibility.Plan is null || eligibility.SelectedGpu is null)
-            {
-                _localAiSelectionEligible = false;
-                LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
-                _config.LocalAi.Enabled = false;
-                _config.SkipWizard = _skipWizardWithoutLocalAi;
-                return;
-            }
-
-            LocalAiInstallReviewCard.Visibility = Visibility.Visible;
-            _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
-            PopulateLocalAiModels();
-            _suppressLocalAiToggle = true;
-            LocalAiToggle.IsOn = _config.LocalAi.Enabled;
-            _suppressLocalAiToggle = false;
-            UpdateLocalAiOptions(forceNetworkingConsent);
-            ApplySetupReviewSummary(_config);
+                hardwareReason = DescribeLocalAiUnavailable(eligibility);
         }
         catch
         {
-            _localAiSelectionEligible = false;
-            LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
-            _config!.LocalAi.Enabled = false;
-            _config.SkipWizard = _skipWizardWithoutLocalAi;
+            hardwareReason =
+                "OpenClaw could not read the NVIDIA GPU, driver, CUDA, or memory information. " +
+                "Check the NVIDIA driver installation and try setup again.";
         }
+
+        WslViabilityResult wslViability;
+        try
+        {
+            wslViability = await wslTask;
+        }
+        catch
+        {
+            wslViability = new(
+                WslViabilityKind.InspectionFailed,
+                "OpenClaw could not safely verify the WSL2 environment.",
+                "Run wsl --status in PowerShell, resolve the reported problem, and try setup again.");
+        }
+
+        string? wslNetworkingReason = null;
+        try
+        {
+            _localAiNetworkingStatus = forceNetworkingConsent
+                ? new(false, false)
+                : CreateWslGlobalConfigManager().Inspect();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Debug.WriteLine($"WSL networking inspection failed: {ex}");
+            wslNetworkingReason =
+                "OpenClaw cannot safely read the global .wslconfig file. " +
+                "Check that the file is valid and readable, then try setup again.";
+        }
+
+        if (_setupWindow is null && setupWindow is not null)
+            return;
+
+        string? unavailableReason = LocalAiAvailabilityReasons.Build(
+            hardwareReason,
+            wslViability,
+            wslNetworkingReason);
+        if (unavailableReason is not null)
+        {
+            ShowLocalAiUnavailable(unavailableReason);
+            return;
+        }
+
+        Debug.Assert(eligibility is not null);
+        LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+        LocalAiUnavailablePanel.Visibility = Visibility.Collapsed;
+        LocalAiToggle.Visibility = Visibility.Visible;
+        _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
+        PopulateLocalAiModels();
+        _suppressLocalAiToggle = true;
+        LocalAiToggle.IsOn = _config!.LocalAi.Enabled;
+        _suppressLocalAiToggle = false;
+        UpdateLocalAiOptions(forceNetworkingConsent);
+        ApplySetupReviewSummary(_config);
+    }
+
+    private static async Task<WslViabilityResult> InspectWslViabilityAsync()
+    {
+        using var logger = new SetupLogger(filePath: null);
+        return await WslViabilityInspector.InspectAsync(
+            new CommandRunner(logger),
+            logger,
+            CancellationToken.None);
+    }
+
+    private static WslGlobalConfigManager CreateWslGlobalConfigManager()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var configPath = Path.Combine(profile, ".wslconfig");
+        var localDataDir = SetupWindow.Active?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
+        return new WslGlobalConfigManager(
+            configPath,
+            Path.Combine(localDataDir, "LocalAI", "network-backup"));
+    }
+
+    private void ShowLocalAiUnavailable(string reason)
+    {
+        _localAiSelectionEligible = false;
+        _suppressLocalAiToggle = true;
+        LocalAiToggle.IsOn = false;
+        _suppressLocalAiToggle = false;
+        LocalAiToggle.Visibility = Visibility.Collapsed;
+        LocalAiDetailsPanel.Visibility = Visibility.Collapsed;
+        _localAiUnavailableReason = reason;
+        LocalAiUnavailablePanel.Visibility = Visibility.Visible;
+        LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+        _config!.LocalAi.Enabled = false;
+        _config.SkipWizard = _skipWizardWithoutLocalAi;
+        ApplySetupReviewSummary(_config);
+    }
+
+    private static string DescribeLocalAiUnavailable(LocalInferenceEligibilityResult eligibility) =>
+        eligibility.SelectionFailureCode switch
+        {
+            LocalInferenceSelectionFailureCode.UnsupportedArchitecture =>
+                "The detected GPU and Windows architecture do not match a qualified Local AI recipe.",
+            LocalInferenceSelectionFailureCode.UnsupportedGpu =>
+                "No qualified NVIDIA GPU was detected. This release supports RTX PRO 6000 Blackwell, " +
+                "GeForce RTX 5090, and RTX Spark N1X systems with a working NVIDIA driver.",
+            LocalInferenceSelectionFailureCode.UnknownModel =>
+                "The selected model is not available in this Local AI release.",
+            _ => eligibility.FailureCode switch
+            {
+                LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete =>
+                    "OpenClaw could not read the GPU identity, memory, NVIDIA driver, or CUDA capability.",
+                LocalInferenceEligibilityFailureCode.InsufficientGpuMemory =>
+                    $"The detected GPU has less than {LocalInferenceEligibility.MinimumQualifiedGpuMemoryMiB:N0} MiB " +
+                    "of qualified GPU memory.",
+                LocalInferenceEligibilityFailureCode.DriverTooOld =>
+                    $"NVIDIA driver {eligibility.SelectedGpu?.DriverVersion ?? "unknown"} was detected. " +
+                    $"Local AI requires version {LocalInferenceEligibility.MinimumNvidiaDriverVersion} or newer.",
+                LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow =>
+                    "The NVIDIA driver does not provide CUDA 13 support. A separate CUDA Toolkit is not required.",
+                _ => "The detected system does not match a qualified Local AI recipe.",
+            },
+        };
+
+    private void LocalAiUnavailableDetails_Click(object sender, RoutedEventArgs e) =>
+        AsyncEventHandlerGuard.Run(
+            ShowLocalAiUnavailableDetailsAsync,
+            NullLogger.Instance,
+            nameof(LocalAiUnavailableDetails_Click));
+
+    private async Task ShowLocalAiUnavailableDetailsAsync()
+    {
+        var xamlRoot = LocalAiInstallReviewCard.XamlRoot;
+        if (xamlRoot is null)
+            return;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = "Why Local AI is unavailable",
+            Content = new TextBlock
+            {
+                Text = _localAiUnavailableReason,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            CloseButtonText = "Close",
+        };
+        await dialog.ShowAsync();
     }
 
     private void PopulateLocalAiModels()
@@ -364,7 +493,6 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
         LocalAiNetworkingReadyText.Visibility = Visibility.Collapsed;
         _localAiNetworkingConsentRequired = false;
-        _localAiNetworkingInspectionFailed = false;
 
         if (!enabled)
         {
@@ -376,37 +504,18 @@ public sealed partial class CapabilitiesPage : Page
         }
 
         UpdateLocalAiModelDetails();
-        try
-        {
-            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var configPath = Path.Combine(profile, ".wslconfig");
-            var localDataDir = SetupWindow.Active?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
-            var manager = new WslGlobalConfigManager(
-                configPath,
-                Path.Combine(localDataDir, "LocalAI", "network-backup"));
-            WslGlobalConfigStatus status = forceNetworkingConsent
-                ? new(false, false)
-                : manager.Inspect();
-            _localAiNetworkingConsentRequired = !status.IsMirrored;
-            LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            LocalAiNetworkingReadyText.Visibility = status.IsMirrored
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            SetLocalAiNetworkingConsent(false);
-            config.LocalAi.WslMirroredNetworkingConsent = false;
-        }
-        catch (Exception ex)
-        {
-            _localAiNetworkingInspectionFailed = true;
-            LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
-            SetLocalAiNetworkingConsent(false);
-            config.LocalAi.WslMirroredNetworkingConsent = false;
-            LocalAiNetworkingInspectionError.Message =
-                $"Setup cannot continue with Local AI until the global WSL configuration can be read. {ex.Message}";
-            LocalAiNetworkingInspectionError.Visibility = Visibility.Visible;
-        }
+        WslGlobalConfigStatus status = forceNetworkingConsent
+            ? new(false, false)
+            : _localAiNetworkingStatus ?? new(false, false);
+        _localAiNetworkingConsentRequired = !status.IsMirrored;
+        LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LocalAiNetworkingReadyText.Visibility = status.IsMirrored
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SetLocalAiNetworkingConsent(false);
+        config.LocalAi.WslMirroredNetworkingConsent = false;
         UpdatePrimaryButtonState();
     }
 
@@ -454,7 +563,6 @@ public sealed partial class CapabilitiesPage : Page
             _step != 3 ||
             LocalAiToggle.IsOn != true ||
             (_localAiSelectionEligible &&
-             !_localAiNetworkingInspectionFailed &&
              (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
     }
 

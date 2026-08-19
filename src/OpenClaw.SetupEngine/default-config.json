@@ -100,6 +100,19 @@
     "ExtraConfig": null
   },
 
+  // Native Windows llama-server and immutable Hugging Face model acquisition.
+  "LocalAi": {
+    "Enabled": true,
+    // null selects the qualified default. Alternatives are chosen explicitly in onboarding.
+    "SelectedModelId": null,
+    // 0 allocates one free IPv4 loopback port and persists it for later restarts.
+    "Port": 0,
+    // The setup UI sets this only after explaining that applying mirrored mode stops running WSL distros once.
+    "WslMirroredNetworkingConsent": false,
+    "HealthTimeoutSeconds": 15,
+    "AcquisitionTimeoutSeconds": 7200
+  },
+
   // ─── Node Capabilities ───
   // Which capabilities to advertise to the gateway during node pairing.
   // The tray handles actual command execution; setup just registers the declarations.

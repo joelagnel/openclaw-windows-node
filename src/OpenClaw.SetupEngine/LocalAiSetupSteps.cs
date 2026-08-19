@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -10,44 +8,6 @@ using OpenClaw.Shared.Inference.Catalog;
 
 namespace OpenClaw.SetupEngine;
 
-internal interface ILocalAiPortSelector
-{
-    bool TrySelect(int requestedPort, out int selectedPort, out string? error);
-}
-
-internal sealed class LoopbackLocalAiPortSelector : ILocalAiPortSelector
-{
-    public bool TrySelect(int requestedPort, out int selectedPort, out string? error)
-    {
-        selectedPort = 0;
-        error = null;
-        if (requestedPort is < 0 or > 65_535)
-        {
-            error = "The local inference port must be zero or between 1 and 65535.";
-            return false;
-        }
-
-        try
-        {
-            var listener = new TcpListener(IPAddress.Loopback, requestedPort)
-            {
-                ExclusiveAddressUse = true,
-            };
-            listener.Start();
-            selectedPort = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return true;
-        }
-        catch (Exception ex) when (ex is SocketException or UnauthorizedAccessException)
-        {
-            error = requestedPort == 0
-                ? "Windows could not allocate a loopback port for local inference."
-                : $"Loopback port {requestedPort} is not available for local inference.";
-            return false;
-        }
-    }
-}
-
 /// <summary>
 /// Selects one qualified SKU/runtime/model plan before setup mutates WSL,
 /// downloads artifacts, or changes gateway configuration.
@@ -55,20 +15,14 @@ internal sealed class LoopbackLocalAiPortSelector : ILocalAiPortSelector
 public sealed class PreflightLocalAiHardwareStep : SetupStep
 {
     private readonly IHostHardwareProbe _hardwareProbe;
-    private readonly ILocalAiPortSelector _portSelector;
 
     public PreflightLocalAiHardwareStep()
-        : this(new NvmlHostHardwareProbe(), new LoopbackLocalAiPortSelector())
+        : this(new NvmlHostHardwareProbe())
     {
     }
 
-    internal PreflightLocalAiHardwareStep(
-        IHostHardwareProbe hardwareProbe,
-        ILocalAiPortSelector portSelector)
-    {
+    internal PreflightLocalAiHardwareStep(IHostHardwareProbe hardwareProbe) =>
         _hardwareProbe = hardwareProbe ?? throw new ArgumentNullException(nameof(hardwareProbe));
-        _portSelector = portSelector ?? throw new ArgumentNullException(nameof(portSelector));
-    }
 
     public override string Id => "preflight-local-ai-hardware";
     public override string DisplayName => "Checking Local AI compatibility";
@@ -121,10 +75,10 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
                 "Local AI compatibility was inconclusive. No setup changes were made."));
         }
 
-        if (!_portSelector.TrySelect(ctx.Config.LocalAi.Port, out int port, out string? portError))
+        if (!LocalAiPortPolicy.TryValidate(ctx.Config.LocalAi.Port, out string? portError))
             return Task.FromResult(StepResult.Terminal(portError ?? "Local inference port selection failed."));
 
-        ctx.LocalAiPort = port;
+        ctx.LocalAiPort = ctx.Config.LocalAi.Port;
         ctx.Logger.Info(
             "Selected qualified Local AI plan",
             new
@@ -134,7 +88,7 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
                 model = eligibility.Plan.Model.Id,
                 selection = eligibility.Plan.ModelSelectionOrigin.ToString(),
                 gpu = eligibility.SelectedGpu.StableId,
-                port,
+                requestedPort = ctx.Config.LocalAi.Port,
             });
 
         return Task.FromResult(StepResult.Ok(
@@ -481,7 +435,7 @@ public sealed class PersistLocalAiManifestStep : SetupStep
     {
         if (ctx.LocalAiEligibility?.Plan is not { } plan ||
             ctx.LocalAiEligibility.SelectedGpu is not { StableId: { Length: > 0 } gpuId } ||
-            ctx.LocalAiPort is not > 0 ||
+            ctx.LocalAiPort is not { } requestedPort ||
             ctx.LocalAiRuntimeInstall is not { } runtimeInstall ||
             ctx.LocalAiModelInstall is not { } modelInstall)
         {
@@ -491,6 +445,8 @@ public sealed class PersistLocalAiManifestStep : SetupStep
 
         if (plan.Model.Weights.Source is not HuggingFaceRevisionSource modelSource)
             return StepResult.Terminal("The selected Local AI model does not have immutable Hugging Face provenance.");
+        if (!LocalAiPortPolicy.TryValidate(requestedPort, out string? portError))
+            return StepResult.Terminal(portError ?? "The requested Local AI port is invalid.");
 
         var paths = new LocalAiPaths(ctx.LocalDataDir);
         if (File.Exists(paths.ManifestPath))
@@ -531,7 +487,8 @@ public sealed class PersistLocalAiManifestStep : SetupStep
                 SizeBytes = plan.Model.Weights.SizeBytes,
                 Sha256 = plan.Model.Weights.Sha256.Value,
             },
-            Endpoint = $"http://127.0.0.1:{ctx.LocalAiPort.Value}/v1",
+            RequestedPort = requestedPort,
+            Endpoint = null,
             ContextLength = plan.Model.Recipe.ContextTokens,
         };
 
@@ -639,6 +596,17 @@ public sealed class StartLocalAiRuntimeStep : SetupStep
                     snapshot.Detail ?? "The managed llama-server router did not become healthy.");
             }
 
+            LocalAiResolvedInstall? verifiedInstall = await new LocalAiManifestStore(
+                    new LocalAiPaths(ctx.LocalDataDir))
+                .LoadAsync(ct);
+            if (verifiedInstall?.Endpoint is null || verifiedInstall.Endpoint != snapshot.Endpoint)
+            {
+                await DisposeRuntimeAsync(ctx);
+                return StepResult.Fail(
+                    "llama-server became healthy without committing its verified endpoint receipt.");
+            }
+            ctx.LocalAiResolvedInstall = verifiedInstall;
+
             return StepResult.Ok(
                 "The companion-owned llama-server router is healthy. The model remains unloaded until the first request.");
         }
@@ -659,12 +627,11 @@ public sealed class StartLocalAiRuntimeStep : SetupStep
 
     private static ILocalAiRuntime CreateRuntime(SetupContext ctx)
     {
-        LocalAiResolvedInstall install = ctx.LocalAiResolvedInstall
+        _ = ctx.LocalAiResolvedInstall
             ?? throw new InvalidOperationException("The Local AI installation receipt is unavailable.");
         return new LlamaServerRuntimeService(new LlamaServerRuntimeOptions
         {
             Paths = new LocalAiPaths(ctx.LocalDataDir),
-            InitialEndpoint = install.Endpoint,
             StartupTimeout = TimeSpan.FromSeconds(ctx.Config.LocalAi.HealthTimeoutSeconds),
         });
     }
@@ -706,7 +673,7 @@ public sealed class VerifyLocalAiInferenceStep : SetupStep
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
         if (ctx.LocalAiRuntime is not { } runtime ||
-            ctx.LocalAiResolvedInstall is not { } install ||
+            ctx.LocalAiResolvedInstall is not { Endpoint: { } endpoint } install ||
             ctx.LocalAiEligibility?.Plan is not { } plan)
         {
             return StepResult.Terminal(
@@ -730,7 +697,7 @@ public sealed class VerifyLocalAiInferenceStep : SetupStep
         try
         {
             verification = await client.VerifyAsync(
-                install.Endpoint,
+                endpoint,
                 plan.Model.Id,
                 linked.Token);
             loaded = await runtime.RefreshAsync(linked.Token);
@@ -793,7 +760,7 @@ public sealed class VerifyLocalAiWslStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
-        if (ctx.LocalAiResolvedInstall is not { } install ||
+        if (ctx.LocalAiResolvedInstall is not { Endpoint: { } endpoint } install ||
             ctx.LocalAiRuntime is not { Snapshot.State: LocalAiRuntimeState.Healthy } ||
             ctx.LocalAiEligibility?.Plan is not { } plan ||
             string.IsNullOrWhiteSpace(ctx.DistroName))
@@ -802,7 +769,7 @@ public sealed class VerifyLocalAiWslStep : SetupStep
                 "WSL Local AI verification requires the healthy managed router and app-owned distro.");
         }
 
-        string script = BuildProbeScript(install.Endpoint.Port);
+        string script = BuildProbeScript(endpoint.Port);
         CommandResult result = await ctx.Commands.RunInWslAsync(
             ctx.DistroName,
             script,
@@ -828,12 +795,12 @@ public sealed class VerifyLocalAiWslStep : SetupStep
         }
 
         return StepResult.Ok(
-            $"The app-owned WSL distro can reach llama-server on 127.0.0.1:{install.Endpoint.Port}.");
+            $"The app-owned WSL distro can reach llama-server on 127.0.0.1:{endpoint.Port}.");
     }
 
     internal static string BuildProbeScript(int port)
     {
-        if (port is <= 0 or > 65_535)
+        if (port is <= 0 or > 65_535 || port == 80)
             throw new ArgumentOutOfRangeException(nameof(port));
 
         return $$"""

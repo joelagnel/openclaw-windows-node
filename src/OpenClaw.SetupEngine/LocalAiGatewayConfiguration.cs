@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using OpenClaw.Connection.LocalAi;
 
 namespace OpenClaw.SetupEngine;
 
@@ -11,44 +12,22 @@ internal sealed record LocalAiGatewayPriorState(
 
 internal static class LocalAiGatewayConfigBuilder
 {
-    internal const string ProviderPath = "models.providers.llamacpp";
-    internal const string PrimaryModelPath = "agents.defaults.model.primary";
-    internal const int ProviderTimeoutSeconds = 300;
-    internal const int MaximumOutputTokens = 8_192;
+    internal const string ProviderPath = LocalAiGatewayProviderDefinition.ProviderPath;
+    internal const string PrimaryModelPath = LocalAiGatewayProviderDefinition.PrimaryModelPath;
 
     public static string BuildBatchJson(SetupContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var install = context.LocalAiResolvedInstall
             ?? throw new InvalidOperationException("The Local AI install receipt is required.");
-        var plan = context.LocalAiEligibility?.Plan
+        _ = context.LocalAiEligibility?.Plan
             ?? throw new InvalidOperationException("The qualified Local AI plan is required.");
-
-        var endpoint = install.Endpoint.AbsoluteUri.TrimEnd('/');
-        var model = new
-        {
-            id = install.Manifest.ModelAlias,
-            name = plan.Model.DisplayName,
-            reasoning = true,
-            input = new[] { "text" },
-            cost = new { input = 0, output = 0, cacheRead = 0, cacheWrite = 0 },
-            contextWindow = install.Manifest.ContextLength,
-            contextTokens = install.Manifest.ContextLength,
-            maxTokens = MaximumOutputTokens,
-            compat = new { supportsTools = true, supportsUsageInStreaming = true },
-        };
-        var provider = new
-        {
-            baseUrl = endpoint,
-            api = "openai-completions",
-            apiKey = "llama-local",
-            timeoutSeconds = ProviderTimeoutSeconds,
-            models = new[] { model },
-        };
+        using JsonDocument provider = JsonDocument.Parse(
+            LocalAiGatewayProviderDefinition.BuildProviderJson(install));
         object[] operations =
         [
-            new { path = ProviderPath, value = (object)provider },
-            new { path = PrimaryModelPath, value = (object)$"llamacpp/{install.Manifest.ModelAlias}" },
+            new { path = ProviderPath, value = (object)provider.RootElement.Clone() },
+            new { path = PrimaryModelPath, value = (object)LocalAiGatewayProviderDefinition.BuildPrimaryModel(install) },
         ];
         return JsonSerializer.Serialize(operations);
     }
@@ -71,7 +50,9 @@ internal static class LocalAiGatewayConfigBuilder
     }
 
     public static string ExpectedPrimaryModel(SetupContext context) =>
-        $"llamacpp/{context.LocalAiResolvedInstall?.Manifest.ModelAlias ?? throw new InvalidOperationException("The Local AI install receipt is required.")}";
+        LocalAiGatewayProviderDefinition.BuildPrimaryModel(
+            context.LocalAiResolvedInstall
+                ?? throw new InvalidOperationException("The Local AI install receipt is required."));
 }
 
 public sealed class ConfigureLocalAiGatewayStep : SetupStep

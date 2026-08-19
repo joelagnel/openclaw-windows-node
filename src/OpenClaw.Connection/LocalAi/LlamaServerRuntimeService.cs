@@ -8,6 +8,7 @@ public sealed record LlamaServerRuntimeOptions
 {
     public required LocalAiPaths Paths { get; init; }
     public Uri InitialEndpoint { get; init; } = new("http://127.0.0.1:18803/v1");
+    public ILocalAiEndpointLifecycle EndpointLifecycle { get; init; } = NullLocalAiEndpointLifecycle.Instance;
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan HealthPollInterval { get; init; } = TimeSpan.FromMilliseconds(250);
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(10);
@@ -141,7 +142,9 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         try
         {
             ThrowIfDisposed();
-            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+            LocalAiRuntimeSnapshot stopped = await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (_managedProcess is not null || stopped.State == LocalAiRuntimeState.Failed)
+                return stopped;
             _restartAttempts = 0;
             return await EnsureStartedCoreAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -157,11 +160,20 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return Snapshot;
 
         LocalAiResolvedInstall install = _install!;
+        if (_managedProcess is { HasExited: false })
+            return await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
+        if (_managedProcess is not null)
+            await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
+
         LlamaServerRouterLaunchPlan launchPlan;
         try
         {
             ValidateInstalledFiles(install);
-            launchPlan = LlamaServerRouterConfiguration.Build(_options.Paths, install);
+            LocalAiPortPolicy.Validate(install.Manifest.RequestedPort);
+            launchPlan = LlamaServerRouterConfiguration.Build(
+                _options.Paths,
+                install,
+                install.Manifest.RequestedPort);
             await WritePresetAtomicallyAsync(launchPlan, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -170,25 +182,25 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return Publish(LocalAiRuntimeState.Failed, LocalAiOwnership.None, Sanitize(ex.Message));
         }
 
-        EndpointObservation observed = await ObserveEndpointAsync(install, cancellationToken).ConfigureAwait(false);
-        if (!observed.IsComplete)
+        WindowsTcpListenerSnapshotResult beforeStart = _platform.CaptureListeners();
+        if (!beforeStart.Ipv4Complete)
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
-        if (observed.HasListeners)
+        if (install.Manifest.RequestedPort != LocalAiPortPolicy.Automatic &&
+            FindLoopbackListeners(beforeStart, install.Manifest.RequestedPort).Count > 0)
         {
-            if (_managedProcess is not null &&
-                IsManagedOwnership(observed.Listeners, _managedProcess) &&
-                observed.Probe.IsHealthy)
-            {
-                return PublishHealthy(observed.Probe);
-            }
             return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The configured llama-server port is already in use.");
         }
-        if (observed.Probe.IsHealthy)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "llama-server responded without a verifiable TCP listener.");
 
-        observed = await ObserveEndpointAsync(install, cancellationToken).ConfigureAwait(false);
-        if (!observed.IsComplete || observed.HasListeners || observed.Probe.IsHealthy)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "The llama-server endpoint changed while startup was being prepared.");
+        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+            .QuiesceAsync(install, cancellationToken)
+            .ConfigureAwait(false);
+        if (!quiesced.Success)
+        {
+            return Publish(
+                LocalAiRuntimeState.Failed,
+                LocalAiOwnership.None,
+                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.");
+        }
 
         long generation = ++_generation;
         Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "Starting the local AI router.");
@@ -203,7 +215,6 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             _options.LogBackupCount,
             _options.MaxLogLineCharacters);
 
-        bool sawHealthyWithoutListener = false;
         try
         {
             _managedProcess = await _processHost.StartProcessAsync(
@@ -219,29 +230,52 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 if (_managedProcess.HasExited)
                     throw new InvalidOperationException("Managed llama-server exited during startup.");
 
-                observed = await ObserveEndpointAsync(install, cancellationToken).ConfigureAwait(false);
-                if (!observed.IsComplete)
+                EndpointOwnershipObservation ownership = DiscoverOwnedEndpoint(install, _managedProcess);
+                if (!ownership.IsComplete)
                     return await FailStartupAsync(LocalAiRuntimeState.Conflict, "TCP listener ownership could not be determined.").ConfigureAwait(false);
-                if (observed.HasListeners)
+                if (ownership.ConflictDetail is not null)
                 {
-                    if (!IsManagedOwnership(observed.Listeners, _managedProcess))
-                        return await FailStartupAsync(LocalAiRuntimeState.Conflict, "Another process owns the configured llama-server endpoint.").ConfigureAwait(false);
-                    if (observed.Probe.IsHealthy)
-                        return PublishHealthy(observed.Probe);
+                    return await FailStartupAsync(LocalAiRuntimeState.Conflict, ownership.ConflictDetail)
+                        .ConfigureAwait(false);
                 }
-                else if (observed.Probe.IsHealthy)
+                if (ownership.Endpoint is not null)
                 {
-                    sawHealthyWithoutListener = true;
+                    LlamaServerRouterProbeResult probe = await _client.ProbeRouterAsync(
+                            ownership.Endpoint,
+                            install.Manifest.ModelAlias,
+                            install.ModelPath,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (probe.IsHealthy)
+                    {
+                        LocalAiInstallManifest verifiedManifest = install.Manifest with
+                        {
+                            Endpoint = ownership.Endpoint.AbsoluteUri,
+                        };
+                        await _manifestStore.SaveAsync(verifiedManifest, cancellationToken).ConfigureAwait(false);
+                        _install = _manifestStore.ResolveAndValidate(verifiedManifest);
+
+                        LocalAiEndpointLifecycleResult published = await _options.EndpointLifecycle
+                            .PublishAsync(_install, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (!published.Success)
+                        {
+                            return await FailStartupAsync(
+                                    LocalAiRuntimeState.Failed,
+                                    published.Detail ?? "The Local AI gateway provider could not be safely published.")
+                                .ConfigureAwait(false);
+                        }
+
+                        return PublishHealthy(probe);
+                    }
                 }
 
                 await _platform.DelayAsync(_options.HealthPollInterval, cancellationToken).ConfigureAwait(false);
             }
 
             return await FailStartupAsync(
-                    sawHealthyWithoutListener ? LocalAiRuntimeState.Conflict : LocalAiRuntimeState.Failed,
-                    sawHealthyWithoutListener
-                        ? "llama-server responded without a verifiable TCP listener."
-                        : "The local AI router did not become healthy before the startup timeout.")
+                    LocalAiRuntimeState.Failed,
+                    "The local AI router did not become healthy before the startup timeout.")
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -274,26 +308,52 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return Publish(LocalAiRuntimeState.Failed, LocalAiOwnership.None, Sanitize(ex.Message));
         }
 
-        EndpointObservation observed = await ObserveEndpointAsync(_install!, cancellationToken).ConfigureAwait(false);
-        if (!observed.IsComplete)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
-        if (observed.HasListeners)
+        if (_managedProcess is null || _managedProcess.HasExited)
         {
-            if (_managedProcess is null || !IsManagedOwnership(observed.Listeners, _managedProcess))
-                return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "Another process owns the configured llama-server endpoint.");
-            return observed.Probe.IsHealthy
-                ? PublishHealthy(observed.Probe)
-                : Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "The local AI router is not healthy yet.", _managedProcess.ProcessId, _managedProcess.StartedAtUtc);
+            if (_install!.Endpoint is { } persistedEndpoint)
+            {
+                WindowsTcpListenerSnapshotResult snapshot = _platform.CaptureListeners();
+                if (!snapshot.Ipv4Complete)
+                    return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
+                if (FindLoopbackListeners(snapshot, persistedEndpoint.Port).Count > 0)
+                {
+                    return Publish(
+                        LocalAiRuntimeState.Conflict,
+                        LocalAiOwnership.None,
+                        "A process not owned by this companion is using the last verified Local AI endpoint.");
+                }
+            }
+
+            return Publish(
+                LocalAiRuntimeState.Stopped,
+                LocalAiOwnership.None,
+                null,
+                modelState: LocalAiModelAvailabilityState.Verified);
         }
-        if (observed.Probe.IsHealthy)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "llama-server responded without a verifiable TCP listener.");
-        if (_managedProcess is { HasExited: false })
+
+        LocalAiResolvedInstall install = _install!;
+        EndpointOwnershipObservation ownership = DiscoverOwnedEndpoint(install, _managedProcess);
+        if (!ownership.IsComplete)
+            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
+        if (ownership.ConflictDetail is not null)
+            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, ownership.ConflictDetail);
+        if (ownership.Endpoint is null)
             return Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "The local AI router has not opened its endpoint yet.", _managedProcess.ProcessId, _managedProcess.StartedAtUtc);
-        return Publish(
-            LocalAiRuntimeState.Stopped,
-            LocalAiOwnership.None,
-            null,
-            modelState: LocalAiModelAvailabilityState.Verified);
+
+        LlamaServerRouterProbeResult probe = await _client.ProbeRouterAsync(
+                ownership.Endpoint,
+                install.Manifest.ModelAlias,
+                install.ModelPath,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return probe.IsHealthy
+            ? PublishHealthy(probe)
+            : Publish(
+                LocalAiRuntimeState.Starting,
+                LocalAiOwnership.CompanionManaged,
+                "The local AI router is not healthy yet.",
+                _managedProcess.ProcessId,
+                _managedProcess.StartedAtUtc);
     }
 
     private async Task<bool> TryLoadInstallAsync(CancellationToken cancellationToken)
@@ -362,8 +422,30 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
 
     private async Task<LocalAiRuntimeSnapshot> StopCoreAsync(CancellationToken cancellationToken)
     {
+        if (_install is null && !await TryLoadInstallAsync(cancellationToken).ConfigureAwait(false))
+            return Snapshot;
+
+        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+            .QuiesceAsync(_install!, cancellationToken)
+            .ConfigureAwait(false);
+        if (!quiesced.Success)
+        {
+            return Publish(
+                LocalAiRuntimeState.Failed,
+                _managedProcess is null ? LocalAiOwnership.None : LocalAiOwnership.CompanionManaged,
+                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.",
+                _managedProcess?.ProcessId,
+                _managedProcess?.StartedAtUtc);
+        }
+
         if (_managedProcess is null)
-            return await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
+        {
+            return Publish(
+                LocalAiRuntimeState.Stopped,
+                LocalAiOwnership.None,
+                null,
+                modelState: LocalAiModelAvailabilityState.Verified);
+        }
 
         _stopping = true;
         ++_generation;
@@ -432,6 +514,21 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 _managedProcess = null;
                 if (exited is not null)
                     await exited.DisposeAsync().ConfigureAwait(false);
+
+                if (_install is not null)
+                {
+                    LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+                        .QuiesceAsync(_install, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (!quiesced.Success)
+                    {
+                        Publish(
+                            LocalAiRuntimeState.Failed,
+                            LocalAiOwnership.None,
+                            quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled after the router exited.");
+                        return;
+                    }
+                }
                 Publish(
                     LocalAiRuntimeState.Failed,
                     LocalAiOwnership.None,
@@ -470,23 +567,67 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             _exitTasks.Remove(exitTask);
     }
 
-    private async Task<EndpointObservation> ObserveEndpointAsync(
+    private EndpointOwnershipObservation DiscoverOwnedEndpoint(
         LocalAiResolvedInstall install,
-        CancellationToken cancellationToken)
+        ILocalAiManagedProcess process)
     {
         WindowsTcpListenerSnapshotResult snapshot = _platform.CaptureListeners();
-        WindowsTcpListenerInfo[] listeners = snapshot.Listeners.Where(
-            listener => listener.Port == install.Endpoint.Port &&
-                (listener.Address.Equals(IPAddress.Loopback) || listener.Address.Equals(IPAddress.Any)))
+        if (!snapshot.Ipv4Complete)
+            return new(false, null, null);
+
+        WindowsTcpListenerInfo[] loopbackListeners = snapshot.Listeners
+            .Where(IsIpv4LoopbackListener)
             .ToArray();
-        LlamaServerRouterProbeResult probe = await _client.ProbeRouterAsync(
-                install.Endpoint,
-                install.Manifest.ModelAlias,
-                install.ModelPath,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return new EndpointObservation(snapshot.Ipv4Complete, listeners, probe);
+        WindowsTcpListenerInfo[] processListeners = loopbackListeners
+            .Where(listener => listener.ProcessId == process.ProcessId)
+            .ToArray();
+        WindowsTcpListenerInfo[] ownedListeners = processListeners
+            .Where(listener => IsManagedListener(listener, process))
+            .ToArray();
+        if (processListeners.Length != ownedListeners.Length)
+        {
+            return new(
+                true,
+                null,
+                "A llama-server listener was found, but its process start time could not be verified.");
+        }
+
+        int requestedPort = install.Manifest.RequestedPort;
+        if (requestedPort != LocalAiPortPolicy.Automatic)
+        {
+            IReadOnlyList<WindowsTcpListenerInfo> requestedListeners = FindLoopbackListeners(snapshot, requestedPort);
+            if (requestedListeners.Any(listener => !IsManagedListener(listener, process)))
+                return new(true, null, "Another process owns the configured llama-server endpoint.");
+            if (ownedListeners.Any(listener => listener.Port != requestedPort))
+                return new(true, null, "Managed llama-server did not bind the requested fixed port.");
+            if (requestedListeners.Count == 0)
+                return new(true, null, null);
+            return new(true, BuildEndpoint(requestedPort), null);
+        }
+
+        int[] ownedPorts = ownedListeners.Select(listener => listener.Port).Distinct().ToArray();
+        if (ownedPorts.Length == 0)
+            return new(true, null, null);
+        if (ownedPorts.Length != 1)
+            return new(true, null, "Managed llama-server opened more than one candidate loopback endpoint.");
+
+        int selectedPort = ownedPorts[0];
+        if (FindLoopbackListeners(snapshot, selectedPort).Any(listener => !IsManagedListener(listener, process)))
+            return new(true, null, "Another process shares the managed llama-server endpoint.");
+        return new(true, BuildEndpoint(selectedPort), null);
     }
+
+    private static IReadOnlyList<WindowsTcpListenerInfo> FindLoopbackListeners(
+        WindowsTcpListenerSnapshotResult snapshot,
+        int port) => snapshot.Listeners
+            .Where(listener => listener.Port == port && IsIpv4LoopbackListener(listener))
+            .ToArray();
+
+    private static bool IsIpv4LoopbackListener(WindowsTcpListenerInfo listener) =>
+        listener.Address.Equals(IPAddress.Loopback) || listener.Address.Equals(IPAddress.Any);
+
+    private static Uri BuildEndpoint(int port) =>
+        new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri;
 
     private LocalAiRuntimeSnapshot PublishHealthy(LlamaServerRouterProbeResult probe) =>
         Publish(
@@ -497,13 +638,12 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             _managedProcess?.StartedAtUtc,
             probe.ModelState);
 
-    private static bool IsManagedOwnership(
-        IReadOnlyList<WindowsTcpListenerInfo> listeners,
+    private static bool IsManagedListener(
+        WindowsTcpListenerInfo listener,
         ILocalAiManagedProcess process) =>
-        listeners.Count > 0 && listeners.All(listener =>
-            listener.ProcessId == process.ProcessId &&
+        listener.ProcessId == process.ProcessId &&
             listener.ProcessStartTimeUtc is { } started &&
-            Math.Abs((started - process.StartedAtUtc.UtcDateTime).TotalSeconds) < 1);
+            Math.Abs((started - process.StartedAtUtc.UtcDateTime).TotalSeconds) < 1;
 
     private LocalAiRuntimeSnapshot Publish(
         LocalAiRuntimeState state,
@@ -583,6 +723,21 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                     return;
                 _stopping = true;
                 ++_generation;
+                if (_install is not null)
+                {
+                    try
+                    {
+                        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+                            .QuiesceAsync(_install, CancellationToken.None)
+                            .ConfigureAwait(false);
+                        if (!quiesced.Success)
+                            _logger.Warn(quiesced.Detail ?? "The Local AI gateway provider could not be disabled during shutdown.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warn($"The Local AI gateway provider could not be disabled during shutdown: {Sanitize(ex.Message)}");
+                    }
+                }
                 await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
                 _disposed = true;
                 _client.Dispose();
@@ -606,10 +761,12 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Paths);
+        ArgumentNullException.ThrowIfNull(options.EndpointLifecycle);
         if (!options.InitialEndpoint.IsAbsoluteUri ||
             options.InitialEndpoint.Scheme != Uri.UriSchemeHttp ||
             !string.Equals(options.InitialEndpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
             options.InitialEndpoint.Port is <= 0 or > 65535 ||
+            options.InitialEndpoint.Port == 80 ||
             !string.Equals(options.InitialEndpoint.AbsolutePath, "/v1", StringComparison.Ordinal) ||
             !string.IsNullOrEmpty(options.InitialEndpoint.Query) ||
             !string.IsNullOrEmpty(options.InitialEndpoint.Fragment) ||
@@ -636,11 +793,8 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
 
     private static string Sanitize(string value) => TokenSanitizer.SanitizeLogMessage(value);
 
-    private sealed record EndpointObservation(
+    private sealed record EndpointOwnershipObservation(
         bool IsComplete,
-        IReadOnlyList<WindowsTcpListenerInfo> Listeners,
-        LlamaServerRouterProbeResult Probe)
-    {
-        public bool HasListeners => Listeners.Count > 0;
-    }
+        Uri? Endpoint,
+        string? ConflictDetail);
 }

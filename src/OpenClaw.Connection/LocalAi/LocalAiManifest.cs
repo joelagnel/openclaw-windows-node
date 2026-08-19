@@ -119,7 +119,7 @@ public sealed record LocalAiAssetReceipt
 
 public sealed record LocalAiInstallManifest
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
     public const string SupportedEngine = "llama-server";
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
@@ -136,7 +136,17 @@ public sealed record LocalAiInstallManifest
     public required string ModelId { get; init; }
     public required string ModelAlias { get; init; }
     public required LocalAiAssetReceipt ModelAsset { get; init; }
-    public required string Endpoint { get; init; }
+    /// <summary>
+    /// The requested listener port. Zero delegates allocation to llama-server so
+    /// the child owns the port continuously from bind through startup.
+    /// </summary>
+    public int RequestedPort { get; init; }
+
+    /// <summary>
+    /// The last endpoint whose listener ownership and health were verified. It is
+    /// intentionally absent while an automatic-port runtime has not started yet.
+    /// </summary>
+    public string? Endpoint { get; init; }
     public required int ContextLength { get; init; }
     public DateTimeOffset InstalledAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
@@ -145,7 +155,30 @@ public sealed record LocalAiResolvedInstall(
     LocalAiInstallManifest Manifest,
     string ExecutablePath,
     string ModelPath,
-    Uri Endpoint);
+    Uri? Endpoint);
+
+/// <summary>Shared validation for setup, manifests, and runtime launch.</summary>
+public static class LocalAiPortPolicy
+{
+    public const int Automatic = 0;
+
+    public static bool TryValidate(int requestedPort, out string? error)
+    {
+        error = requestedPort switch
+        {
+            80 => "Port 80 is reserved and cannot be used for Local AI.",
+            < 0 or > 65_535 => "The Local AI port must be zero (automatic) or between 1 and 65535.",
+            _ => null,
+        };
+        return error is null;
+    }
+
+    public static void Validate(int requestedPort)
+    {
+        if (!TryValidate(requestedPort, out string? error))
+            throw new InvalidDataException(error);
+    }
+}
 
 /// <summary>Persists the installation manifest with same-directory atomic replacement.</summary>
 public sealed class LocalAiManifestStore
@@ -292,17 +325,27 @@ public sealed class LocalAiManifestStore
         if (!string.Equals(Path.GetFileName(model), manifest.ModelAsset.FileName, StringComparison.Ordinal))
             throw new InvalidDataException("The managed model path must match its asset receipt filename.");
 
-        if (!Uri.TryCreate(manifest.Endpoint, UriKind.Absolute, out var endpoint) ||
-            endpoint.Scheme != Uri.UriSchemeHttp ||
-            !string.Equals(endpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
-            endpoint.IsDefaultPort ||
-            endpoint.Port is <= 0 or > 65535 ||
-            !string.IsNullOrEmpty(endpoint.UserInfo) ||
-            !string.IsNullOrEmpty(endpoint.Query) ||
-            !string.IsNullOrEmpty(endpoint.Fragment) ||
-            !string.Equals(endpoint.AbsolutePath, "/v1", StringComparison.Ordinal))
+        LocalAiPortPolicy.Validate(manifest.RequestedPort);
+
+        Uri? endpoint = null;
+        if (manifest.Endpoint is not null)
         {
-            throw new InvalidDataException("The local AI endpoint must be an HTTP IPv4 loopback /v1 address with an explicit port.");
+            if (!Uri.TryCreate(manifest.Endpoint, UriKind.Absolute, out endpoint) ||
+                endpoint.Scheme != Uri.UriSchemeHttp ||
+                !string.Equals(endpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
+                endpoint.IsDefaultPort ||
+                endpoint.Port is <= 0 or > 65535 ||
+                endpoint.Port == 80 ||
+                !string.IsNullOrEmpty(endpoint.UserInfo) ||
+                !string.IsNullOrEmpty(endpoint.Query) ||
+                !string.IsNullOrEmpty(endpoint.Fragment) ||
+                !string.Equals(endpoint.AbsolutePath, "/v1", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The local AI endpoint must be an HTTP IPv4 loopback /v1 address with an explicit non-reserved port.");
+            }
+
+            if (manifest.RequestedPort != LocalAiPortPolicy.Automatic && endpoint.Port != manifest.RequestedPort)
+                throw new InvalidDataException("The verified Local AI endpoint does not match its requested fixed port.");
         }
 
         return new LocalAiResolvedInstall(manifest, executable, model, endpoint);

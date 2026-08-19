@@ -288,7 +288,22 @@ internal sealed class WslGlobalConfigManager : IWslGlobalConfigManager
             }
             else
             {
-                _lines.Insert(_wsl2EndIndex, new Line($"{NetworkingModeKey}={MirroredValue}", newLine));
+                var settingTerminator = newLine;
+                if (_wsl2EndIndex == _lines.Count &&
+                    _lines.Count > 0 &&
+                    _lines[^1].Terminator.Length == 0)
+                {
+                    // Preserve a missing final newline while still placing the new
+                    // setting on its own line. Without this boundary, an existing
+                    // final line such as "memory=8GB" becomes
+                    // "memory=8GBnetworkingMode=mirrored".
+                    _lines[^1] = _lines[^1] with { Terminator = newLine };
+                    settingTerminator = string.Empty;
+                }
+
+                _lines.Insert(
+                    _wsl2EndIndex,
+                    new Line($"{NetworkingModeKey}={MirroredValue}", settingTerminator));
             }
 
             return string.Concat(_lines.Select(line => line.Content + line.Terminator));

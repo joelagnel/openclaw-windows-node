@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,6 +18,7 @@ public sealed class LocalAiPaths
         DownloadsDirectory = Path.Combine(RootDirectory, "downloads");
         StagingDirectory = Path.Combine(RootDirectory, "staging");
         LogsDirectory = Path.Combine(RootDirectory, "logs");
+        RouterPresetPath = Path.Combine(RootDirectory, "llama-server-models.ini");
         StandardOutputLogPath = Path.Combine(LogsDirectory, "llama-server.stdout.log");
         StandardErrorLogPath = Path.Combine(LogsDirectory, "llama-server.stderr.log");
     }
@@ -31,6 +31,7 @@ public sealed class LocalAiPaths
     public string DownloadsDirectory { get; }
     public string StagingDirectory { get; }
     public string LogsDirectory { get; }
+    public string RouterPresetPath { get; }
     public string StandardOutputLogPath { get; }
     public string StandardErrorLogPath { get; }
 
@@ -118,7 +119,7 @@ public sealed record LocalAiAssetReceipt
 
 public sealed record LocalAiInstallManifest
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
     public const string SupportedEngine = "llama-server";
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
@@ -135,7 +136,17 @@ public sealed record LocalAiInstallManifest
     public required string ModelId { get; init; }
     public required string ModelAlias { get; init; }
     public required LocalAiAssetReceipt ModelAsset { get; init; }
-    public required string Endpoint { get; init; }
+    /// <summary>
+    /// The requested listener port. Zero delegates allocation to llama-server so
+    /// the child owns the port continuously from bind through startup.
+    /// </summary>
+    public int RequestedPort { get; init; }
+
+    /// <summary>
+    /// The last endpoint whose listener ownership and health were verified. It is
+    /// intentionally absent while an automatic-port runtime has not started yet.
+    /// </summary>
+    public string? Endpoint { get; init; }
     /// <summary>
     /// The non-Local-AI primary model that was active before setup selected the
     /// managed llama.cpp model. Null means no prior primary model was configured.
@@ -149,7 +160,30 @@ public sealed record LocalAiResolvedInstall(
     LocalAiInstallManifest Manifest,
     string ExecutablePath,
     string ModelPath,
-    Uri Endpoint);
+    Uri? Endpoint);
+
+/// <summary>Shared validation for setup, manifests, and runtime launch.</summary>
+public static class LocalAiPortPolicy
+{
+    public const int Automatic = 0;
+
+    public static bool TryValidate(int requestedPort, out string? error)
+    {
+        error = requestedPort switch
+        {
+            80 => "Port 80 is reserved and cannot be used for Local AI.",
+            < 0 or > 65_535 => "The Local AI port must be zero (automatic) or between 1 and 65535.",
+            _ => null,
+        };
+        return error is null;
+    }
+
+    public static void Validate(int requestedPort)
+    {
+        if (!TryValidate(requestedPort, out string? error))
+            throw new InvalidDataException(error);
+    }
+}
 
 /// <summary>Validation for the non-managed gateway route retained in a manifest.</summary>
 public static class LocalAiGatewayModelPolicy
@@ -316,18 +350,28 @@ public sealed class LocalAiManifestStore
         if (!string.Equals(Path.GetFileName(model), manifest.ModelAsset.FileName, StringComparison.Ordinal))
             throw new InvalidDataException("The managed model path must match its asset receipt filename.");
 
+        LocalAiPortPolicy.Validate(manifest.RequestedPort);
         LocalAiGatewayModelPolicy.ValidateFallbackModel(manifest.GatewayFallbackModel);
 
-        if (!Uri.TryCreate(manifest.Endpoint, UriKind.Absolute, out var endpoint) ||
-            endpoint.Scheme != Uri.UriSchemeHttp ||
-            !IsLoopback(endpoint) ||
-            endpoint.IsDefaultPort ||
-            endpoint.Port is <= 0 or > 65535 ||
-            !string.IsNullOrEmpty(endpoint.UserInfo) ||
-            !string.IsNullOrEmpty(endpoint.Query) ||
-            !string.IsNullOrEmpty(endpoint.Fragment))
+        Uri? endpoint = null;
+        if (manifest.Endpoint is not null)
         {
-            throw new InvalidDataException("The local AI endpoint must be an HTTP loopback address with an explicit port.");
+            if (!Uri.TryCreate(manifest.Endpoint, UriKind.Absolute, out endpoint) ||
+                endpoint.Scheme != Uri.UriSchemeHttp ||
+                !string.Equals(endpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
+                endpoint.IsDefaultPort ||
+                endpoint.Port is <= 0 or > 65535 ||
+                endpoint.Port == 80 ||
+                !string.IsNullOrEmpty(endpoint.UserInfo) ||
+                !string.IsNullOrEmpty(endpoint.Query) ||
+                !string.IsNullOrEmpty(endpoint.Fragment) ||
+                !string.Equals(endpoint.AbsolutePath, "/v1", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The local AI endpoint must be an HTTP IPv4 loopback /v1 address with an explicit non-reserved port.");
+            }
+
+            if (manifest.RequestedPort != LocalAiPortPolicy.Automatic && endpoint.Port != manifest.RequestedPort)
+                throw new InvalidDataException("The verified Local AI endpoint does not match its requested fixed port.");
         }
 
         return new LocalAiResolvedInstall(manifest, executable, model, endpoint);
@@ -407,7 +451,4 @@ public sealed class LocalAiManifestStore
         }
     }
 
-    private static bool IsLoopback(Uri endpoint) =>
-        string.Equals(endpoint.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-        (IPAddress.TryParse(endpoint.Host, out var address) && IPAddress.IsLoopback(address));
 }

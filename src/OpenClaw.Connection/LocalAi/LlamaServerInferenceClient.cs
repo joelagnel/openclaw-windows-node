@@ -95,7 +95,7 @@ public sealed class LlamaServerInferenceClient : ILlamaServerInferenceClient
             throw new InvalidDataException("llama-server inference did not report the selected model alias.");
         }
 
-        ValidateAssistantContent(root);
+        ValidateAssistantOutput(root);
         (int promptTokens, int completionTokens) = ReadUsage(root);
         (double promptMilliseconds, double completionMilliseconds) = ReadTimings(root);
         return new(
@@ -106,7 +106,7 @@ public sealed class LlamaServerInferenceClient : ILlamaServerInferenceClient
             completionMilliseconds);
     }
 
-    private static void ValidateAssistantContent(JsonElement root)
+    private static void ValidateAssistantOutput(JsonElement root)
     {
         if (!root.TryGetProperty("choices", out JsonElement choices) ||
             choices.ValueKind != JsonValueKind.Array ||
@@ -119,13 +119,17 @@ public sealed class LlamaServerInferenceClient : ILlamaServerInferenceClient
         if (choice.ValueKind != JsonValueKind.Object ||
             !choice.TryGetProperty("message", out JsonElement message) ||
             message.ValueKind != JsonValueKind.Object ||
-            !message.TryGetProperty("content", out JsonElement content) ||
-            content.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(content.GetString()))
+            (!HasNonemptyString(message, "content") &&
+             !HasNonemptyString(message, "reasoning_content")))
         {
-            throw new InvalidDataException("llama-server inference returned no assistant content.");
+            throw new InvalidDataException("llama-server inference returned no assistant output.");
         }
     }
+
+    private static bool HasNonemptyString(JsonElement value, string propertyName) =>
+        value.TryGetProperty(propertyName, out JsonElement property) &&
+        property.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(property.GetString());
 
     private static (int PromptTokens, int CompletionTokens) ReadUsage(JsonElement root)
     {

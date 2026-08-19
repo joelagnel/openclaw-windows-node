@@ -33,6 +33,17 @@ public sealed class LlamaServerInferenceClientTests
         Assert.Equal(125.25, result.CompletionMilliseconds);
     }
 
+    [Fact]
+    public async Task Verify_AcceptsBoundedReasoningOutputBeforeFinalContent()
+    {
+        using var client = new LlamaServerInferenceClient(new RecordingHandler(_ =>
+            Task.FromResult(JsonResponse(ValidResponse(content: null, reasoningContent: "local inference is ready")))));
+
+        LlamaServerInferenceVerification result = await client.VerifyAsync(Endpoint, Alias);
+
+        Assert.Equal(7, result.CompletionTokens);
+    }
+
     [Theory]
     [InlineData("wrong-model", "ready", 7, true)]
     [InlineData(Alias, "", 7, true)]
@@ -40,7 +51,7 @@ public sealed class LlamaServerInferenceClientTests
     [InlineData(Alias, "ready", 7, false)]
     public async Task Verify_RejectsIncompleteOrWrongEvidence(
         string model,
-        string content,
+        string? content,
         int completionTokens,
         bool includeTimings)
     {
@@ -77,16 +88,17 @@ public sealed class LlamaServerInferenceClientTests
 
     private static string ValidResponse(
         string model = Alias,
-        string content = "ready",
+        string? content = "ready",
         int completionTokens = 7,
-        bool includeTimings = true)
+        bool includeTimings = true,
+        string? reasoningContent = null)
     {
         var response = new Dictionary<string, object?>
         {
             ["model"] = model,
             ["choices"] = new[]
             {
-                new { message = new { role = "assistant", content } },
+                new { message = new { role = "assistant", content, reasoning_content = reasoningContent } },
             },
             ["usage"] = new { prompt_tokens = 12, completion_tokens = completionTokens },
         };

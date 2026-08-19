@@ -79,20 +79,31 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(24, steps.Count);
+        Assert.Equal(35, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightWslStep>(steps[2]);
         Assert.IsType<PreflightWindowsTailscaleStep>(steps[3]);
-        Assert.IsType<CleanupStaleDistroStep>(steps[4]);
-        Assert.IsType<CleanupStaleGatewayStep>(steps[5]);
+        Assert.IsType<PreflightLocalAiHardwareStep>(steps[4]);
+        Assert.IsType<ConfigureLocalAiWslNetworkingStep>(steps[5]);
+        Assert.IsType<CleanupStaleDistroStep>(steps[6]);
+        Assert.IsType<CleanupStaleGatewayStep>(steps[7]);
         Assert.Contains(steps, s => s is ValidateWslLockdownStep);
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
         Assert.Equal(lockdownIndex + 1, cliInstallIndex);
-        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 1]);
-        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[cliInstallIndex + 1]);
+        Assert.IsType<AcquireLocalAiModelStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<PersistLocalAiManifestStep>(steps[cliInstallIndex + 3]);
+        Assert.IsType<StartLocalAiRuntimeStep>(steps[cliInstallIndex + 4]);
+        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[cliInstallIndex + 5]);
+        Assert.IsType<VerifyLocalAiInferenceStep>(steps[cliInstallIndex + 6]);
+        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[cliInstallIndex + 7]);
+        Assert.IsType<VerifyLocalAiWslStep>(steps[cliInstallIndex + 8]);
+        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 9]);
+        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 10]);
         var installServiceIndex = steps.FindIndex(s => s is InstallGatewayServiceStep);
+        Assert.IsType<ConfigureLocalAiGatewayStep>(steps[installServiceIndex - 1]);
         Assert.IsType<StartGatewayStep>(steps[installServiceIndex + 1]);
         Assert.IsType<FinalizeTailscaleServeStep>(steps[installServiceIndex + 2]);
         Assert.Contains(steps, s => s is RunGatewayWizardStep);
@@ -345,6 +356,80 @@ public class SetupPipelineTests
         var result = await pipeline.RunAsync(ctx);
         Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
         Assert.Equal(3, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_Cancellation_WithRollback_CleansInterruptedAndCompletedSteps()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbackOrder = new List<string>();
+        var ctx = CreateContext(
+            new SetupConfig { RollbackOnFailure = true },
+            ct: cts.Token);
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "completed",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackOrder.Add("completed");
+                    return Task.CompletedTask;
+                }),
+            new MockStep(
+                "interrupted",
+                (_, _) =>
+                {
+                    cts.Cancel();
+                    return Task.FromCanceled<StepResult>(cts.Token);
+                },
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackOrder.Add("interrupted");
+                    return Task.CompletedTask;
+                }),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.Equal(["interrupted", "completed"], rollbackOrder);
+        Assert.Contains(ctx.Journal.Entries, entry => entry.StepId == "interrupted" && entry.Event == "rollback_ok");
+        Assert.Contains(ctx.Journal.Entries, entry => entry.StepId == "completed" && entry.Event == "rollback_ok");
+    }
+
+    [Fact]
+    public async Task RunAsync_CancellationBetweenSteps_WithRollback_CleansCompletedSteps()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbackCalled = false;
+        var ctx = CreateContext(
+            new SetupConfig { RollbackOnFailure = true },
+            ct: cts.Token);
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "completed",
+                (_, _) =>
+                {
+                    cts.Cancel();
+                    return Task.FromResult(StepResult.Ok());
+                },
+                (_, rollbackToken) =>
+                {
+                    Assert.False(rollbackToken.IsCancellationRequested);
+                    rollbackCalled = true;
+                    return Task.CompletedTask;
+                }),
+            new MockStep("not-started", (_, _) => Task.FromResult(StepResult.Ok())),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.True(rollbackCalled);
     }
 
     [Fact]

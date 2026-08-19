@@ -43,6 +43,43 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+        Assert.Null(config.LocalAi.SelectedModelId);
+        Assert.Equal(0, config.LocalAi.Port);
+        Assert.False(config.LocalAi.WslMirroredNetworkingConsent);
+        Assert.Equal(15, config.LocalAi.HealthTimeoutSeconds);
+        Assert.Equal(7_200, config.LocalAi.AcquisitionTimeoutSeconds);
+        Assert.Equal(600, config.LocalAi.InferenceTimeoutSeconds);
+    }
+
+    [Fact]
+    public void LocalAiConfig_RoundTripsExplicitModelChoiceAndConsent()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig
+            {
+                Enabled = true,
+                SelectedModelId = "qwen3.6-27b-mtp-q4-k-m",
+                Port = 18808,
+                WslMirroredNetworkingConsent = true,
+                HealthTimeoutSeconds = 30,
+                AcquisitionTimeoutSeconds = 3_600,
+                InferenceTimeoutSeconds = 480,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(config, SetupConfig.JsonWriteOptions);
+        SetupConfig? loaded = JsonSerializer.Deserialize<SetupConfig>(json, SetupConfig.JsonOptions);
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded.LocalAi.Enabled);
+        Assert.Equal("qwen3.6-27b-mtp-q4-k-m", loaded.LocalAi.SelectedModelId);
+        Assert.Equal(18808, loaded.LocalAi.Port);
+        Assert.True(loaded.LocalAi.WslMirroredNetworkingConsent);
+        Assert.Equal(30, loaded.LocalAi.HealthTimeoutSeconds);
+        Assert.Equal(3_600, loaded.LocalAi.AcquisitionTimeoutSeconds);
+        Assert.Equal(480, loaded.LocalAi.InferenceTimeoutSeconds);
     }
 
     [Fact]
@@ -93,7 +130,7 @@ public class SetupConfigTests : IDisposable
     public void EffectiveGatewayUrl_UsesPort()
     {
         var config = new SetupConfig { GatewayPort = 9999 };
-        Assert.Equal("ws://localhost:9999", config.EffectiveGatewayUrl);
+        Assert.Equal("ws://127.0.0.1:9999", config.EffectiveGatewayUrl);
     }
 
     [Fact]
@@ -451,6 +488,46 @@ public class SetupConfigTests : IDisposable
         var summary = SetupReviewSummaryBuilder.Build(config);
 
         Assert.Contains("trusts tailnet identity authentication", summary.GatewayDescription);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_DescribesSelectedLocalAiRecipe()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig
+            {
+                Enabled = true,
+                SelectedModelId = "qwen3.6-27b-mtp-q4-k-m",
+            },
+        };
+
+        SetupReviewSummary summary = SetupReviewSummaryBuilder.Build(config, _tempDir, _tempDir);
+
+        Assert.Contains("llama-server b10488", summary.ExactCommands);
+        Assert.Contains("Qwen3.6-27B-Q4_K_M.gguf", summary.ExactCommands);
+        Assert.Contains("5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace", summary.ExactCommands);
+        Assert.Contains("model loads on first request", summary.ExactCommands);
+        Assert.Contains("primary llamacpp/qwen3.6-27b-mtp-q4-k-m", summary.ExactCommands);
+        Assert.DoesNotContain("Ollama", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.True(summary.LocalAiEnabled);
+        Assert.Contains("Qwen3.6 27B", summary.LocalAiTitle);
+        Assert.Contains("loads on first request", summary.LocalAiDescription);
+    }
+
+    [Fact]
+    public void SetupReviewSummary_OmitsLocalAiWhenDisabled()
+    {
+        var config = new SetupConfig { LocalAi = new LocalAiConfig { Enabled = false } };
+
+        SetupReviewSummary summary = SetupReviewSummaryBuilder.Build(config, _tempDir, _tempDir);
+
+        Assert.DoesNotContain("llama-server", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Hugging Face", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("provider llamacpp", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.False(summary.LocalAiEnabled);
+        Assert.Null(summary.LocalAiTitle);
+        Assert.Null(summary.LocalAiDescription);
     }
 
     [Fact]

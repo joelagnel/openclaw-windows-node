@@ -52,6 +52,17 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public void GatewayReachability_DerivedSetupUrlTargetsExplicitIpv4Loopback()
+    {
+        var context = CreateContext(new SetupConfig { GatewayPort = 19991 });
+
+        var healthUri = WindowsGatewayReachability.BuildHealthUri(context.GatewayUrl!);
+
+        Assert.Equal("http://127.0.0.1:19991/", healthUri.AbsoluteUri);
+        Assert.Equal("127.0.0.1", healthUri.Host);
+    }
+
+    [Fact]
     public async Task PairingEndpointTrust_UnknownLoopbackOwner_BlocksBeforeCredentialUse()
     {
         var context = CreateContext(new SetupConfig

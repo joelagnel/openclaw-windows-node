@@ -37,6 +37,7 @@ internal interface ILlamaRuntimeAcquirer
 
 internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
 {
+    private const int MaximumDeleteAttempts = 8;
     private readonly LocalAiArtifactInstaller _artifactInstaller;
     private readonly ILlamaRuntimeInspector _inspector;
 
@@ -143,7 +144,33 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
         }
 
         if (Directory.Exists(deletePath))
-            Directory.Delete(deletePath, recursive: true);
+            DeleteDirectoryWithRetry(deletePath);
+    }
+
+    internal static void DeleteDirectoryWithRetry(
+        string deletePath,
+        Action<string>? delete = null,
+        Action<TimeSpan>? delay = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deletePath);
+        delete ??= path => Directory.Delete(path, recursive: true);
+        delay ??= Thread.Sleep;
+
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                delete(deletePath);
+                return;
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException &&
+                attempt < MaximumDeleteAttempts)
+            {
+                int delayMilliseconds = Math.Min(100 << (attempt - 1), 1_000);
+                delay(TimeSpan.FromMilliseconds(delayMilliseconds));
+            }
+        }
     }
 
     private static void DeleteCreatedInstall(string localDataDirectory, string createdDirectory)
@@ -157,7 +184,7 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
                     out _) &&
                 Directory.Exists(deletePath))
             {
-                Directory.Delete(deletePath, recursive: true);
+                DeleteDirectoryWithRetry(deletePath);
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

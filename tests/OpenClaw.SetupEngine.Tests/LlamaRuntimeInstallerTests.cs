@@ -107,6 +107,48 @@ public sealed class LlamaRuntimeInstallerTests
         Assert.Equal(runtimeIdentifier, component.RuntimeIdentifier);
     }
 
+    [Fact]
+    public void DeleteDirectoryWithRetry_WaitsForTransientModuleLocks()
+    {
+        var delays = new List<TimeSpan>();
+        int attempts = 0;
+
+        LlamaRuntimeInstaller.DeleteDirectoryWithRetry(
+            "validated-managed-runtime",
+            _ =>
+            {
+                attempts++;
+                if (attempts <= 2)
+                    throw new UnauthorizedAccessException("runtime module is still unloading");
+            },
+            delays.Add);
+
+        Assert.Equal(3, attempts);
+        Assert.Equal(
+            [TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(200)],
+            delays);
+    }
+
+    [Fact]
+    public void DeleteDirectoryWithRetry_RemainsBoundedForPersistentLocks()
+    {
+        var delays = new List<TimeSpan>();
+        int attempts = 0;
+
+        Assert.Throws<IOException>(() => LlamaRuntimeInstaller.DeleteDirectoryWithRetry(
+            "validated-managed-runtime",
+            _ =>
+            {
+                attempts++;
+                throw new IOException("runtime module remains locked");
+            },
+            delays.Add));
+
+        Assert.Equal(8, attempts);
+        Assert.Equal(7, delays.Count);
+        Assert.Equal(TimeSpan.FromMilliseconds(1_000), delays[^1]);
+    }
+
     private static LlamaRuntimeVariant Runtime(
         byte[] binary,
         byte[] dependencies,

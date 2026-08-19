@@ -269,7 +269,7 @@ public sealed class ReconcileLocalAiInstallationStep : SetupStep
             ctx.LocalAiResolvedInstall = result.ResolvedInstall;
             ctx.LocalAiRuntimeInstall = result.RuntimeInstall;
             ctx.LocalAiModelInstall = result.ModelInstall;
-            ctx.LocalAiPort = result.ResolvedInstall!.Endpoint.Port;
+            ctx.LocalAiPort = result.ResolvedInstall!.Manifest.RequestedPort;
             return StepResult.Ok("Reused the verified managed Local AI installation.");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

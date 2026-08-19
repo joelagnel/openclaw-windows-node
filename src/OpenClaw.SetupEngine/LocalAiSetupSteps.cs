@@ -350,3 +350,89 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
         return Task.CompletedTask;
     }
 }
+
+/// <summary>Downloads one immutable, recipe-selected GGUF directly from Hugging Face.</summary>
+public sealed class AcquireLocalAiModelStep : SetupStep
+{
+    private static readonly HttpClient s_httpClient = new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = System.Net.DecompressionMethods.None,
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan,
+    };
+
+    private readonly IHuggingFaceModelAcquirer _acquirer;
+
+    public AcquireLocalAiModelStep()
+        : this(new HuggingFaceModelInstaller(s_httpClient))
+    {
+    }
+
+    internal AcquireLocalAiModelStep(IHuggingFaceModelAcquirer acquirer) =>
+        _acquirer = acquirer ?? throw new ArgumentNullException(nameof(acquirer));
+
+    public override string Id => "acquire-local-ai-model";
+    public override string DisplayName => "Downloading Local AI model from Hugging Face";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiEligibility?.Plan is not { } plan)
+            return StepResult.Terminal("Local AI model download requires a qualified hardware plan.");
+        if (ctx.LocalAiRuntimeInstall is null)
+            return StepResult.Terminal("Local AI model download requires the pinned llama-server runtime.");
+        if (ctx.Config.LocalAi.AcquisitionTimeoutSeconds <= 0)
+            return StepResult.Terminal("The Local AI acquisition timeout must be greater than zero.");
+
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(ctx.Config.LocalAi.AcquisitionTimeoutSeconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        try
+        {
+            HuggingFaceModelInstallResult install = await _acquirer.InstallAsync(
+                ctx.LocalDataDir,
+                LlamaRuntimeInstaller.Component(plan.Runtime),
+                plan.Model,
+                progress: null,
+                linked.Token);
+            ctx.LocalAiModelInstall = install;
+            string action = install.Disposition == HuggingFaceModelInstallDisposition.ReusedVerified
+                ? "Verified existing"
+                : "Downloaded";
+            return StepResult.Ok($"{action} {plan.Model.DisplayName} from its pinned Hugging Face revision.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            return StepResult.Fail("The Hugging Face model download timed out.", ex);
+        }
+        catch (Exception ex) when (
+            ex is HuggingFaceModelInstallException
+            or IOException
+            or UnauthorizedAccessException
+            or HttpRequestException)
+        {
+            return StepResult.Fail($"Hugging Face model installation failed: {ex.Message}", ex);
+        }
+    }
+
+    public override Task RollbackAsync(SetupContext ctx, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (ctx.LocalAiModelInstall is { } install)
+        {
+            _acquirer.RemoveInstalledModel(ctx.LocalDataDir, install);
+            ctx.LocalAiModelInstall = null;
+        }
+
+        return Task.CompletedTask;
+    }
+}

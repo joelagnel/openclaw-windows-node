@@ -36,13 +36,25 @@ internal sealed class HuggingFaceModelInstallException : Exception
     }
 }
 
+internal interface IHuggingFaceModelAcquirer
+{
+    Task<HuggingFaceModelInstallResult> InstallAsync(
+        string localDataDirectory,
+        LocalAiComponentIdentity component,
+        LocalModelInfo model,
+        IProgress<HuggingFaceModelInstallProgress>? progress,
+        CancellationToken cancellationToken);
+
+    void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install);
+}
+
 /// <summary>
 /// Downloads one immutable Hugging Face GGUF, verifies its exact byte count and
 /// SHA-256 digest, and atomically promotes it beside its partial file. A partial
 /// left by process termination is resumed with an HTTP range request. Any
 /// observed setup failure or cancellation removes the partial file.
 /// </summary>
-internal sealed class HuggingFaceModelInstaller
+internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
 {
     private const int BufferSize = 1024 * 1024;
     private const int ProgressIntervalBytes = 4 * 1024 * 1024;
@@ -151,6 +163,25 @@ internal sealed class HuggingFaceModelInstaller
             if (!promoted)
                 TryDeletePartial(localDataDirectory, partialPath);
         }
+    }
+
+    public void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        if (!install.CreatedThisRun)
+            return;
+
+        if (!LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+                localDataDirectory,
+                install.ModelPath,
+                out string deletePath,
+                out string error))
+        {
+            throw new InvalidDataException(error);
+        }
+
+        if (File.Exists(deletePath))
+            File.Delete(deletePath);
     }
 
     private async Task DownloadAndVerifyAsync(

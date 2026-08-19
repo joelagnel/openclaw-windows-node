@@ -481,6 +481,7 @@ public sealed class SetupContext
     public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
     public int? LocalAiPort { get; set; }
     internal LlamaRuntimeInstallResult? LocalAiRuntimeInstall { get; set; }
+    internal HuggingFaceModelInstallResult? LocalAiModelInstall { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

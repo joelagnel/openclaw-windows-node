@@ -268,6 +268,58 @@ public sealed class LocalAiSetupStepsTests
         Assert.Null(context.LocalAiRuntimeInstall);
     }
 
+    [Fact]
+    public async Task ModelAcquisition_UsesExplicitSelectedModelAndStoresResult()
+    {
+        var acquirer = new FakeModelAcquirer();
+        var step = new AcquireLocalAiModelStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig
+        {
+            Enabled = true,
+            SelectedModelId = LocalModelCatalog.Qwen9BModelId,
+        });
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(
+            CreateSparkHardware(),
+            LocalModelCatalog.Qwen9BModelId);
+        context.LocalAiRuntimeInstall = RuntimeInstall(context.LocalDataDir);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(LocalModelCatalog.Qwen9BModelId, acquirer.Model?.Id);
+        Assert.NotNull(context.LocalAiModelInstall);
+    }
+
+    [Fact]
+    public async Task ModelAcquisition_RequiresRuntimeBeforeNetwork()
+    {
+        var acquirer = new FakeModelAcquirer();
+        var step = new AcquireLocalAiModelStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Equal(0, acquirer.InstallCount);
+    }
+
+    [Fact]
+    public async Task ModelAcquisition_RollbackRemovesOnlyNewlyDownloadedFile()
+    {
+        var acquirer = new FakeModelAcquirer();
+        var step = new AcquireLocalAiModelStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiRuntimeInstall = RuntimeInstall(context.LocalDataDir);
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.Equal(1, acquirer.RemoveCount);
+        Assert.Null(context.LocalAiModelInstall);
+    }
+
     private static SetupContext CreateContext(LocalAiConfig localAi, ICommandRunner? commands = null)
     {
         var config = new SetupConfig { LocalAi = localAi };
@@ -296,6 +348,16 @@ public sealed class LocalAiSetupStepsTests
                     StableId: "GPU-SPARK"),
             ],
             VulkanAvailable: false);
+
+    private static LlamaRuntimeInstallResult RuntimeInstall(string localDataDirectory) =>
+        new(
+            Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"),
+            Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server", "llama-server.exe"),
+            LlamaRuntimeInstallDisposition.Installed,
+            CreatedThisRun: true,
+            VerifiedArchives: [],
+            Rollback: new LocalAiArtifactRollbackMetadata(
+                Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server")));
 
     private sealed class FakeHardwareProbe(HostHardwareInfo hardware, bool throwOnProbe = false) : IHostHardwareProbe
     {
@@ -390,17 +452,35 @@ public sealed class LocalAiSetupStepsTests
         {
             InstallCount++;
             Runtime = runtime;
-            return Task.FromResult(new LlamaRuntimeInstallResult(
-                Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"),
-                Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server", "llama-server.exe"),
-                LlamaRuntimeInstallDisposition.Installed,
-                CreatedThisRun: true,
-                VerifiedArchives: [],
-                Rollback: new LocalAiArtifactRollbackMetadata(
-                    Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"))));
+            return Task.FromResult(RuntimeInstall(localDataDirectory));
         }
 
         public void RemoveInstalledRuntime(string localDataDirectory, LlamaRuntimeInstallResult install) =>
+            RemoveCount++;
+    }
+
+    private sealed class FakeModelAcquirer : IHuggingFaceModelAcquirer
+    {
+        public int InstallCount { get; private set; }
+        public int RemoveCount { get; private set; }
+        public LocalModelInfo? Model { get; private set; }
+
+        public Task<HuggingFaceModelInstallResult> InstallAsync(
+            string localDataDirectory,
+            LocalAiComponentIdentity component,
+            LocalModelInfo model,
+            IProgress<HuggingFaceModelInstallProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            InstallCount++;
+            Model = model;
+            return Task.FromResult(new HuggingFaceModelInstallResult(
+                Path.Combine(localDataDirectory, "LocalAI", "models", model.Weights.RelativePath),
+                HuggingFaceModelInstallDisposition.Downloaded,
+                CreatedThisRun: true));
+        }
+
+        public void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install) =>
             RemoveCount++;
     }
 }

@@ -230,6 +230,35 @@ public sealed class HuggingFaceModelInstallerTests
         Assert.False(File.Exists(partialPath));
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task RemoveInstalledModel_DeletesOnlyFileCreatedThisRun(
+        bool createdThisRun,
+        bool expectedToRemain)
+    {
+        using var temp = new TempDirectory("hf-model-");
+        byte[] payload = "owned model"u8.ToArray();
+        LocalModelInfo model = Model(payload);
+        (string modelPath, _) = Paths(temp.Path, model);
+        Directory.CreateDirectory(Path.GetDirectoryName(modelPath)!);
+        await File.WriteAllBytesAsync(modelPath, payload);
+        using var client = new HttpClient(new RecordingHandler((_, _) =>
+            throw new InvalidOperationException("network must not be used")));
+        var installer = new HuggingFaceModelInstaller(client);
+
+        installer.RemoveInstalledModel(
+            temp.Path,
+            new HuggingFaceModelInstallResult(
+                modelPath,
+                createdThisRun
+                    ? HuggingFaceModelInstallDisposition.Downloaded
+                    : HuggingFaceModelInstallDisposition.ReusedVerified,
+                createdThisRun));
+
+        Assert.Equal(expectedToRemain, File.Exists(modelPath));
+    }
+
     private static LocalModelInfo Model(byte[] payload)
     {
         var source = new HuggingFaceRevisionSource(

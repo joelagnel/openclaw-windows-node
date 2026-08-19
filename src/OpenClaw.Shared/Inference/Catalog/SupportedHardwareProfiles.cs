@@ -5,7 +5,8 @@ namespace OpenClaw.Shared.Inference.Catalog;
 
 /// <summary>
 /// A qualified NVIDIA Windows system identity. Reported GPU names are an
-/// explicit allowlist; a family, prefix, or substring match is never enough.
+/// explicit allowlist. Spark N1X accepts its stable reported-name prefix because
+/// NVIDIA reports multiple core-count variants of that qualified ARM64 SKU.
 /// </summary>
 public sealed record SupportedHardwareProfile
 {
@@ -89,15 +90,30 @@ public static class SupportedHardwareProfiles
         return s_profiles.SingleOrDefault(
             profile =>
                 profile.Architecture == architecture &&
-                profile.ReportedGpuNames.Any(
-                    name => string.Equals(
-                        NormalizeReportedGpuName(name),
-                        normalizedName,
-                        StringComparison.OrdinalIgnoreCase)));
+                MatchesReportedGpuName(profile, normalizedName));
     }
 
     internal static string NormalizeReportedGpuName(string value) =>
         string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private static bool MatchesReportedGpuName(
+        SupportedHardwareProfile profile,
+        string normalizedReportedGpuName)
+    {
+        if (profile.ReportedGpuNames.Any(
+                name => string.Equals(
+                    NormalizeReportedGpuName(name),
+                    normalizedReportedGpuName,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return profile.Id == RtxSparkN1XProfileId &&
+            normalizedReportedGpuName.Contains(
+                NormalizeReportedGpuName("NVIDIA RTX Spark N1X"),
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     private static SupportedHardwareProfile Profile(
         string id,

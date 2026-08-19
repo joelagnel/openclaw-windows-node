@@ -480,6 +480,7 @@ public sealed class SetupContext
     public HostHardwareInfo? LocalAiHardware { get; set; }
     public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
     public int? LocalAiPort { get; set; }
+    internal LlamaRuntimeInstallResult? LocalAiRuntimeInstall { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

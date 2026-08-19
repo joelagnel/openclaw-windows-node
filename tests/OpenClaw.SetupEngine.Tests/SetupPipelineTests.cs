@@ -79,7 +79,7 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(26, steps.Count);
+        Assert.Equal(27, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightWslStep>(steps[2]);
@@ -92,8 +92,9 @@ public class SetupPipelineTests
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
         Assert.Equal(lockdownIndex + 1, cliInstallIndex);
-        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 1]);
-        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[cliInstallIndex + 1]);
+        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 3]);
         var installServiceIndex = steps.FindIndex(s => s is InstallGatewayServiceStep);
         Assert.IsType<StartGatewayStep>(steps[installServiceIndex + 1]);
         Assert.IsType<FinalizeTailscaleServeStep>(steps[installServiceIndex + 2]);

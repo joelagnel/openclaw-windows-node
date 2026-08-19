@@ -271,3 +271,82 @@ public sealed class ConfigureLocalAiWslNetworkingStep : SetupStep
         }
     }
 }
+
+/// <summary>Installs the two pinned llama.cpp runtime archives as one atomic component.</summary>
+public sealed class AcquireLocalAiRuntimeStep : SetupStep
+{
+    private static readonly HttpClient s_httpClient = new(new SocketsHttpHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan,
+    };
+
+    private readonly ILlamaRuntimeAcquirer _acquirer;
+
+    public AcquireLocalAiRuntimeStep()
+        : this(new LlamaRuntimeInstaller(s_httpClient))
+    {
+    }
+
+    internal AcquireLocalAiRuntimeStep(ILlamaRuntimeAcquirer acquirer) =>
+        _acquirer = acquirer ?? throw new ArgumentNullException(nameof(acquirer));
+
+    public override string Id => "acquire-local-ai-runtime";
+    public override string DisplayName => "Installing llama-server";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiEligibility?.Plan is not { } plan)
+            return StepResult.Terminal("Local AI runtime installation requires a qualified hardware plan.");
+        if (ctx.Config.LocalAi.AcquisitionTimeoutSeconds <= 0)
+            return StepResult.Terminal("The Local AI acquisition timeout must be greater than zero.");
+
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(ctx.Config.LocalAi.AcquisitionTimeoutSeconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+        try
+        {
+            LlamaRuntimeInstallResult install = await _acquirer.InstallAsync(
+                ctx.LocalDataDir,
+                plan.Runtime,
+                progress: null,
+                linked.Token);
+            ctx.LocalAiRuntimeInstall = install;
+            return StepResult.Ok($"Installed llama-server {LlamaRuntimeCatalog.ReleaseTag}.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            return StepResult.Fail("The llama-server download timed out.", ex);
+        }
+        catch (Exception ex) when (
+            ex is LocalAiArtifactInstallException
+            or IOException
+            or UnauthorizedAccessException
+            or HttpRequestException)
+        {
+            return StepResult.Fail($"llama-server installation failed: {ex.Message}", ex);
+        }
+    }
+
+    public override Task RollbackAsync(SetupContext ctx, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (ctx.LocalAiRuntimeInstall is { } install)
+        {
+            _acquirer.RemoveInstalledRuntime(ctx.LocalDataDir, install);
+            ctx.LocalAiRuntimeInstall = null;
+        }
+
+        return Task.CompletedTask;
+    }
+}

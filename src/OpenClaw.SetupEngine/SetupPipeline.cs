@@ -65,6 +65,7 @@ public static class SetupStepFactory
             new ConfigureWslInstanceStep(),
             new ValidateWslLockdownStep(),
             new InstallCliStep(),
+            new AcquireLocalAiRuntimeStep(),
             new InstallTailscaleStep(),
             new AuthorizeTailscaleStep(),
             new ConfigureGatewayStep(),

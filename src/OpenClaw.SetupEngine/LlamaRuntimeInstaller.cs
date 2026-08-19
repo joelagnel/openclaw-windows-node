@@ -24,7 +24,18 @@ internal interface ILlamaRuntimeInspector
     Task<LlamaRuntimeInspection> InspectAsync(string installDirectory, CancellationToken cancellationToken);
 }
 
-internal sealed class LlamaRuntimeInstaller
+internal interface ILlamaRuntimeAcquirer
+{
+    Task<LlamaRuntimeInstallResult> InstallAsync(
+        string localDataDirectory,
+        LlamaRuntimeVariant runtime,
+        IProgress<LocalAiArtifactInstallProgress>? progress,
+        CancellationToken cancellationToken);
+
+    void RemoveInstalledRuntime(string localDataDirectory, LlamaRuntimeInstallResult install);
+}
+
+internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
 {
     private readonly LocalAiArtifactInstaller _artifactInstaller;
     private readonly ILlamaRuntimeInspector _inspector;
@@ -115,6 +126,25 @@ internal sealed class LlamaRuntimeInstaller
                 Architecture.Arm64 => "win-arm64",
                 _ => throw new InvalidOperationException("The llama-server runtime architecture is unsupported."),
             });
+
+    public void RemoveInstalledRuntime(string localDataDirectory, LlamaRuntimeInstallResult install)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        if (!install.CreatedThisRun || install.Rollback is null)
+            return;
+
+        if (!LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+                localDataDirectory,
+                install.Rollback.CreatedDirectory,
+                out string deletePath,
+                out string error))
+        {
+            throw new InvalidDataException(error);
+        }
+
+        if (Directory.Exists(deletePath))
+            Directory.Delete(deletePath, recursive: true);
+    }
 
     private static void DeleteCreatedInstall(string localDataDirectory, string createdDirectory)
     {

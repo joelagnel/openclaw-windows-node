@@ -225,6 +225,49 @@ public sealed class LocalAiSetupStepsTests
         Assert.Empty(commands.Calls);
     }
 
+    [Fact]
+    public async Task RuntimeAcquisition_UsesSelectedRuntimeAndStoresOwnedInstall()
+    {
+        var acquirer = new FakeRuntimeAcquirer();
+        var step = new AcquireLocalAiRuntimeStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(LlamaRuntimeCatalog.Arm64RuntimeId, acquirer.Runtime?.Id);
+        Assert.NotNull(context.LocalAiRuntimeInstall);
+    }
+
+    [Fact]
+    public async Task RuntimeAcquisition_RequiresQualifiedPlanBeforeNetwork()
+    {
+        var acquirer = new FakeRuntimeAcquirer();
+        var step = new AcquireLocalAiRuntimeStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Equal(0, acquirer.InstallCount);
+    }
+
+    [Fact]
+    public async Task RuntimeAcquisition_RollbackRemovesOnlyInstallCreatedThisRun()
+    {
+        var acquirer = new FakeRuntimeAcquirer();
+        var step = new AcquireLocalAiRuntimeStep(acquirer);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.Equal(1, acquirer.RemoveCount);
+        Assert.Null(context.LocalAiRuntimeInstall);
+    }
+
     private static SetupContext CreateContext(LocalAiConfig localAi, ICommandRunner? commands = null)
     {
         var config = new SetupConfig { LocalAi = localAi };
@@ -331,5 +374,33 @@ public sealed class LocalAiSetupStepsTests
             string? user = null,
             bool inputViaStdin = false) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class FakeRuntimeAcquirer : ILlamaRuntimeAcquirer
+    {
+        public int InstallCount { get; private set; }
+        public int RemoveCount { get; private set; }
+        public LlamaRuntimeVariant? Runtime { get; private set; }
+
+        public Task<LlamaRuntimeInstallResult> InstallAsync(
+            string localDataDirectory,
+            LlamaRuntimeVariant runtime,
+            IProgress<LocalAiArtifactInstallProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            InstallCount++;
+            Runtime = runtime;
+            return Task.FromResult(new LlamaRuntimeInstallResult(
+                Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"),
+                Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server", "llama-server.exe"),
+                LlamaRuntimeInstallDisposition.Installed,
+                CreatedThisRun: true,
+                VerifiedArchives: [],
+                Rollback: new LocalAiArtifactRollbackMetadata(
+                    Path.Combine(localDataDirectory, "LocalAI", "engines", "llama-server"))));
+        }
+
+        public void RemoveInstalledRuntime(string localDataDirectory, LlamaRuntimeInstallResult install) =>
+            RemoveCount++;
     }
 }

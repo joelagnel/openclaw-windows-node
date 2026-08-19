@@ -267,10 +267,12 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 **WelcomePage**
 - OpenClaw icon + "OpenClaw Setup" title bar
 - Install app-owned WSL gateway (recommended) or connect to existing gateway
+- On qualified NVIDIA hardware, identifies the detected GPU and advertises Local AI under the recommended local-gateway choice
 - Replacement prompt when an app-owned WSL gateway already exists
 
 **CapabilitiesPage**
 - Capability profile defaults to Standard
+- Clarifies that Local AI and its separately consented mirrored-networking setup do not require Full access
 - Inline Windows permission status for selected capabilities
 - Install review showing WSL distro, OpenClaw CLI, local gateway service, and possible UAC
 

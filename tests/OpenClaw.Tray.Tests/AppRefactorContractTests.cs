@@ -1335,13 +1335,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
-    public void CapabilitiesPage_ShowsLocalAiDiagnosisWhenHardwareIsUnsupported()
+    public void CapabilitiesPage_AggregatesHardwareAndWslLocalAiDiagnosis()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
         var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
-        Assert.Contains("LocalAiUnavailableDetailsButton", File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml")));
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml"));
+        Assert.Contains("LocalAiUnavailableDetailsButton", xaml);
         Assert.Contains("Why Local AI is unavailable", source);
         Assert.Contains("LocalAiInstallReviewCard.Visibility = Visibility.Visible", ExtractMethod(source, "ShowLocalAiUnavailable"));
+        Assert.Contains("wslViability.BlocksSetup", source);
+        Assert.Contains("unavailableReasons.Add($\"Hardware:", source);
+        Assert.Contains("unavailableReasons.Add($\"WSL:", source);
+        Assert.Contains("string.Join(Environment.NewLine + Environment.NewLine, unavailableReasons)", source);
+        Assert.Contains("hardware, NVIDIA driver, or WSL support", xaml);
     }
 
     [Fact]

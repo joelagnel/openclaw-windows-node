@@ -1347,7 +1347,7 @@ public sealed class AppRefactorContractTests
         Assert.Contains("unavailableReasons.Add($\"Hardware:", source);
         Assert.Contains("unavailableReasons.Add($\"WSL:", source);
         Assert.Contains("string.Join(Environment.NewLine + Environment.NewLine, unavailableReasons)", source);
-        Assert.Contains("hardware, NVIDIA driver, or WSL support", xaml);
+        Assert.Contains("One or more Local AI requirements are unavailable.", xaml);
     }
 
     [Fact]

@@ -1335,6 +1335,16 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void CapabilitiesPage_ShowsLocalAiDiagnosisWhenHardwareIsUnsupported()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        Assert.Contains("LocalAiUnavailableDetailsButton", File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml")));
+        Assert.Contains("Why Local AI is unavailable", source);
+        Assert.Contains("LocalAiInstallReviewCard.Visibility = Visibility.Visible", ExtractMethod(source, "ShowLocalAiUnavailable"));
+    }
+
+    [Fact]
     public void WizardSecondaryButton_DoesNotSkipEntireWizardInErrorState()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

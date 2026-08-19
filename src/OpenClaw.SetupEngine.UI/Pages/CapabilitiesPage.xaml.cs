@@ -30,6 +30,7 @@ public sealed partial class CapabilitiesPage : Page
     private bool _localAiNetworkingConsentRequired;
     private bool _localAiNetworkingInspectionFailed;
     private HostHardwareInfo? _localAiHardware;
+    private string _localAiUnavailableReason = string.Empty;
     private bool _treatBundledAllOnAsPlaceholder;
     private int _step = 1;
 
@@ -277,14 +278,13 @@ public sealed partial class CapabilitiesPage : Page
                 _config!.LocalAi.SelectedModelId);
             if (!eligibility.CanInstall || eligibility.Plan is null || eligibility.SelectedGpu is null)
             {
-                _localAiSelectionEligible = false;
-                LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
-                _config.LocalAi.Enabled = false;
-                _config.SkipWizard = _skipWizardWithoutLocalAi;
+                ShowLocalAiUnavailable(DescribeLocalAiUnavailable(eligibility));
                 return;
             }
 
             LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+            LocalAiUnavailablePanel.Visibility = Visibility.Collapsed;
+            LocalAiToggle.Visibility = Visibility.Visible;
             _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
             PopulateLocalAiModels();
             _suppressLocalAiToggle = true;
@@ -295,11 +295,78 @@ public sealed partial class CapabilitiesPage : Page
         }
         catch
         {
-            _localAiSelectionEligible = false;
-            LocalAiInstallReviewCard.Visibility = Visibility.Collapsed;
-            _config!.LocalAi.Enabled = false;
-            _config.SkipWizard = _skipWizardWithoutLocalAi;
+            ShowLocalAiUnavailable(
+                "OpenClaw could not read the NVIDIA GPU, driver, CUDA, or memory information. " +
+                "Check the NVIDIA driver installation and try setup again.");
         }
+    }
+
+    private void ShowLocalAiUnavailable(string reason)
+    {
+        _localAiSelectionEligible = false;
+        _suppressLocalAiToggle = true;
+        LocalAiToggle.IsOn = false;
+        _suppressLocalAiToggle = false;
+        LocalAiToggle.Visibility = Visibility.Collapsed;
+        LocalAiDetailsPanel.Visibility = Visibility.Collapsed;
+        _localAiUnavailableReason = reason;
+        LocalAiUnavailablePanel.Visibility = Visibility.Visible;
+        LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+        _config!.LocalAi.Enabled = false;
+        _config.SkipWizard = _skipWizardWithoutLocalAi;
+        ApplySetupReviewSummary(_config);
+    }
+
+    private static string DescribeLocalAiUnavailable(LocalInferenceEligibilityResult eligibility) =>
+        eligibility.SelectionFailureCode switch
+        {
+            LocalInferenceSelectionFailureCode.UnsupportedArchitecture =>
+                "The detected GPU and Windows architecture do not match a qualified Local AI recipe.",
+            LocalInferenceSelectionFailureCode.UnsupportedGpu =>
+                "No qualified NVIDIA GPU was detected. This release supports RTX PRO 6000 Blackwell, " +
+                "GeForce RTX 5090, and RTX Spark N1X systems with a working NVIDIA driver.",
+            LocalInferenceSelectionFailureCode.UnknownModel =>
+                "The selected model is not available in this Local AI release.",
+            _ => eligibility.FailureCode switch
+            {
+                LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete =>
+                    "OpenClaw could not read the GPU identity, memory, NVIDIA driver, or CUDA capability.",
+                LocalInferenceEligibilityFailureCode.InsufficientGpuMemory =>
+                    $"The detected GPU has less than {LocalInferenceEligibility.MinimumQualifiedGpuMemoryMiB:N0} MiB " +
+                    "of qualified GPU memory.",
+                LocalInferenceEligibilityFailureCode.DriverTooOld =>
+                    $"NVIDIA driver {eligibility.SelectedGpu?.DriverVersion ?? "unknown"} was detected. " +
+                    $"Local AI requires version {LocalInferenceEligibility.MinimumNvidiaDriverVersion} or newer.",
+                LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow =>
+                    "The NVIDIA driver does not provide CUDA 13 support. A separate CUDA Toolkit is not required.",
+                _ => "The detected system does not match a qualified Local AI recipe.",
+            },
+        };
+
+    private void LocalAiUnavailableDetails_Click(object sender, RoutedEventArgs e) =>
+        AsyncEventHandlerGuard.Run(
+            ShowLocalAiUnavailableDetailsAsync,
+            NullLogger.Instance,
+            nameof(LocalAiUnavailableDetails_Click));
+
+    private async Task ShowLocalAiUnavailableDetailsAsync()
+    {
+        var xamlRoot = LocalAiInstallReviewCard.XamlRoot;
+        if (xamlRoot is null)
+            return;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = "Why Local AI is unavailable",
+            Content = new TextBlock
+            {
+                Text = _localAiUnavailableReason,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            CloseButtonText = "Close",
+        };
+        await dialog.ShowAsync();
     }
 
     private void PopulateLocalAiModels()

@@ -8,8 +8,17 @@ public sealed record LlamaServerRouterProbeResult(
     string? ReportedModelPath,
     string? Detail);
 
+internal interface ILlamaServerClient : IDisposable
+{
+    Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+        Uri endpoint,
+        string modelAlias,
+        string expectedModelPath,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>Bounded, loopback-only health and model-state client for the managed llama-server router.</summary>
-public sealed class LlamaServerClient : IDisposable
+public sealed class LlamaServerClient : ILlamaServerClient
 {
     private const int MaxEvidenceResponseBytes = 1024 * 1024;
     private readonly HttpClient _client;

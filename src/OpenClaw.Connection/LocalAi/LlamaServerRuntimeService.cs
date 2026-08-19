@@ -196,7 +196,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             install.ExecutablePath,
             Path.GetDirectoryName(install.ExecutablePath)!,
             launchPlan.Arguments,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            launchPlan.Environment,
             _options.Paths.StandardOutputLogPath,
             _options.Paths.StandardErrorLogPath,
             _options.MaxLogBytes,

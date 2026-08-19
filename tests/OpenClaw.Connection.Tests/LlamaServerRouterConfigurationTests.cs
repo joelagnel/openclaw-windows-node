@@ -18,6 +18,7 @@ public sealed class LlamaServerRouterConfigurationTests
 
         Assert.Equal(paths.RouterPresetPath, plan.PresetPath);
         Assert.Equal(LocalModelCatalog.Default.Id, plan.ModelAlias);
+        Assert.Equal(install.Manifest.SelectedGpuId, Assert.Contains("CUDA_VISIBLE_DEVICES", plan.Environment));
         Assert.DoesNotContain("--model", plan.Arguments);
         Assert.DoesNotContain(install.ModelPath, plan.Arguments);
         Assert.Contains("--models-autoload", plan.Arguments);

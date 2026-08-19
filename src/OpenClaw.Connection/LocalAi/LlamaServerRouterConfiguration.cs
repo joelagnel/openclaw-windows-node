@@ -9,6 +9,7 @@ namespace OpenClaw.Connection.LocalAi;
 /// <summary>A deterministic lazy-load router configuration for a qualified local inference install.</summary>
 public sealed record LlamaServerRouterLaunchPlan(
     ImmutableArray<string> Arguments,
+    ImmutableDictionary<string, string> Environment,
     string PresetPath,
     string PresetContent,
     string ModelAlias);
@@ -51,6 +52,9 @@ public static class LlamaServerRouterConfiguration
 
         return new LlamaServerRouterLaunchPlan(
             arguments,
+            ImmutableDictionary<string, string>.Empty
+                .WithComparers(StringComparer.OrdinalIgnoreCase)
+                .Add("CUDA_VISIBLE_DEVICES", manifest.SelectedGpuId),
             presetPath,
             BuildPreset(model, install.ModelPath),
             model.Id);

@@ -454,7 +454,7 @@ public sealed class LocalAiSetupStepsTests
     }
 
     [Fact]
-    public async Task InferenceVerification_LoadsExactModelThenRestartsEmptyRouter()
+    public async Task InferenceVerification_LoadsExactModelForGpuEvidenceStep()
     {
         using var temp = new TempDirectory("local-ai-setup-");
         SetupContext context = ContextWithResolvedInstall(temp.Path);
@@ -475,10 +475,10 @@ public sealed class LocalAiSetupStepsTests
         Assert.Equal(StepOutcome.Success, result.Outcome);
         Assert.Equal(1, client.VerifyCount);
         Assert.Equal(1, runtime.RefreshCount);
-        Assert.Equal(1, runtime.RestartCount);
+        Assert.Equal(0, runtime.RestartCount);
         Assert.Equal(LocalModelCatalog.Qwen35BModelId, client.ModelAlias);
         Assert.NotNull(context.LocalAiInferenceVerification);
-        Assert.Equal(LocalAiModelAvailabilityState.Verified, runtime.Snapshot.ModelEvidence.State);
+        Assert.Equal(LocalAiModelAvailabilityState.Loaded, runtime.Snapshot.ModelEvidence.State);
     }
 
     [Fact]
@@ -502,6 +502,103 @@ public sealed class LocalAiSetupStepsTests
         Assert.Equal(StepOutcome.Failed, result.Outcome);
         Assert.Equal(1, runtime.RestartCount);
         Assert.Null(context.LocalAiInferenceVerification);
+    }
+
+    [Fact]
+    public async Task GpuBaseline_CapturesFreshHardwareImmediatelyBeforeInference()
+    {
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
+        var probe = new FakeHardwareProbe(CreateSparkHardware());
+
+        StepResult result = await new CaptureLocalAiGpuBaselineStep(probe).ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, probe.CallCount);
+        Assert.Equal("GPU-SPARK", Assert.Single(context.LocalAiGpuBaseline!.Gpus).StableId);
+    }
+
+    [Fact]
+    public async Task GpuVerification_RequiresCudaFullOffloadAndResetsRouterEmpty()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiGpuBaseline = CreateSparkHardware();
+        context.LocalAiInferenceVerification = new(
+            LocalModelCatalog.Qwen35BModelId, 12, 7, 45, 125);
+        var runtime = new FakeLocalAiRuntime(
+            Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Loaded, processId: 7001),
+            restartSnapshot: Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7002));
+        context.LocalAiRuntime = runtime;
+        var probe = new FakeGpuEvidenceProbe(new LocalAiGpuLoadEvidence(
+            7001,
+            "GPU-SPARK",
+            Path.Combine(temp.Path, "LocalAI", "engines", "ggml-cuda.dll"),
+            42,
+            42,
+            25_702_694_912,
+            25_000_000_000,
+            10_000_000_000));
+
+        StepResult result = await new VerifyLocalAiGpuLoadStep(probe).ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, probe.CallCount);
+        Assert.Equal(1, runtime.RestartCount);
+        Assert.NotNull(context.LocalAiGpuLoadEvidence);
+        Assert.Equal(LocalAiModelAvailabilityState.Verified, runtime.Snapshot.ModelEvidence.State);
+    }
+
+    [Fact]
+    public async Task GpuVerification_RejectsInsufficientMemoryGrowthAndStillResetsRouter()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiGpuBaseline = CreateSparkHardware();
+        context.LocalAiInferenceVerification = new(
+            LocalModelCatalog.Qwen35BModelId, 12, 7, 45, 125);
+        var runtime = new FakeLocalAiRuntime(
+            Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Loaded, processId: 7001),
+            restartSnapshot: Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7002));
+        context.LocalAiRuntime = runtime;
+        var probe = new FakeGpuEvidenceProbe(new LocalAiGpuLoadEvidence(
+            7001,
+            "GPU-SPARK",
+            Path.Combine(temp.Path, "LocalAI", "engines", "ggml-cuda.dll"),
+            42,
+            42,
+            25_702_694_912,
+            25_000_000_000,
+            24_900_000_000));
+
+        StepResult result = await new VerifyLocalAiGpuLoadStep(probe).ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Equal(1, runtime.RestartCount);
+        Assert.Null(context.LocalAiGpuLoadEvidence);
+    }
+
+    [Fact]
+    public void GpuEvidenceParser_RequiresEqualOffloadedAndTotalLayers()
+    {
+        Assert.Equal(
+            (42, 42),
+            WindowsLocalAiGpuEvidenceProbe.ParseFullOffloadEvidence(
+                "llm_load_tensors: offloaded 42/42 layers to GPU"));
+        Assert.Throws<InvalidDataException>(() =>
+            WindowsLocalAiGpuEvidenceProbe.ParseFullOffloadEvidence(
+                "llm_load_tensors: offloaded 40/42 layers to GPU"));
     }
 
     [Fact]
@@ -886,6 +983,22 @@ public sealed class LocalAiSetupStepsTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class FakeGpuEvidenceProbe(LocalAiGpuLoadEvidence evidence) : ILocalAiGpuEvidenceProbe
+    {
+        public int CallCount { get; private set; }
+
+        public Task<LocalAiGpuLoadEvidence> CaptureAsync(
+            int processId,
+            string selectedGpuId,
+            HostHardwareInfo baseline,
+            LocalAiPaths paths,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(evidence);
         }
     }
 

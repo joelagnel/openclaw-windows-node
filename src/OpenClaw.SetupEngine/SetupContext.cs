@@ -487,7 +487,9 @@ public sealed class SetupContext
     internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
     internal bool LocalAiManifestCreatedThisRun { get; set; }
     internal ILocalAiRuntime? LocalAiRuntime { get; set; }
+    internal HostHardwareInfo? LocalAiGpuBaseline { get; set; }
     internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
+    internal LocalAiGpuLoadEvidence? LocalAiGpuLoadEvidence { get; set; }
     internal LocalAiGatewayPriorState? LocalAiGatewayPriorState { get; set; }
 
     // Data directory for gateway registry and identity files

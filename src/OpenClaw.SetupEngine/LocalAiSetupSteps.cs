@@ -652,8 +652,8 @@ public sealed class StartLocalAiRuntimeStep : SetupStep
 }
 
 /// <summary>
-/// Sends the setup-time first request, proves the exact model loaded, and then
-/// restarts the router empty so normal companion startup still loads on demand.
+/// Sends the setup-time first request and proves the exact model loaded. The
+/// following GPU verification step restarts the router empty after collecting evidence.
 /// </summary>
 public sealed class VerifyLocalAiInferenceStep : SetupStep
 {
@@ -725,7 +725,6 @@ public sealed class VerifyLocalAiInferenceStep : SetupStep
             return StepResult.Fail($"Local AI inference verification failed: {ex.Message}", ex);
         }
 
-        LocalAiRuntimeSnapshot reset = await ResetRouterAsync(runtime);
         if (loaded.State != LocalAiRuntimeState.Healthy ||
             loaded.Ownership != LocalAiOwnership.CompanionManaged ||
             loaded.ModelEvidence.State != LocalAiModelAvailabilityState.Loaded ||
@@ -733,19 +732,12 @@ public sealed class VerifyLocalAiInferenceStep : SetupStep
         {
             return StepResult.Fail("llama-server completed a request but did not report the selected model as loaded.");
         }
-        if (reset.State != LocalAiRuntimeState.Healthy ||
-            reset.Ownership != LocalAiOwnership.CompanionManaged ||
-            reset.ModelEvidence.State != LocalAiModelAvailabilityState.Verified)
-        {
-            return StepResult.Fail("llama-server could not return to on-demand loading after verification.");
-        }
-
         ctx.LocalAiInferenceVerification = verification;
         return StepResult.Ok(
-            $"Verified {verification.CompletionTokens} generated tokens with the selected model; on-demand loading remains enabled.");
+            $"Verified {verification.CompletionTokens} generated tokens with the selected model.");
     }
 
-    private static async Task<LocalAiRuntimeSnapshot> ResetRouterAsync(ILocalAiRuntime runtime)
+    internal static async Task<LocalAiRuntimeSnapshot> ResetRouterAsync(ILocalAiRuntime runtime)
     {
         try
         {

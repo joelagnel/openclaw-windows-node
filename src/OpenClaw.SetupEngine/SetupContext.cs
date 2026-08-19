@@ -492,6 +492,7 @@ public sealed class SetupContext
     internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
     internal LocalAiGpuLoadEvidence? LocalAiGpuLoadEvidence { get; set; }
     internal LocalAiGatewayPriorState? LocalAiGatewayPriorState { get; set; }
+    internal bool IsUninstalling { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

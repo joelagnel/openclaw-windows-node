@@ -79,7 +79,7 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(35, steps.Count);
+        Assert.Equal(36, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightWslStep>(steps[2]);
@@ -92,16 +92,17 @@ public class SetupPipelineTests
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);
         Assert.Equal(lockdownIndex + 1, cliInstallIndex);
-        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[cliInstallIndex + 1]);
-        Assert.IsType<AcquireLocalAiModelStep>(steps[cliInstallIndex + 2]);
-        Assert.IsType<PersistLocalAiManifestStep>(steps[cliInstallIndex + 3]);
-        Assert.IsType<StartLocalAiRuntimeStep>(steps[cliInstallIndex + 4]);
-        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[cliInstallIndex + 5]);
-        Assert.IsType<VerifyLocalAiInferenceStep>(steps[cliInstallIndex + 6]);
-        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[cliInstallIndex + 7]);
-        Assert.IsType<VerifyLocalAiWslStep>(steps[cliInstallIndex + 8]);
-        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 9]);
-        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 10]);
+        Assert.IsType<ReconcileLocalAiInstallationStep>(steps[cliInstallIndex + 1]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[cliInstallIndex + 2]);
+        Assert.IsType<AcquireLocalAiModelStep>(steps[cliInstallIndex + 3]);
+        Assert.IsType<PersistLocalAiManifestStep>(steps[cliInstallIndex + 4]);
+        Assert.IsType<StartLocalAiRuntimeStep>(steps[cliInstallIndex + 5]);
+        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[cliInstallIndex + 6]);
+        Assert.IsType<VerifyLocalAiInferenceStep>(steps[cliInstallIndex + 7]);
+        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[cliInstallIndex + 8]);
+        Assert.IsType<VerifyLocalAiWslStep>(steps[cliInstallIndex + 9]);
+        Assert.IsType<InstallTailscaleStep>(steps[cliInstallIndex + 10]);
+        Assert.IsType<AuthorizeTailscaleStep>(steps[cliInstallIndex + 11]);
         var installServiceIndex = steps.FindIndex(s => s is InstallGatewayServiceStep);
         Assert.IsType<ConfigureLocalAiGatewayStep>(steps[installServiceIndex - 1]);
         Assert.IsType<StartGatewayStep>(steps[installServiceIndex + 1]);

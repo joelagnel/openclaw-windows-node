@@ -24,28 +24,31 @@ public enum GpuVendor
 /// </summary>
 /// <param name="Vendor">Classified vendor.</param>
 /// <param name="Name">Adapter name as reported by the source (e.g. "NVIDIA RTX 6000 Ada Generation").</param>
-/// <param name="DedicatedMemoryBytes">
-/// Dedicated video memory in bytes, or null when unknown. Only ever populated
-/// from a trustworthy source (nvidia-smi). WMI's <c>Win32_VideoController.AdapterRAM</c>
-/// is a 32-bit field that wraps above 4 GB, so the WMI fallback deliberately
-/// leaves this null rather than reporting a wrong number.
+/// <param name="GpuVisibleMemoryBytes">
+/// CUDA-visible memory in bytes, or null when unknown. On a discrete GPU this
+/// is dedicated VRAM. On a unified-memory SKU it is the configured GPU-visible
+/// allocation. The value must come from a trustworthy driver API, never the
+/// 32-bit <c>Win32_VideoController.AdapterRAM</c> field.
 /// </param>
+/// <param name="FreeGpuVisibleMemoryBytes">Currently free CUDA-visible memory, or null when unknown.</param>
 /// <param name="DriverVersion">Display driver version, when known.</param>
 /// <param name="CudaMajorVersion">
-/// Major version of the CUDA runtime the driver supports, when known. Drives the
-/// choice between the CUDA 12.x and CUDA 13.x llama.cpp builds.
+/// Major version of the CUDA driver API the display driver supports, when known.
 /// </param>
+/// <param name="StableId">A driver-provided stable adapter identifier, such as an NVML UUID.</param>
 public sealed record GpuInfo(
     GpuVendor Vendor,
     string Name,
-    long? DedicatedMemoryBytes = null,
+    long? GpuVisibleMemoryBytes = null,
+    long? FreeGpuVisibleMemoryBytes = null,
     string? DriverVersion = null,
-    int? CudaMajorVersion = null);
+    int? CudaMajorVersion = null,
+    string? StableId = null);
 
 /// <summary>
-/// Snapshot of the host's inference-relevant hardware. Every field is optional:
-/// the probe never throws, and unknown values degrade to null so the backend
-/// selector falls through to CPU rather than guessing.
+/// Snapshot of the host's inference-relevant hardware. Every probed field is
+/// optional. Unknown values remain unknown so a qualified selector can fail
+/// closed instead of guessing a backend or recipe.
 /// </summary>
 /// <param name="CpuArchitecture">OS architecture (x64 / Arm64 in practice).</param>
 /// <param name="TotalPhysicalMemoryBytes">Installed system RAM, or null when the query failed.</param>
@@ -60,8 +63,8 @@ public sealed record HostHardwareInfo(
     bool VulkanAvailable)
 {
     /// <summary>
-    /// The "we learned nothing" result. Used when every probe path failed; the
-    /// selector maps this to the CPU backend.
+    /// The "we learned nothing" result. Qualified selectors must treat it as
+    /// unsupported rather than selecting a fallback backend.
     /// </summary>
     public static HostHardwareInfo Unknown { get; } = new(
         RuntimeInformation.OSArchitecture,
@@ -76,51 +79,4 @@ public sealed record HostHardwareInfo(
     /// <summary>True when at least one NVIDIA adapter was detected.</summary>
     public bool HasNvidiaGpu => Gpus.Any(g => g.Vendor == GpuVendor.Nvidia);
 
-    /// <summary>
-    /// True when a non-NVIDIA adapter that a Vulkan build could drive was detected.
-    /// <see cref="GpuVendor.Unknown"/> does not count: an unclassified adapter is
-    /// not evidence that a Vulkan build will work.
-    /// </summary>
-    public bool HasNonNvidiaGpu =>
-        Gpus.Any(g => g.Vendor is GpuVendor.Amd or GpuVendor.Intel or GpuVendor.Other);
-
-    /// <summary>
-    /// Combined dedicated VRAM across all NVIDIA adapters whose size is known, or
-    /// null when no NVIDIA adapter reported a size. llama.cpp's default
-    /// <c>--split-mode layer</c> spreads a model across every visible device, so
-    /// the sum (not the maximum) is the capacity that matters for model fit.
-    /// </summary>
-    public long? TotalNvidiaVramBytes
-    {
-        get
-        {
-            long total = 0;
-            var sawAny = false;
-            foreach (var gpu in NvidiaGpus)
-            {
-                if (gpu.DedicatedMemoryBytes is not { } bytes || bytes <= 0) continue;
-                total += bytes;
-                sawAny = true;
-            }
-            return sawAny ? total : null;
-        }
-    }
-
-    /// <summary>
-    /// Highest CUDA major version reported by any NVIDIA adapter, or null when
-    /// unknown. Null must be treated as "assume the older CUDA build".
-    /// </summary>
-    public int? MaxCudaMajorVersion
-    {
-        get
-        {
-            int? best = null;
-            foreach (var gpu in NvidiaGpus)
-            {
-                if (gpu.CudaMajorVersion is not { } major) continue;
-                if (best is null || major > best) best = major;
-            }
-            return best;
-        }
-    }
 }

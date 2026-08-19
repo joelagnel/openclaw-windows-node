@@ -20,6 +20,32 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public async Task Manifest_RoundTripsValidatedGatewayFallbackModel()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await store.SaveAsync(ValidManifest() with { GatewayFallbackModel = "openai/gpt-5" });
+
+        LocalAiResolvedInstall saved = (await store.LoadAsync())!;
+        Assert.Equal("openai/gpt-5", saved.Manifest.GatewayFallbackModel);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("llamacpp/other-model")]
+    [InlineData("missing-provider-separator")]
+    [InlineData("provider/model/extra")]
+    public async Task Manifest_RejectsUnsafeGatewayFallbackModel(string fallbackModel)
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(ValidManifest() with { GatewayFallbackModel = fallbackModel }));
+    }
+
+    [Fact]
     public async Task AutomaticPort_IsBoundByChildAndPersistedOnlyAfterOwnedHealth()
     {
         using var temp = new TempDirectory("local-ai-port-");
@@ -67,6 +93,96 @@ public sealed class LocalAiPortLifecycleTests
         Assert.Equal(LocalAiRuntimeState.Conflict, snapshot.State);
         Assert.Empty(client.ProbedPorts);
         Assert.True(host.Process!.StopCount > 0);
+        LocalAiResolvedInstall? saved = await new LocalAiManifestStore(paths).LoadAsync();
+        Assert.Null(saved!.Endpoint);
+    }
+
+    [Fact]
+    public async Task FixedPortConflict_QuiescesEndpointConsumerBeforeReturning()
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        const int fixedPort = 28_770;
+        var store = new LocalAiManifestStore(paths);
+        LocalAiResolvedInstall install = (await store.LoadAsync())!;
+        await store.SaveAsync(install.Manifest with
+        {
+            RequestedPort = fixedPort,
+            Endpoint = $"http://127.0.0.1:{fixedPort}/v1",
+        });
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        platform.Listeners.Add(new WindowsTcpListenerInfo(
+            IPAddress.Loopback,
+            fixedPort,
+            9001,
+            "other-process",
+            @"C:\other\server.exe",
+            platform.UtcNow.UtcDateTime));
+        var host = new FakeProcessHost(platform, events, selectedPort: fixedPort);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient(events),
+            new FakeLifecycle(events));
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Conflict, snapshot.State);
+        Assert.Equal(["quiesce"], events);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
+    public async Task PreparationFailure_QuiescesEndpointConsumerBeforeReturning()
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        LocalAiResolvedInstall install = (await new LocalAiManifestStore(paths).LoadAsync())!;
+        File.Delete(install.ExecutablePath);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, events, selectedPort: 28_772);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient(events),
+            new FakeLifecycle(events));
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Equal(["quiesce"], events);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
+    public async Task AutomaticPort_RejectsWildcardChildListenerWithoutProbing()
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(
+            platform,
+            events,
+            selectedPort: 28_771,
+            listenerAddress: IPAddress.Any);
+        var client = new FakeClient(events);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            client,
+            new FakeLifecycle(events));
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Conflict, snapshot.State);
+        Assert.Empty(client.ProbedPorts);
+        Assert.Equal(["quiesce", "start", "stop"], events);
         LocalAiResolvedInstall? saved = await new LocalAiManifestStore(paths).LoadAsync();
         Assert.Null(saved!.Endpoint);
     }
@@ -231,7 +347,8 @@ public sealed class LocalAiPortLifecycleTests
         FakePlatform platform,
         List<string> events,
         int selectedPort,
-        TimeSpan? listenerStartOffset = null) : ILocalAiManagedProcessHost
+        TimeSpan? listenerStartOffset = null,
+        IPAddress? listenerAddress = null) : ILocalAiManagedProcessHost
     {
         public LocalAiProcessStartSpec? LastSpec { get; private set; }
         public FakeProcess? Process { get; private set; }
@@ -246,7 +363,7 @@ public sealed class LocalAiPortLifecycleTests
             LastSpec = spec;
             Process = new FakeProcess(4201, platform.UtcNow, platform, events);
             platform.Listeners.Add(new WindowsTcpListenerInfo(
-                IPAddress.Loopback,
+                listenerAddress ?? IPAddress.Loopback,
                 selectedPort,
                 Process.ProcessId,
                 "llama-server",

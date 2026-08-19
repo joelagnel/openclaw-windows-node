@@ -7,6 +7,7 @@ namespace OpenClaw.SetupEngine;
 internal enum LlamaRuntimeInstallDisposition
 {
     Installed,
+    ReusedVerified,
 }
 
 internal sealed record LlamaRuntimeInstallResult(
@@ -71,9 +72,18 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
         if (!LocalAiPathPolicy.TryResolve(localDataDirectory, component, out LocalAiSetupPaths paths, out string pathError))
             throw new LocalAiArtifactInstallException(pathError);
 
-        if (Directory.Exists(paths.InstallDirectory))
-            throw new LocalAiArtifactInstallException(
-                "An unclaimed llama-server runtime already exists at the managed install path.");
+        if (Directory.Exists(paths.InstallDirectory) || File.Exists(paths.InstallDirectory))
+        {
+            if (!LocalAiPathPolicy.TryDeleteManagedTree(
+                    localDataDirectory,
+                    paths.InstallDirectory,
+                    allowRoot: false,
+                    out string cleanupError))
+            {
+                throw new LocalAiArtifactInstallException(
+                    $"An unclaimed llama-server runtime could not be removed safely: {cleanupError}");
+            }
+        }
 
         IReadOnlyList<LocalAiPinnedArchive> archives = runtime.Artifacts
             .Select(artifact => new LocalAiPinnedArchive(
@@ -143,8 +153,15 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
             throw new InvalidDataException(error);
         }
 
-        if (Directory.Exists(deletePath))
-            DeleteDirectoryWithRetry(deletePath);
+        if ((Directory.Exists(deletePath) || File.Exists(deletePath)) &&
+            !LocalAiPathPolicy.TryDeleteManagedTree(
+                localDataDirectory,
+                deletePath,
+                allowRoot: false,
+                out string cleanupError))
+        {
+            throw new InvalidDataException(cleanupError);
+        }
     }
 
     internal static void DeleteDirectoryWithRetry(
@@ -177,15 +194,12 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
     {
         try
         {
-            if (LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+            if (LocalAiPathPolicy.TryDeleteManagedTree(
                     localDataDirectory,
                     createdDirectory,
-                    out string deletePath,
-                    out _) &&
-                Directory.Exists(deletePath))
-            {
-                DeleteDirectoryWithRetry(deletePath);
-            }
+                    allowRoot: false,
+                    out _))
+                return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

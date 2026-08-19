@@ -42,9 +42,8 @@ public sealed record LlamaRuntimeVariant
 }
 
 /// <summary>
-/// Integrity-pinned native Windows llama.cpp builds for the supported NVIDIA
-/// hardware profiles. Unsupported hardware does not receive a CPU or Vulkan
-/// fallback from this catalog.
+/// Integrity-pinned native Windows llama.cpp builds routed by Windows CPU
+/// architecture. Unsupported hardware does not receive a CPU or Vulkan fallback.
 /// </summary>
 public static class LlamaRuntimeCatalog
 {

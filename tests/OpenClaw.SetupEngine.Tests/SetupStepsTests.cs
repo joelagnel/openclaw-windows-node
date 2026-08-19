@@ -1295,6 +1295,36 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public void LocalAiAvailabilityReasons_CombinesHardwareWslAndNetworkingFailures()
+    {
+        var wsl = new WslViabilityResult(
+            WslViabilityKind.EnvironmentBlocked,
+            "Windows cannot currently start WSL2.",
+            "Enable virtualization and Virtual Machine Platform.");
+
+        var result = LocalAiAvailabilityReasons.Build(
+            "No qualified NVIDIA GPU was detected.",
+            wsl,
+            "The global .wslconfig file is unreadable.");
+
+        Assert.NotNull(result);
+        Assert.Contains("Hardware: No qualified NVIDIA GPU was detected.", result);
+        Assert.Contains("WSL: Windows cannot currently start WSL2.", result);
+        Assert.Contains("WSL networking: The global .wslconfig file is unreadable.", result);
+    }
+
+    [Fact]
+    public void LocalAiAvailabilityReasons_DoesNotBlockForInstallableWsl()
+    {
+        var wsl = new WslViabilityResult(
+            WslViabilityKind.Installable,
+            "WSL is not installed yet.",
+            "Setup can install it later.");
+
+        Assert.Null(LocalAiAvailabilityReasons.Build(null, wsl, null));
+    }
+
+    [Fact]
     public async Task CreateWslInstance_UsesDirectFreshInstallAndDoesNotExportBaseDistro()
     {
         var installed = false;

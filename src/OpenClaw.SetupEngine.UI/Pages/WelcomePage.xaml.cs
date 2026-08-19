@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Navigation;
 using OpenClaw.SetupEngine;
 using OpenClaw.SetupEngine.UI;
 using OpenClaw.Shared;
+using OpenClaw.Shared.Inference.Catalog;
 using System.Numerics;
 
 namespace OpenClaw.SetupEngine.UI.Pages;
@@ -42,6 +43,32 @@ public sealed partial class WelcomePage : Page
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         StartMascotBreatheAnimation();
+        AsyncEventHandlerGuard.Run(
+            DetectLocalAiAvailabilityAsync,
+            NullLogger.Instance,
+            nameof(DetectLocalAiAvailabilityAsync));
+    }
+
+    private async Task DetectLocalAiAvailabilityAsync()
+    {
+        SetupWindow? setupWindow = SetupWindow.Active;
+        SetupConfig? config = _config;
+        if (setupWindow is null || config is null)
+            return;
+
+        var hardware = await setupWindow.GetLocalAiHardwareAsync();
+        if (!IsLoaded || !ReferenceEquals(SetupWindow.Active, setupWindow))
+            return;
+
+        LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
+            hardware,
+            config.LocalAi.SelectedModelId);
+        if (!eligibility.CanInstall || eligibility.SelectedGpu is not { } gpu)
+            return;
+
+        LocalAiAvailabilityText.Text =
+            $"{gpu.Name} detected. Install a local gateway to use local AI inference on this PC.";
+        LocalAiAvailabilityPanel.Visibility = Visibility.Visible;
     }
 
     private void StartMascotBreatheAnimation()

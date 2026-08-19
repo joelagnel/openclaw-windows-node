@@ -451,6 +451,57 @@ public sealed class LocalAiSetupStepsTests
         Assert.Null(context.LocalAiRuntime);
     }
 
+    [Fact]
+    public async Task InferenceVerification_LoadsExactModelThenRestartsEmptyRouter()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        var runtime = new FakeLocalAiRuntime(
+            Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7001),
+            refreshSnapshot: Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Loaded, processId: 7001),
+            restartSnapshot: Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7002));
+        context.LocalAiRuntime = runtime;
+        var client = new FakeInferenceClient();
+        var step = new VerifyLocalAiInferenceStep(() => client);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(1, client.VerifyCount);
+        Assert.Equal(1, runtime.RefreshCount);
+        Assert.Equal(1, runtime.RestartCount);
+        Assert.Equal(LocalModelCatalog.Qwen35BModelId, client.ModelAlias);
+        Assert.NotNull(context.LocalAiInferenceVerification);
+        Assert.Equal(LocalAiModelAvailabilityState.Verified, runtime.Snapshot.ModelEvidence.State);
+    }
+
+    [Fact]
+    public async Task InferenceVerification_FailureStillResetsRouterToOnDemandMode()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        var runtime = new FakeLocalAiRuntime(
+            Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7001),
+            restartSnapshot: Snapshot(LocalAiRuntimeState.Healthy, LocalAiOwnership.CompanionManaged,
+                LocalAiModelAvailabilityState.Verified, processId: 7002));
+        context.LocalAiRuntime = runtime;
+        var client = new FakeInferenceClient(new InvalidDataException("bad response"));
+
+        StepResult result = await new VerifyLocalAiInferenceStep(() => client).ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Equal(1, runtime.RestartCount);
+        Assert.Null(context.LocalAiInferenceVerification);
+    }
+
     private static SetupContext CreateContext(
         LocalAiConfig localAi,
         ICommandRunner? commands = null,
@@ -706,10 +757,15 @@ public sealed class LocalAiSetupStepsTests
             RemoveCount++;
     }
 
-    private sealed class FakeLocalAiRuntime(LocalAiRuntimeSnapshot snapshot) : ILocalAiRuntime
+    private sealed class FakeLocalAiRuntime(
+        LocalAiRuntimeSnapshot snapshot,
+        LocalAiRuntimeSnapshot? refreshSnapshot = null,
+        LocalAiRuntimeSnapshot? restartSnapshot = null) : ILocalAiRuntime
     {
         public int StartCount { get; private set; }
         public int DisposeCount { get; private set; }
+        public int RefreshCount { get; private set; }
+        public int RestartCount { get; private set; }
         public LocalAiRuntimeSnapshot Snapshot { get; private set; } = snapshot;
         public event EventHandler<LocalAiRuntimeSnapshotChangedEventArgs>? StateChanged
         {
@@ -726,16 +782,46 @@ public sealed class LocalAiSetupStepsTests
         public Task<LocalAiRuntimeSnapshot> StopAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(Snapshot);
 
-        public Task<LocalAiRuntimeSnapshot> RestartAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> RestartAsync(CancellationToken cancellationToken = default)
+        {
+            RestartCount++;
+            Snapshot = restartSnapshot ?? Snapshot;
+            return Task.FromResult(Snapshot);
+        }
 
-        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
+        {
+            RefreshCount++;
+            Snapshot = refreshSnapshot ?? Snapshot;
+            return Task.FromResult(Snapshot);
+        }
 
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeInferenceClient(Exception? failure = null) : ILlamaServerInferenceClient
+    {
+        public int VerifyCount { get; private set; }
+        public string? ModelAlias { get; private set; }
+
+        public Task<LlamaServerInferenceVerification> VerifyAsync(
+            Uri endpoint,
+            string modelAlias,
+            CancellationToken cancellationToken = default)
+        {
+            VerifyCount++;
+            ModelAlias = modelAlias;
+            return failure is null
+                ? Task.FromResult(new LlamaServerInferenceVerification(modelAlias, 12, 7, 45, 125))
+                : Task.FromException<LlamaServerInferenceVerification>(failure);
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

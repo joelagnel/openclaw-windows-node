@@ -110,7 +110,9 @@
     // The setup UI sets this only after explaining that applying mirrored mode stops running WSL distros once.
     "WslMirroredNetworkingConsent": false,
     "HealthTimeoutSeconds": 15,
-    "AcquisitionTimeoutSeconds": 7200
+    "AcquisitionTimeoutSeconds": 7200,
+    // Includes first-request model load and a short verification completion.
+    "InferenceTimeoutSeconds": 600
   },
 
   // ─── Node Capabilities ───

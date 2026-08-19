@@ -145,6 +145,7 @@ public sealed class LocalAiConfig
     public bool WslMirroredNetworkingConsent { get; set; }
     public int HealthTimeoutSeconds { get; set; } = 15;
     public int AcquisitionTimeoutSeconds { get; set; } = 7_200;
+    public int InferenceTimeoutSeconds { get; set; } = 600;
 }
 
 public sealed class WslConfig
@@ -486,6 +487,7 @@ public sealed class SetupContext
     internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
     internal bool LocalAiManifestCreatedThisRun { get; set; }
     internal ILocalAiRuntime? LocalAiRuntime { get; set; }
+    internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

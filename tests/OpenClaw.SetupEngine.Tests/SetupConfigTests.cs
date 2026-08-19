@@ -49,6 +49,7 @@ public class SetupConfigTests : IDisposable
         Assert.False(config.LocalAi.WslMirroredNetworkingConsent);
         Assert.Equal(15, config.LocalAi.HealthTimeoutSeconds);
         Assert.Equal(7_200, config.LocalAi.AcquisitionTimeoutSeconds);
+        Assert.Equal(600, config.LocalAi.InferenceTimeoutSeconds);
     }
 
     [Fact]
@@ -64,6 +65,7 @@ public class SetupConfigTests : IDisposable
                 WslMirroredNetworkingConsent = true,
                 HealthTimeoutSeconds = 30,
                 AcquisitionTimeoutSeconds = 3_600,
+                InferenceTimeoutSeconds = 480,
             },
         };
 
@@ -77,6 +79,7 @@ public class SetupConfigTests : IDisposable
         Assert.True(loaded.LocalAi.WslMirroredNetworkingConsent);
         Assert.Equal(30, loaded.LocalAi.HealthTimeoutSeconds);
         Assert.Equal(3_600, loaded.LocalAi.AcquisitionTimeoutSeconds);
+        Assert.Equal(480, loaded.LocalAi.InferenceTimeoutSeconds);
     }
 
     [Fact]

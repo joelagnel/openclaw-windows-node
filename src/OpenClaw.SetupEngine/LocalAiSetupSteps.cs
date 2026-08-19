@@ -648,3 +648,110 @@ public sealed class StartLocalAiRuntimeStep : SetupStep
         await runtime.DisposeAsync();
     }
 }
+
+/// <summary>
+/// Sends the setup-time first request, proves the exact model loaded, and then
+/// restarts the router empty so normal companion startup still loads on demand.
+/// </summary>
+public sealed class VerifyLocalAiInferenceStep : SetupStep
+{
+    private readonly Func<ILlamaServerInferenceClient> _clientFactory;
+
+    public VerifyLocalAiInferenceStep()
+        : this(() => new LlamaServerInferenceClient())
+    {
+    }
+
+    internal VerifyLocalAiInferenceStep(Func<ILlamaServerInferenceClient> clientFactory) =>
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+
+    public override string Id => "verify-local-ai-inference";
+    public override string DisplayName => "Verifying Local AI model load";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiRuntime is not { } runtime ||
+            ctx.LocalAiResolvedInstall is not { } install ||
+            ctx.LocalAiEligibility?.Plan is not { } plan)
+        {
+            return StepResult.Terminal(
+                "Local AI inference verification requires the managed router and qualified installation.");
+        }
+        if (runtime.Snapshot.State != LocalAiRuntimeState.Healthy ||
+            runtime.Snapshot.Ownership != LocalAiOwnership.CompanionManaged)
+        {
+            return StepResult.Terminal("The managed llama-server router is not healthy.");
+        }
+        if (ctx.Config.LocalAi.InferenceTimeoutSeconds <= 0)
+            return StepResult.Terminal("The Local AI inference timeout must be greater than zero.");
+
+        using ILlamaServerInferenceClient client = _clientFactory();
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(ctx.Config.LocalAi.InferenceTimeoutSeconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+
+        LlamaServerInferenceVerification verification;
+        LocalAiRuntimeSnapshot loaded;
+        try
+        {
+            verification = await client.VerifyAsync(
+                install.Endpoint,
+                plan.Model.Id,
+                linked.Token);
+            loaded = await runtime.RefreshAsync(linked.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await ResetRouterAsync(runtime);
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            await ResetRouterAsync(runtime);
+            return StepResult.Fail("The first Local AI model load timed out.", ex);
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException
+            or IOException
+            or InvalidDataException)
+        {
+            await ResetRouterAsync(runtime);
+            return StepResult.Fail($"Local AI inference verification failed: {ex.Message}", ex);
+        }
+
+        LocalAiRuntimeSnapshot reset = await ResetRouterAsync(runtime);
+        if (loaded.State != LocalAiRuntimeState.Healthy ||
+            loaded.Ownership != LocalAiOwnership.CompanionManaged ||
+            loaded.ModelEvidence.State != LocalAiModelAvailabilityState.Loaded ||
+            !string.Equals(loaded.ModelEvidence.ServerModelId, plan.Model.Id, StringComparison.Ordinal))
+        {
+            return StepResult.Fail("llama-server completed a request but did not report the selected model as loaded.");
+        }
+        if (reset.State != LocalAiRuntimeState.Healthy ||
+            reset.Ownership != LocalAiOwnership.CompanionManaged ||
+            reset.ModelEvidence.State != LocalAiModelAvailabilityState.Verified)
+        {
+            return StepResult.Fail("llama-server could not return to on-demand loading after verification.");
+        }
+
+        ctx.LocalAiInferenceVerification = verification;
+        return StepResult.Ok(
+            $"Verified {verification.CompletionTokens} generated tokens with the selected model; on-demand loading remains enabled.");
+    }
+
+    private static async Task<LocalAiRuntimeSnapshot> ResetRouterAsync(ILocalAiRuntime runtime)
+    {
+        try
+        {
+            return await runtime.RestartAsync(CancellationToken.None);
+        }
+        catch
+        {
+            return runtime.Snapshot;
+        }
+    }
+}

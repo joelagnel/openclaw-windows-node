@@ -116,7 +116,116 @@ public sealed class LocalAiSetupStepsTests
         Assert.Contains("unavailable", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static SetupContext CreateContext(LocalAiConfig localAi)
+    [Fact]
+    public async Task WslNetworking_AlreadyMirrored_SkipsWithoutConsentOrShutdown()
+    {
+        var manager = new FakeWslGlobalConfigManager(new WslGlobalConfigStatus(true, true));
+        var commands = new RecordingCommandRunner();
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true, WslMirroredNetworkingConsent = false },
+            commands);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Skipped, result.Outcome);
+        Assert.Equal(0, manager.ApplyCount);
+        Assert.Empty(commands.Calls);
+    }
+
+    [Fact]
+    public async Task WslNetworking_ConsentDeclined_FailsBeforeWriteOrShutdown()
+    {
+        var manager = new FakeWslGlobalConfigManager(new WslGlobalConfigStatus(false, false));
+        var commands = new RecordingCommandRunner();
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true, WslMirroredNetworkingConsent = false },
+            commands);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Contains("Consent is required", result.Message);
+        Assert.Equal(0, manager.ApplyCount);
+        Assert.Empty(commands.Calls);
+    }
+
+    [Fact]
+    public async Task WslNetworking_ConsentAccepted_AppliesThenShutsDownExactlyOnce()
+    {
+        var manager = new FakeWslGlobalConfigManager(new WslGlobalConfigStatus(false, false));
+        var commands = new RecordingCommandRunner();
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true, WslMirroredNetworkingConsent = true },
+            commands);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(1, manager.ApplyCount);
+        Assert.Collection(
+            commands.Calls,
+            call =>
+            {
+                Assert.Equal(WslConstants.WslExePath, call.Executable);
+                Assert.Equal(["--shutdown"], call.Arguments);
+            });
+    }
+
+    [Fact]
+    public async Task WslNetworking_ShutdownFailure_RestoresImmediately()
+    {
+        var manager = new FakeWslGlobalConfigManager(
+            new WslGlobalConfigStatus(false, false),
+            restoreResult: WslGlobalConfigRestoreResult.Restored);
+        var commands = new RecordingCommandRunner(exitCode: 1);
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true, WslMirroredNetworkingConsent = true },
+            commands);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Equal(1, manager.RestoreCount);
+    }
+
+    [Fact]
+    public async Task WslNetworking_Rollback_RestoresAndAppliesWithOneShutdown()
+    {
+        var manager = new FakeWslGlobalConfigManager(
+            new WslGlobalConfigStatus(false, false),
+            restoreResult: WslGlobalConfigRestoreResult.Restored);
+        var commands = new RecordingCommandRunner();
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true }, commands);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.Equal(1, manager.RestoreCount);
+        Assert.Single(commands.Calls);
+        Assert.Equal(["--shutdown"], commands.Calls[0].Arguments);
+    }
+
+    [Fact]
+    public async Task WslNetworking_Rollback_PreservesNewerUserEditWithoutShutdown()
+    {
+        var manager = new FakeWslGlobalConfigManager(
+            new WslGlobalConfigStatus(false, false),
+            restoreResult: WslGlobalConfigRestoreResult.UserModified);
+        var commands = new RecordingCommandRunner();
+        var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true }, commands);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.Equal(1, manager.RestoreCount);
+        Assert.Empty(commands.Calls);
+    }
+
+    private static SetupContext CreateContext(LocalAiConfig localAi, ICommandRunner? commands = null)
     {
         var config = new SetupConfig { LocalAi = localAi };
         var logger = new SetupLogger(filePath: null, LogLevel.Trace);
@@ -124,7 +233,7 @@ public sealed class LocalAiSetupStepsTests
             config,
             logger,
             new TransactionJournal(filePath: null),
-            new CommandRunner(logger),
+            commands ?? new CommandRunner(logger),
             CancellationToken.None);
     }
 
@@ -171,5 +280,56 @@ public sealed class LocalAiSetupStepsTests
             error = succeeds ? null : "Requested port is unavailable.";
             return succeeds;
         }
+    }
+
+    private sealed class FakeWslGlobalConfigManager(
+        WslGlobalConfigStatus status,
+        WslGlobalConfigRestoreResult restoreResult = WslGlobalConfigRestoreResult.NoBackup) : IWslGlobalConfigManager
+    {
+        public int ApplyCount { get; private set; }
+        public int RestoreCount { get; private set; }
+
+        public WslGlobalConfigStatus Inspect() => status;
+
+        public WslGlobalConfigApplyResult ApplyMirroredNetworking()
+        {
+            ApplyCount++;
+            return new WslGlobalConfigApplyResult(true, null);
+        }
+
+        public WslGlobalConfigRestoreResult RestoreIfUnchanged()
+        {
+            RestoreCount++;
+            return restoreResult;
+        }
+    }
+
+    private sealed class RecordingCommandRunner(int exitCode = 0) : ICommandRunner
+    {
+        public List<(string Executable, string[] Arguments)> Calls { get; } = [];
+
+        public Task<CommandResult> RunAsync(
+            string executable,
+            string[] arguments,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            string? workingDirectory = null,
+            string? stdinInput = null,
+            CancellationToken ct = default,
+            Stream? stdinStream = null)
+        {
+            Calls.Add((executable, arguments));
+            return Task.FromResult(new CommandResult(exitCode, string.Empty, string.Empty, TimeSpan.Zero, false));
+        }
+
+        public Task<CommandResult> RunInWslAsync(
+            string distroName,
+            string command,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            CancellationToken ct = default,
+            string? user = null,
+            bool inputViaStdin = false) =>
+            throw new NotSupportedException();
     }
 }

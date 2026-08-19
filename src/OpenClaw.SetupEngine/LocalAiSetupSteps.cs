@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
 
@@ -134,5 +135,139 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
 
         return Task.FromResult(StepResult.Ok(
             $"Selected {eligibility.Plan.Model.DisplayName} for {eligibility.Plan.HardwareProfile.DisplayName}."));
+    }
+}
+
+/// <summary>
+/// Enables mirrored WSL networking only with explicit consent. This is the
+/// sole Local AI setup step allowed to issue a global WSL shutdown.
+/// </summary>
+public sealed class ConfigureLocalAiWslNetworkingStep : SetupStep
+{
+    private readonly Func<SetupContext, IWslGlobalConfigManager> _managerFactory;
+
+    public ConfigureLocalAiWslNetworkingStep()
+        : this(CreateManager)
+    {
+    }
+
+    internal ConfigureLocalAiWslNetworkingStep(
+        Func<SetupContext, IWslGlobalConfigManager> managerFactory) =>
+        _managerFactory = managerFactory ?? throw new ArgumentNullException(nameof(managerFactory));
+
+    public override string Id => "configure-local-ai-wsl-networking";
+    public override string DisplayName => "Configuring Local AI access from WSL";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        IWslGlobalConfigManager manager = _managerFactory(ctx);
+        WslGlobalConfigStatus status;
+        try
+        {
+            status = manager.Inspect();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return StepResult.Terminal(
+                $"The WSL configuration could not be safely inspected: {ex.Message}",
+                ex);
+        }
+
+        if (status.IsMirrored)
+            return StepResult.Skip("WSL mirrored networking is already enabled.");
+
+        if (!ctx.Config.LocalAi.WslMirroredNetworkingConsent)
+        {
+            return StepResult.Terminal(
+                "Local AI requires WSL mirrored networking. Consent is required because applying it stops all running WSL distributions once; no distributions are deleted.");
+        }
+
+        WslGlobalConfigApplyResult apply;
+        try
+        {
+            apply = manager.ApplyMirroredNetworking();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return StepResult.Terminal(
+                $"WSL mirrored networking could not be configured: {ex.Message}",
+                ex);
+        }
+
+        if (!apply.Changed)
+            return StepResult.Skip("WSL mirrored networking is already enabled.");
+
+        try
+        {
+            CommandResult shutdown = await ShutdownWslAsync(ctx, ct);
+            if (shutdown.ExitCode != 0 || shutdown.TimedOut)
+            {
+                RestoreAfterFailedApply(manager, ctx);
+                return StepResult.Fail(
+                    "WSL mirrored networking was restored because WSL could not be stopped to apply it.");
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            if (manager.RestoreIfUnchanged() == WslGlobalConfigRestoreResult.Restored)
+                await ShutdownWslAsync(ctx, CancellationToken.None);
+            throw;
+        }
+
+        return StepResult.Ok("WSL mirrored networking is enabled.");
+    }
+
+    public override async Task RollbackAsync(SetupContext ctx, CancellationToken ct)
+    {
+        IWslGlobalConfigManager manager = _managerFactory(ctx);
+        WslGlobalConfigRestoreResult restore = manager.RestoreIfUnchanged();
+        switch (restore)
+        {
+            case WslGlobalConfigRestoreResult.NoBackup:
+                return;
+            case WslGlobalConfigRestoreResult.UserModified:
+                ctx.Logger.Warn("Preserving the user's newer .wslconfig instead of restoring the setup backup.");
+                return;
+            case WslGlobalConfigRestoreResult.InvalidBackup:
+                throw new InvalidDataException("The Local AI WSL configuration backup is invalid.");
+            case WslGlobalConfigRestoreResult.Restored:
+                CommandResult shutdown = await ShutdownWslAsync(ctx, ct);
+                if (shutdown.ExitCode != 0 || shutdown.TimedOut)
+                    throw new InvalidOperationException("WSL could not be stopped to apply the restored configuration.");
+                return;
+            default:
+                throw new InvalidOperationException($"Unknown WSL configuration restore result: {restore}.");
+        }
+    }
+
+    private static IWslGlobalConfigManager CreateManager(SetupContext ctx)
+    {
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string configPath = Path.Combine(userProfile, ".wslconfig");
+        string backupDirectory = Path.Combine(
+            new LocalAiPaths(ctx.LocalDataDir).RootDirectory,
+            "wsl-networking");
+        return new WslGlobalConfigManager(configPath, backupDirectory);
+    }
+
+    private static Task<CommandResult> ShutdownWslAsync(SetupContext ctx, CancellationToken ct) =>
+        ctx.Commands.RunAsync(
+            WslConstants.WslExePath,
+            ["--shutdown"],
+            TimeSpan.FromSeconds(60),
+            ct: ct);
+
+    private static void RestoreAfterFailedApply(IWslGlobalConfigManager manager, SetupContext ctx)
+    {
+        WslGlobalConfigRestoreResult restore = manager.RestoreIfUnchanged();
+        if (restore != WslGlobalConfigRestoreResult.Restored)
+        {
+            ctx.Logger.Error(
+                $"Failed to restore .wslconfig after WSL shutdown failed: {restore}.");
+        }
     }
 }

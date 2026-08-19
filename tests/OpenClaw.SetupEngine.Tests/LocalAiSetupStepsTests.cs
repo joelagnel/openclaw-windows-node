@@ -4,6 +4,8 @@ using OpenClaw.Shared;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
 using OpenClaw.TestSupport;
+using System.Text;
+using System.Text.Json;
 
 namespace OpenClaw.SetupEngine.Tests;
 
@@ -502,6 +504,48 @@ public sealed class LocalAiSetupStepsTests
         Assert.Null(context.LocalAiInferenceVerification);
     }
 
+    [Fact]
+    public async Task WslVerification_UsesStdinAndValidatesExactDynamicEndpointAndModel()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        context.LocalAiRuntime = new FakeLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.CompanionManaged,
+            LocalAiModelAvailabilityState.Verified,
+            processId: 7001));
+        var command = new WslEvidenceCommandRunner(context.LocalAiResolvedInstall!, validModel: true);
+        context = CopyContextWithCommands(context, command);
+
+        StepResult result = await new VerifyLocalAiWslStep().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.True(command.InputViaStdin);
+        Assert.Contains("http://127.0.0.1:49151", command.Script, StringComparison.Ordinal);
+        Assert.Equal(context.DistroName, command.DistroName);
+    }
+
+    [Fact]
+    public async Task WslVerification_RejectsWrongModelEvidence()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext original = ContextWithResolvedInstall(temp.Path);
+        original.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        original.LocalAiRuntime = new FakeLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.CompanionManaged,
+            LocalAiModelAvailabilityState.Verified,
+            processId: 7001));
+        var command = new WslEvidenceCommandRunner(original.LocalAiResolvedInstall!, validModel: false);
+        SetupContext context = CopyContextWithCommands(original, command);
+
+        StepResult result = await new VerifyLocalAiWslStep().ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("selected managed model", result.Message);
+    }
+
     private static SetupContext CreateContext(
         LocalAiConfig localAi,
         ICommandRunner? commands = null,
@@ -595,6 +639,26 @@ public sealed class LocalAiSetupStepsTests
             new Uri(manifest.Endpoint));
         context.LocalAiManifestCreatedThisRun = true;
         return context;
+    }
+
+    private static SetupContext CopyContextWithCommands(SetupContext source, ICommandRunner commands)
+    {
+        var copy = new SetupContext(
+            source.Config,
+            source.Logger,
+            source.Journal,
+            commands,
+            CancellationToken.None,
+            source.DataDir,
+            source.LocalDataDir)
+        {
+            DistroName = source.DistroName,
+            LocalAiEligibility = source.LocalAiEligibility,
+            LocalAiResolvedInstall = source.LocalAiResolvedInstall,
+            LocalAiManifestCreatedThisRun = source.LocalAiManifestCreatedThisRun,
+            LocalAiRuntime = source.LocalAiRuntime,
+        };
+        return copy;
     }
 
     private static LocalAiRuntimeSnapshot Snapshot(
@@ -822,6 +886,53 @@ public sealed class LocalAiSetupStepsTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class WslEvidenceCommandRunner(
+        LocalAiResolvedInstall install,
+        bool validModel) : ICommandRunner
+    {
+        public string? DistroName { get; private set; }
+        public string? Script { get; private set; }
+        public bool InputViaStdin { get; private set; }
+
+        public Task<CommandResult> RunAsync(
+            string executable,
+            string[] arguments,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            string? workingDirectory = null,
+            string? stdinInput = null,
+            CancellationToken ct = default,
+            Stream? stdinStream = null) =>
+            throw new NotSupportedException();
+
+        public Task<CommandResult> RunInWslAsync(
+            string distroName,
+            string command,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            CancellationToken ct = default,
+            string? user = null,
+            bool inputViaStdin = false)
+        {
+            DistroName = distroName;
+            Script = command;
+            InputViaStdin = inputViaStdin;
+            string alias = validModel ? install.Manifest.ModelAlias : "wrong-model";
+            string health = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
+            string modelsJson = JsonSerializer.Serialize(new
+            {
+                data = new[]
+                {
+                    new { id = alias, path = install.ModelPath, status = new { value = "unloaded" } },
+                },
+            });
+            string models = Convert.ToBase64String(Encoding.UTF8.GetBytes(modelsJson));
+            string stdout = $"OPENCLAW_LOCAL_AI_HEALTH_B64={health}\n" +
+                $"OPENCLAW_LOCAL_AI_MODELS_B64={models}\n";
+            return Task.FromResult(new CommandResult(0, stdout, string.Empty, TimeSpan.Zero, false));
         }
     }
 }

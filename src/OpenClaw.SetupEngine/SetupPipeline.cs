@@ -70,6 +70,7 @@ public static class SetupStepFactory
             new PersistLocalAiManifestStep(),
             new StartLocalAiRuntimeStep(),
             new VerifyLocalAiInferenceStep(),
+            new VerifyLocalAiWslStep(),
             new InstallTailscaleStep(),
             new AuthorizeTailscaleStep(),
             new ConfigureGatewayStep(),

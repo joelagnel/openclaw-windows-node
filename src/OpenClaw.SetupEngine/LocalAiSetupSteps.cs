@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
@@ -752,6 +754,150 @@ public sealed class VerifyLocalAiInferenceStep : SetupStep
         catch
         {
             return runtime.Snapshot;
+        }
+    }
+}
+
+/// <summary>Proves the app-owned WSL distro can reach the native loopback router.</summary>
+public sealed class VerifyLocalAiWslStep : SetupStep
+{
+    private const string HealthMarker = "OPENCLAW_LOCAL_AI_HEALTH_B64=";
+    private const string ModelsMarker = "OPENCLAW_LOCAL_AI_MODELS_B64=";
+    private const int MaximumEvidenceBytes = 1024 * 1024;
+
+    public override string Id => "verify-local-ai-wsl";
+    public override string DisplayName => "Verifying Local AI access from WSL";
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiResolvedInstall is not { } install ||
+            ctx.LocalAiRuntime is not { Snapshot.State: LocalAiRuntimeState.Healthy } ||
+            ctx.LocalAiEligibility?.Plan is not { } plan ||
+            string.IsNullOrWhiteSpace(ctx.DistroName))
+        {
+            return StepResult.Terminal(
+                "WSL Local AI verification requires the healthy managed router and app-owned distro.");
+        }
+
+        string script = BuildProbeScript(install.Endpoint.Port);
+        CommandResult result = await ctx.Commands.RunInWslAsync(
+            ctx.DistroName,
+            script,
+            TimeSpan.FromSeconds(45),
+            ct: ct,
+            user: ctx.Config.Wsl.User,
+            inputViaStdin: true);
+        if (result.TimedOut)
+            return StepResult.Fail("The WSL Local AI reachability check timed out.");
+        if (result.ExitCode != 0)
+            return StepResult.Fail("The app-owned WSL distro could not reach the native llama-server router.");
+
+        try
+        {
+            using JsonDocument health = DecodeMarker(result.Stdout, HealthMarker);
+            using JsonDocument models = DecodeMarker(result.Stdout, ModelsMarker);
+            ValidateHealth(health.RootElement);
+            ValidateModel(models.RootElement, plan.Model.Id, install.ModelPath);
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException or InvalidDataException)
+        {
+            return StepResult.Fail($"The WSL Local AI evidence was invalid: {ex.Message}", ex);
+        }
+
+        return StepResult.Ok(
+            $"The app-owned WSL distro can reach llama-server on 127.0.0.1:{install.Endpoint.Port}.");
+    }
+
+    internal static string BuildProbeScript(int port)
+    {
+        if (port is <= 0 or > 65_535)
+            throw new ArgumentOutOfRangeException(nameof(port));
+
+        return $$"""
+            set -euo pipefail
+            base_url='http://127.0.0.1:{{port}}'
+            health_json="$(curl --fail --silent --show-error --max-time 15 "$base_url/health")"
+            models_json="$(curl --fail --silent --show-error --max-time 15 "$base_url/models?autoload=false")"
+            printf '{{HealthMarker}}%s\n' "$(printf '%s' "$health_json" | base64 -w0)"
+            printf '{{ModelsMarker}}%s\n' "$(printf '%s' "$models_json" | base64 -w0)"
+            """;
+    }
+
+    private static JsonDocument DecodeMarker(string stdout, string marker)
+    {
+        string? encoded = stdout
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .SingleOrDefault(line => line.StartsWith(marker, StringComparison.Ordinal))?
+            [marker.Length..];
+        if (string.IsNullOrWhiteSpace(encoded) || encoded.Length > MaximumEvidenceBytes * 2)
+            throw new InvalidDataException($"Missing or oversized evidence marker '{marker}'.");
+
+        byte[] payload = Convert.FromBase64String(encoded);
+        if (payload.Length > MaximumEvidenceBytes)
+            throw new InvalidDataException($"Evidence marker '{marker}' exceeded the size limit.");
+        return JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 24 });
+    }
+
+    private static void ValidateHealth(JsonElement health)
+    {
+        if (health.ValueKind != JsonValueKind.Object ||
+            !health.TryGetProperty("status", out JsonElement status) ||
+            status.ValueKind != JsonValueKind.String ||
+            !string.Equals(status.GetString(), "ok", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("llama-server did not report healthy status to WSL.");
+        }
+    }
+
+    private static void ValidateModel(JsonElement root, string alias, string expectedPath)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("data", out JsonElement models) ||
+            models.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("llama-server returned an invalid model list to WSL.");
+        }
+
+        JsonElement? match = null;
+        foreach (JsonElement model in models.EnumerateArray())
+        {
+            if (model.ValueKind != JsonValueKind.Object ||
+                !model.TryGetProperty("id", out JsonElement id) ||
+                id.ValueKind != JsonValueKind.String ||
+                !string.Equals(id.GetString(), alias, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (match is not null)
+                throw new InvalidDataException("llama-server returned the selected model more than once.");
+            match = model;
+        }
+
+        if (match is null ||
+            !match.Value.TryGetProperty("path", out JsonElement path) ||
+            path.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(path.GetString()) ||
+            !PathsEqual(path.GetString()!, expectedPath))
+        {
+            throw new InvalidDataException("llama-server did not expose the selected managed model to WSL.");
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left),
+                Path.GetFullPath(right),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new InvalidDataException("llama-server returned an invalid model path.", ex);
         }
     }
 }

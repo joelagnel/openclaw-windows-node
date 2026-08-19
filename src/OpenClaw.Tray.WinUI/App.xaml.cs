@@ -717,12 +717,18 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         _sshTunnelService = new SshTunnelService(new AppLogger());
         _sshTunnelService.TunnelExited += OnSshTunnelExited;
+        var localAiLogger = new AppLogger();
+        var localAiEndpointLifecycle = new LocalAiGatewayProviderCoordinator(
+            new WslExeCommandRunner(localAiLogger),
+            AppIdentity.SetupDistroName,
+            localAiLogger);
         _localAiRuntime = new LlamaServerRuntimeService(
             new LlamaServerRuntimeOptions
             {
                 Paths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()),
+                EndpointLifecycle = localAiEndpointLifecycle,
             },
-            new AppLogger());
+            localAiLogger);
 
         // Initialize tray icon FIRST (window-less pattern from WinUIEx).
         // The tray is application chrome and must always survive any failure

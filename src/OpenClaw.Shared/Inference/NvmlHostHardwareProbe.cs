@@ -17,20 +17,27 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
 {
     private readonly Func<NvmlProbeResult> _captureNvml;
     private readonly Func<PhysicalMemorySnapshot?> _readPhysicalMemory;
+    private readonly Func<IReadOnlyDictionary<string, DxgiGpuMemoryInfo>> _captureDxgiMemory;
     private readonly Architecture _architecture;
 
     public NvmlHostHardwareProbe()
-        : this(CaptureNvml, PhysicalMemoryProbe.TryRead, RuntimeInformation.OSArchitecture)
+        : this(
+            CaptureNvml,
+            PhysicalMemoryProbe.TryRead,
+            DxgiGpuMemoryProbe.CaptureNvidiaMemoryByName,
+            RuntimeInformation.OSArchitecture)
     {
     }
 
     internal NvmlHostHardwareProbe(
         Func<NvmlProbeResult> captureNvml,
         Func<PhysicalMemorySnapshot?> readPhysicalMemory,
+        Func<IReadOnlyDictionary<string, DxgiGpuMemoryInfo>> captureDxgiMemory,
         Architecture architecture)
     {
         _captureNvml = captureNvml ?? throw new ArgumentNullException(nameof(captureNvml));
         _readPhysicalMemory = readPhysicalMemory ?? throw new ArgumentNullException(nameof(readPhysicalMemory));
+        _captureDxgiMemory = captureDxgiMemory ?? throw new ArgumentNullException(nameof(captureDxgiMemory));
         _architecture = architecture;
     }
 
@@ -38,6 +45,8 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
     {
         PhysicalMemorySnapshot? memory = null;
         NvmlProbeResult nvml = NvmlProbeResult.Empty;
+        IReadOnlyDictionary<string, DxgiGpuMemoryInfo> dxgiMemoryByName =
+            new Dictionary<string, DxgiGpuMemoryInfo>(StringComparer.OrdinalIgnoreCase);
         try
         {
             memory = _readPhysicalMemory();
@@ -56,19 +65,35 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
             // Hardware discovery is fail-closed. Unknown GPUs remain absent.
         }
 
+        try
+        {
+            dxgiMemoryByName = _captureDxgiMemory();
+        }
+        catch
+        {
+            // Shared GPU memory is optional. NVML facts remain usable alone.
+        }
+
         var gpus = nvml.Devices
             .Where(device =>
                 device.TotalMemoryBytes is > 0 and <= long.MaxValue &&
                 device.FreeMemoryBytes <= device.TotalMemoryBytes &&
                 !string.IsNullOrWhiteSpace(device.Name))
-            .Select(device => new GpuInfo(
-                GpuVendor.Nvidia,
-                device.Name.Trim(),
-                (long)device.TotalMemoryBytes,
-                (long)device.FreeMemoryBytes,
-                nvml.DriverVersion,
-                nvml.CudaMajorVersion,
-                string.IsNullOrWhiteSpace(device.Uuid) ? null : device.Uuid.Trim()))
+            .Select(device =>
+            {
+                string name = device.Name.Trim();
+                DxgiGpuMemoryInfo? dxgiMemory = FindDxgiMemoryByName(dxgiMemoryByName, name);
+                return new GpuInfo(
+                    GpuVendor.Nvidia,
+                    name,
+                    GpuVisibleMemoryBytes: (long)device.TotalMemoryBytes,
+                    FreeGpuVisibleMemoryBytes: (long)device.FreeMemoryBytes,
+                    SharedGpuMemoryBytes: dxgiMemory?.SharedMemoryBytes,
+                    FreeSharedGpuMemoryBytes: dxgiMemory?.FreeSharedMemoryBytes,
+                    DriverVersion: nvml.DriverVersion,
+                    CudaMajorVersion: nvml.CudaMajorVersion,
+                    StableId: string.IsNullOrWhiteSpace(device.Uuid) ? null : device.Uuid.Trim());
+            })
             .ToArray();
 
         return new HostHardwareInfo(
@@ -77,6 +102,27 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
             memory?.AvailableBytes,
             gpus,
             VulkanAvailable: false);
+    }
+
+    private static string NormalizeGpuName(string value) =>
+        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private static DxgiGpuMemoryInfo? FindDxgiMemoryByName(
+        IReadOnlyDictionary<string, DxgiGpuMemoryInfo> dxgiMemoryByName,
+        string nvmlName)
+    {
+        string normalizedNvmlName = NormalizeGpuName(nvmlName);
+        if (dxgiMemoryByName.TryGetValue(normalizedNvmlName, out DxgiGpuMemoryInfo? exactMatch))
+            return exactMatch;
+
+        const string SparkN1XPrefix = "NVIDIA RTX Spark N1X";
+        if (!normalizedNvmlName.Contains(SparkN1XPrefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        KeyValuePair<string, DxgiGpuMemoryInfo>[] sparkMatches = dxgiMemoryByName
+            .Where(entry => entry.Key.Contains(SparkN1XPrefix, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return sparkMatches.Length == 1 ? sparkMatches[0].Value : null;
     }
 
     internal static IReadOnlyList<string> GetNvmlLibraryCandidates()

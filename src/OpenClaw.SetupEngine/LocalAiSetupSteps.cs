@@ -565,3 +565,86 @@ public sealed class PersistLocalAiManifestStep : SetupStep
         return receipts.MoveToImmutable();
     }
 }
+
+/// <summary>Starts the companion-owned llama-server router without preloading a model.</summary>
+public sealed class StartLocalAiRuntimeStep : SetupStep
+{
+    private readonly Func<SetupContext, ILocalAiRuntime> _runtimeFactory;
+
+    public StartLocalAiRuntimeStep()
+        : this(CreateRuntime)
+    {
+    }
+
+    internal StartLocalAiRuntimeStep(Func<SetupContext, ILocalAiRuntime> runtimeFactory) =>
+        _runtimeFactory = runtimeFactory ?? throw new ArgumentNullException(nameof(runtimeFactory));
+
+    public override string Id => "start-local-ai-runtime";
+    public override string DisplayName => "Starting llama-server router";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiResolvedInstall is null || !ctx.LocalAiManifestCreatedThisRun)
+            return StepResult.Terminal("llama-server startup requires a verified installation receipt.");
+        if (ctx.LocalAiRuntime is not null)
+            return StepResult.Terminal("A Local AI runtime is already attached to this setup transaction.");
+
+        ILocalAiRuntime runtime = _runtimeFactory(ctx);
+        ctx.LocalAiRuntime = runtime;
+        try
+        {
+            LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync(ct);
+            if (snapshot.State != LocalAiRuntimeState.Healthy ||
+                snapshot.Ownership != LocalAiOwnership.CompanionManaged ||
+                snapshot.ProcessId is null ||
+                snapshot.ModelEvidence.State != LocalAiModelAvailabilityState.Verified)
+            {
+                await DisposeRuntimeAsync(ctx);
+                return StepResult.Fail(
+                    snapshot.Detail ?? "The managed llama-server router did not become healthy.");
+            }
+
+            return StepResult.Ok(
+                "The companion-owned llama-server router is healthy. The model remains unloaded until the first request.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await DisposeRuntimeAsync(ctx);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await DisposeRuntimeAsync(ctx);
+            return StepResult.Fail($"llama-server startup failed: {ex.Message}", ex);
+        }
+    }
+
+    public override Task RollbackAsync(SetupContext ctx, CancellationToken ct) =>
+        DisposeRuntimeAsync(ctx).AsTask();
+
+    private static ILocalAiRuntime CreateRuntime(SetupContext ctx)
+    {
+        LocalAiResolvedInstall install = ctx.LocalAiResolvedInstall
+            ?? throw new InvalidOperationException("The Local AI installation receipt is unavailable.");
+        return new LlamaServerRuntimeService(new LlamaServerRuntimeOptions
+        {
+            Paths = new LocalAiPaths(ctx.LocalDataDir),
+            InitialEndpoint = install.Endpoint,
+            StartupTimeout = TimeSpan.FromSeconds(ctx.Config.LocalAi.HealthTimeoutSeconds),
+        });
+    }
+
+    private static async ValueTask DisposeRuntimeAsync(SetupContext ctx)
+    {
+        if (ctx.LocalAiRuntime is null)
+            return;
+
+        ILocalAiRuntime runtime = ctx.LocalAiRuntime;
+        ctx.LocalAiRuntime = null;
+        await runtime.DisposeAsync();
+    }
+}

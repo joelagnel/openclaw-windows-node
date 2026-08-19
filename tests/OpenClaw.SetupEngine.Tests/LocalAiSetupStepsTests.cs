@@ -393,6 +393,64 @@ public sealed class LocalAiSetupStepsTests
         Assert.False(context.LocalAiManifestCreatedThisRun);
     }
 
+    [Fact]
+    public async Task RuntimeStart_RequiresHealthyOwnedRouterWithoutPreloadedModel()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        var runtime = new FakeLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.CompanionManaged,
+            LocalAiModelAvailabilityState.Verified,
+            processId: 7001));
+        var step = new StartLocalAiRuntimeStep(_ => runtime);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal(1, runtime.StartCount);
+        Assert.Equal(0, runtime.DisposeCount);
+        Assert.Same(runtime, context.LocalAiRuntime);
+    }
+
+    [Fact]
+    public async Task RuntimeStart_UnhealthyRouterIsDisposedBeforeFailureReturns()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        var runtime = new FakeLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Conflict,
+            LocalAiOwnership.None,
+            LocalAiModelAvailabilityState.Verified));
+        var step = new StartLocalAiRuntimeStep(_ => runtime);
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Equal(1, runtime.DisposeCount);
+        Assert.Null(context.LocalAiRuntime);
+    }
+
+    [Fact]
+    public async Task RuntimeStart_RollbackDisposesOwnedRouterOnce()
+    {
+        using var temp = new TempDirectory("local-ai-setup-");
+        SetupContext context = ContextWithResolvedInstall(temp.Path);
+        var runtime = new FakeLocalAiRuntime(Snapshot(
+            LocalAiRuntimeState.Healthy,
+            LocalAiOwnership.CompanionManaged,
+            LocalAiModelAvailabilityState.Verified,
+            processId: 7001));
+        var step = new StartLocalAiRuntimeStep(_ => runtime);
+        await step.ExecuteAsync(context, CancellationToken.None);
+
+        await step.RollbackAsync(context, CancellationToken.None);
+        await step.RollbackAsync(context, CancellationToken.None);
+
+        Assert.Equal(1, runtime.DisposeCount);
+        Assert.Null(context.LocalAiRuntime);
+    }
+
     private static SetupContext CreateContext(
         LocalAiConfig localAi,
         ICommandRunner? commands = null,
@@ -449,6 +507,79 @@ public sealed class LocalAiSetupStepsTests
             Path.Combine(localDataDirectory, "LocalAI", "models", model.Weights.RelativePath),
             HuggingFaceModelInstallDisposition.Downloaded,
             CreatedThisRun: true);
+
+    private static SetupContext ContextWithResolvedInstall(string localDataDirectory)
+    {
+        SetupContext context = CreateContext(
+            new LocalAiConfig { Enabled = true },
+            localDataDirectory: localDataDirectory);
+        var paths = new LocalAiPaths(localDataDirectory);
+        var manifest = new LocalAiInstallManifest
+        {
+            EngineVersion = LlamaRuntimeCatalog.ReleaseTag,
+            Architecture = "arm64",
+            HardwareProfileId = SupportedHardwareProfiles.RtxSparkN1XProfileId,
+            RuntimeId = LlamaRuntimeCatalog.Arm64RuntimeId,
+            ModelCatalogId = LocalModelCatalog.Qwen35BModelId,
+            SelectedGpuId = "GPU-SPARK",
+            ExecutablePath = Path.Combine("engines", "llama-server.exe"),
+            RuntimeAssets = [],
+            ModelPath = Path.Combine("models", LocalModelCatalog.Default.Weights.RelativePath),
+            ModelId = "unsloth/model@0123456789abcdef0123456789abcdef01234567",
+            ModelAlias = LocalModelCatalog.Qwen35BModelId,
+            ModelAsset = new LocalAiAssetReceipt
+            {
+                FileName = LocalModelCatalog.Default.Weights.RelativePath,
+                SourceUrl = LocalModelCatalog.Default.Weights.DownloadUri.AbsoluteUri,
+                SizeBytes = LocalModelCatalog.Default.Weights.SizeBytes,
+                Sha256 = LocalModelCatalog.Default.Weights.Sha256.Value,
+            },
+            Endpoint = "http://127.0.0.1:49151/v1",
+            ContextLength = LocalModelCatalog.NativeContextTokens,
+        };
+        context.LocalAiResolvedInstall = new(
+            manifest,
+            Path.Combine(paths.RootDirectory, manifest.ExecutablePath),
+            Path.Combine(paths.RootDirectory, manifest.ModelPath),
+            new Uri(manifest.Endpoint));
+        context.LocalAiManifestCreatedThisRun = true;
+        return context;
+    }
+
+    private static LocalAiRuntimeSnapshot Snapshot(
+        LocalAiRuntimeState state,
+        LocalAiOwnership ownership,
+        LocalAiModelAvailabilityState modelState,
+        int? processId = null)
+    {
+        LocalAiModelEvidence evidence = modelState switch
+        {
+            LocalAiModelAvailabilityState.Verified => new(
+                modelState,
+                DateTimeOffset.UtcNow,
+                new string('a', 64),
+                100),
+            LocalAiModelAvailabilityState.Loaded => new(
+                modelState,
+                DateTimeOffset.UtcNow,
+                new string('a', 64),
+                100,
+                LocalModelCatalog.Qwen35BModelId),
+            LocalAiModelAvailabilityState.NotInstalled => LocalAiModelEvidence.NotInstalled(DateTimeOffset.UtcNow),
+            _ => LocalAiModelEvidence.Unknown(DateTimeOffset.UtcNow),
+        };
+        return new(
+            state,
+            ownership,
+            new Uri("http://127.0.0.1:49151/v1"),
+            LlamaRuntimeCatalog.ReleaseTag,
+            LocalModelCatalog.Qwen35BModelId,
+            evidence,
+            processId,
+            processId is null ? null : DateTimeOffset.UtcNow,
+            state.ToString(),
+            DateTimeOffset.UtcNow);
+    }
 
     private sealed class FakeHardwareProbe(HostHardwareInfo hardware, bool throwOnProbe = false) : IHostHardwareProbe
     {
@@ -573,5 +704,38 @@ public sealed class LocalAiSetupStepsTests
 
         public void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install) =>
             RemoveCount++;
+    }
+
+    private sealed class FakeLocalAiRuntime(LocalAiRuntimeSnapshot snapshot) : ILocalAiRuntime
+    {
+        public int StartCount { get; private set; }
+        public int DisposeCount { get; private set; }
+        public LocalAiRuntimeSnapshot Snapshot { get; private set; } = snapshot;
+        public event EventHandler<LocalAiRuntimeSnapshotChangedEventArgs>? StateChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public Task<LocalAiRuntimeSnapshot> EnsureStartedAsync(CancellationToken cancellationToken = default)
+        {
+            StartCount++;
+            return Task.FromResult(Snapshot);
+        }
+
+        public Task<LocalAiRuntimeSnapshot> StopAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+
+        public Task<LocalAiRuntimeSnapshot> RestartAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+
+        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
     }
 }

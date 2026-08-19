@@ -485,6 +485,7 @@ public sealed class SetupContext
     internal HuggingFaceModelInstallResult? LocalAiModelInstall { get; set; }
     internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
     internal bool LocalAiManifestCreatedThisRun { get; set; }
+    internal ILocalAiRuntime? LocalAiRuntime { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

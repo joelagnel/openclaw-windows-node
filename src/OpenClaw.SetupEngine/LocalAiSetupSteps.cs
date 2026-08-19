@@ -1,5 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Collections.Immutable;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
@@ -312,10 +316,29 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
+            var progress = new SynchronousProgress<LocalAiArtifactInstallProgress>(value =>
+            {
+                string archive = string.IsNullOrWhiteSpace(value.ArchiveFileName)
+                    ? "llama-server runtime"
+                    : value.ArchiveFileName;
+                string detail = value.ArchiveCount > 1
+                    ? $"{value.Phase}: {archive} ({value.ArchiveNumber}/{value.ArchiveCount})"
+                    : $"{value.Phase}: {archive}";
+                ctx.DetailProgress?.Report(new SetupDetailProgressEvent(
+                    Id,
+                    detail,
+                    value.Completed,
+                    value.Total,
+                    value.Unit == LocalAiArtifactProgressUnit.Bytes
+                        ? SetupDetailProgressUnit.Bytes
+                        : value.Unit == LocalAiArtifactProgressUnit.Entries
+                            ? SetupDetailProgressUnit.Items
+                            : SetupDetailProgressUnit.None));
+            });
             LlamaRuntimeInstallResult install = await _acquirer.InstallAsync(
                 ctx.LocalDataDir,
                 plan.Runtime,
-                progress: null,
+                progress,
                 linked.Token);
             ctx.LocalAiRuntimeInstall = install;
             return StepResult.Ok($"Installed llama-server {LlamaRuntimeCatalog.ReleaseTag}.");
@@ -394,11 +417,18 @@ public sealed class AcquireLocalAiModelStep : SetupStep
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
+            var progress = new SynchronousProgress<HuggingFaceModelInstallProgress>(value =>
+                ctx.DetailProgress?.Report(new SetupDetailProgressEvent(
+                    Id,
+                    $"Downloading {plan.Model.Weights.RelativePath}",
+                    value.CompletedBytes,
+                    value.TotalBytes,
+                    SetupDetailProgressUnit.Bytes)));
             HuggingFaceModelInstallResult install = await _acquirer.InstallAsync(
                 ctx.LocalDataDir,
                 LlamaRuntimeInstaller.Component(plan.Runtime),
                 plan.Model,
-                progress: null,
+                progress,
                 linked.Token);
             ctx.LocalAiModelInstall = install;
             string action = install.Disposition == HuggingFaceModelInstallDisposition.ReusedVerified
@@ -434,5 +464,417 @@ public sealed class AcquireLocalAiModelStep : SetupStep
         }
 
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>Persists one immutable ownership and qualification receipt.</summary>
+public sealed class PersistLocalAiManifestStep : SetupStep
+{
+    public override string Id => "persist-local-ai-manifest";
+    public override string DisplayName => "Recording Local AI installation";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiEligibility?.Plan is not { } plan ||
+            ctx.LocalAiEligibility.SelectedGpu is not { StableId: { Length: > 0 } gpuId } ||
+            ctx.LocalAiPort is not > 0 ||
+            ctx.LocalAiRuntimeInstall is not { } runtimeInstall ||
+            ctx.LocalAiModelInstall is not { } modelInstall)
+        {
+            return StepResult.Terminal(
+                "The Local AI installation receipt requires completed hardware, runtime, and model steps.");
+        }
+
+        if (plan.Model.Weights.Source is not HuggingFaceRevisionSource modelSource)
+            return StepResult.Terminal("The selected Local AI model does not have immutable Hugging Face provenance.");
+
+        var paths = new LocalAiPaths(ctx.LocalDataDir);
+        if (File.Exists(paths.ManifestPath))
+            return StepResult.Terminal("A managed Local AI installation receipt already exists.");
+
+        ImmutableArray<LocalAiAssetReceipt> runtimeAssets;
+        try
+        {
+            runtimeAssets = BuildRuntimeReceipts(plan.Runtime, runtimeInstall);
+        }
+        catch (InvalidDataException ex)
+        {
+            return StepResult.Terminal(ex.Message, ex);
+        }
+
+        var manifest = new LocalAiInstallManifest
+        {
+            EngineVersion = LlamaRuntimeCatalog.ReleaseTag,
+            Architecture = plan.Runtime.Architecture switch
+            {
+                Architecture.X64 => "x64",
+                Architecture.Arm64 => "arm64",
+                _ => throw new InvalidDataException("The selected Local AI runtime architecture is unsupported."),
+            },
+            HardwareProfileId = plan.HardwareProfile.Id,
+            RuntimeId = plan.Runtime.Id,
+            ModelCatalogId = plan.Model.Id,
+            SelectedGpuId = gpuId,
+            ExecutablePath = Path.GetRelativePath(paths.RootDirectory, runtimeInstall.ExecutablePath),
+            RuntimeAssets = runtimeAssets,
+            ModelPath = Path.GetRelativePath(paths.RootDirectory, modelInstall.ModelPath),
+            ModelId = $"{modelSource.RepositoryId}@{modelSource.RevisionSha}",
+            ModelAlias = plan.Model.Id,
+            ModelAsset = new LocalAiAssetReceipt
+            {
+                FileName = Path.GetFileName(plan.Model.Weights.RelativePath),
+                SourceUrl = plan.Model.Weights.DownloadUri.AbsoluteUri,
+                SizeBytes = plan.Model.Weights.SizeBytes,
+                Sha256 = plan.Model.Weights.Sha256.Value,
+            },
+            Endpoint = $"http://127.0.0.1:{ctx.LocalAiPort.Value}/v1",
+            ContextLength = plan.Model.Recipe.ContextTokens,
+        };
+
+        var store = new LocalAiManifestStore(paths);
+        try
+        {
+            await store.SaveAsync(manifest, ct);
+            ctx.LocalAiResolvedInstall = store.ResolveAndValidate(manifest);
+            ctx.LocalAiManifestCreatedThisRun = true;
+            return StepResult.Ok("Recorded the verified llama-server and Hugging Face installation.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return StepResult.Fail($"The Local AI installation receipt could not be saved: {ex.Message}", ex);
+        }
+    }
+
+    public override async Task RollbackAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (!ctx.LocalAiManifestCreatedThisRun)
+            return;
+
+        var paths = new LocalAiPaths(ctx.LocalDataDir);
+        await new LocalAiManifestStore(paths).DeleteAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        File.Delete(paths.RouterPresetPath);
+        ctx.LocalAiResolvedInstall = null;
+        ctx.LocalAiManifestCreatedThisRun = false;
+    }
+
+    private static ImmutableArray<LocalAiAssetReceipt> BuildRuntimeReceipts(
+        LlamaRuntimeVariant runtime,
+        LlamaRuntimeInstallResult install)
+    {
+        if (install.VerifiedArchives.Count != runtime.Artifacts.Count)
+            throw new InvalidDataException("The installed llama-server archive receipt set is incomplete.");
+
+        var receipts = ImmutableArray.CreateBuilder<LocalAiAssetReceipt>(runtime.Artifacts.Count);
+        foreach (PinnedArtifact artifact in runtime.Artifacts)
+        {
+            string fileName = Path.GetFileName(artifact.RelativePath);
+            LocalAiVerifiedArchive verified = install.VerifiedArchives.SingleOrDefault(
+                candidate => string.Equals(candidate.FileName, fileName, StringComparison.Ordinal))
+                ?? throw new InvalidDataException(
+                    $"The installed llama-server archive receipt for '{fileName}' is missing.");
+            if (verified.SizeBytes != artifact.SizeBytes ||
+                !string.Equals(verified.Sha256, artifact.Sha256.Value, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"The installed llama-server archive receipt for '{fileName}' does not match its pin.");
+            }
+
+            receipts.Add(new LocalAiAssetReceipt
+            {
+                FileName = fileName,
+                SourceUrl = artifact.DownloadUri.AbsoluteUri,
+                SizeBytes = verified.SizeBytes,
+                Sha256 = verified.Sha256,
+            });
+        }
+
+        return receipts.MoveToImmutable();
+    }
+}
+
+/// <summary>Starts the companion-owned llama-server router without preloading a model.</summary>
+public sealed class StartLocalAiRuntimeStep : SetupStep
+{
+    private readonly Func<SetupContext, ILocalAiRuntime> _runtimeFactory;
+
+    public StartLocalAiRuntimeStep()
+        : this(CreateRuntime)
+    {
+    }
+
+    internal StartLocalAiRuntimeStep(Func<SetupContext, ILocalAiRuntime> runtimeFactory) =>
+        _runtimeFactory = runtimeFactory ?? throw new ArgumentNullException(nameof(runtimeFactory));
+
+    public override string Id => "start-local-ai-runtime";
+    public override string DisplayName => "Starting llama-server router";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiResolvedInstall is null || !ctx.LocalAiManifestCreatedThisRun)
+            return StepResult.Terminal("llama-server startup requires a verified installation receipt.");
+        if (ctx.LocalAiRuntime is not null)
+            return StepResult.Terminal("A Local AI runtime is already attached to this setup transaction.");
+
+        ILocalAiRuntime runtime = _runtimeFactory(ctx);
+        ctx.LocalAiRuntime = runtime;
+        try
+        {
+            LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync(ct);
+            if (snapshot.State != LocalAiRuntimeState.Healthy ||
+                snapshot.Ownership != LocalAiOwnership.CompanionManaged ||
+                snapshot.ProcessId is null ||
+                snapshot.ModelEvidence.State != LocalAiModelAvailabilityState.Verified)
+            {
+                await DisposeRuntimeAsync(ctx);
+                return StepResult.Fail(
+                    snapshot.Detail ?? "The managed llama-server router did not become healthy.");
+            }
+
+            return StepResult.Ok(
+                "The companion-owned llama-server router is healthy. The model remains unloaded until the first request.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await DisposeRuntimeAsync(ctx);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await DisposeRuntimeAsync(ctx);
+            return StepResult.Fail($"llama-server startup failed: {ex.Message}", ex);
+        }
+    }
+
+    public override Task RollbackAsync(SetupContext ctx, CancellationToken ct) =>
+        DisposeRuntimeAsync(ctx).AsTask();
+
+    private static ILocalAiRuntime CreateRuntime(SetupContext ctx)
+    {
+        LocalAiResolvedInstall install = ctx.LocalAiResolvedInstall
+            ?? throw new InvalidOperationException("The Local AI installation receipt is unavailable.");
+        return new LlamaServerRuntimeService(new LlamaServerRuntimeOptions
+        {
+            Paths = new LocalAiPaths(ctx.LocalDataDir),
+            InitialEndpoint = install.Endpoint,
+            StartupTimeout = TimeSpan.FromSeconds(ctx.Config.LocalAi.HealthTimeoutSeconds),
+        });
+    }
+
+    private static async ValueTask DisposeRuntimeAsync(SetupContext ctx)
+    {
+        if (ctx.LocalAiRuntime is null)
+            return;
+
+        ILocalAiRuntime runtime = ctx.LocalAiRuntime;
+        ctx.LocalAiRuntime = null;
+        await runtime.DisposeAsync();
+    }
+}
+
+/// <summary>
+/// Sends the setup-time first request and proves the exact model loaded. The
+/// following GPU verification step restarts the router empty after collecting evidence.
+/// </summary>
+public sealed class VerifyLocalAiInferenceStep : SetupStep
+{
+    private readonly Func<ILlamaServerInferenceClient> _clientFactory;
+
+    public VerifyLocalAiInferenceStep()
+        : this(() => new LlamaServerInferenceClient())
+    {
+    }
+
+    internal VerifyLocalAiInferenceStep(Func<ILlamaServerInferenceClient> clientFactory) =>
+        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
+
+    public override string Id => "verify-local-ai-inference";
+    public override string DisplayName => "Verifying Local AI model load";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiRuntime is not { } runtime ||
+            ctx.LocalAiResolvedInstall is not { } install ||
+            ctx.LocalAiEligibility?.Plan is not { } plan)
+        {
+            return StepResult.Terminal(
+                "Local AI inference verification requires the managed router and qualified installation.");
+        }
+        if (runtime.Snapshot.State != LocalAiRuntimeState.Healthy ||
+            runtime.Snapshot.Ownership != LocalAiOwnership.CompanionManaged)
+        {
+            return StepResult.Terminal("The managed llama-server router is not healthy.");
+        }
+        if (ctx.Config.LocalAi.InferenceTimeoutSeconds <= 0)
+            return StepResult.Terminal("The Local AI inference timeout must be greater than zero.");
+
+        using ILlamaServerInferenceClient client = _clientFactory();
+        using var timeout = new CancellationTokenSource(
+            TimeSpan.FromSeconds(ctx.Config.LocalAi.InferenceTimeoutSeconds));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+
+        LlamaServerInferenceVerification verification;
+        LocalAiRuntimeSnapshot loaded;
+        try
+        {
+            verification = await client.VerifyAsync(
+                install.Endpoint,
+                plan.Model.Id,
+                linked.Token);
+            loaded = await runtime.RefreshAsync(linked.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await ResetRouterAsync(runtime);
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            await ResetRouterAsync(runtime);
+            return StepResult.Fail("The first Local AI model load timed out.", ex);
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException
+            or IOException
+            or InvalidDataException)
+        {
+            await ResetRouterAsync(runtime);
+            return StepResult.Fail($"Local AI inference verification failed: {ex.Message}", ex);
+        }
+
+        if (loaded.State != LocalAiRuntimeState.Healthy ||
+            loaded.Ownership != LocalAiOwnership.CompanionManaged ||
+            loaded.ModelEvidence.State != LocalAiModelAvailabilityState.Loaded ||
+            !string.Equals(loaded.ModelEvidence.ServerModelId, plan.Model.Id, StringComparison.Ordinal))
+        {
+            return StepResult.Fail("llama-server completed a request but did not report the selected model as loaded.");
+        }
+        ctx.LocalAiInferenceVerification = verification;
+        return StepResult.Ok(
+            $"Verified {verification.CompletionTokens} generated tokens with the selected model.");
+    }
+
+    internal static async Task<LocalAiRuntimeSnapshot> ResetRouterAsync(ILocalAiRuntime runtime)
+    {
+        try
+        {
+            return await runtime.RestartAsync(CancellationToken.None);
+        }
+        catch
+        {
+            return runtime.Snapshot;
+        }
+    }
+}
+
+/// <summary>Proves the app-owned WSL distro can reach the native loopback router.</summary>
+public sealed class VerifyLocalAiWslStep : SetupStep
+{
+    private const string HealthMarker = "OPENCLAW_LOCAL_AI_HEALTH_B64=";
+    private const string ModelsMarker = "OPENCLAW_LOCAL_AI_MODELS_B64=";
+    private const int MaximumEvidenceBytes = 1024 * 1024;
+
+    public override string Id => "verify-local-ai-wsl";
+    public override string DisplayName => "Verifying Local AI access from WSL";
+
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiResolvedInstall is not { } install ||
+            ctx.LocalAiRuntime is not { Snapshot.State: LocalAiRuntimeState.Healthy } ||
+            ctx.LocalAiEligibility?.Plan is not { } plan ||
+            string.IsNullOrWhiteSpace(ctx.DistroName))
+        {
+            return StepResult.Terminal(
+                "WSL Local AI verification requires the healthy managed router and app-owned distro.");
+        }
+
+        string script = BuildProbeScript(install.Endpoint.Port);
+        CommandResult result = await ctx.Commands.RunInWslAsync(
+            ctx.DistroName,
+            script,
+            TimeSpan.FromSeconds(45),
+            ct: ct,
+            user: ctx.Config.Wsl.User,
+            inputViaStdin: true);
+        if (result.TimedOut)
+            return StepResult.Fail("The WSL Local AI reachability check timed out.");
+        if (result.ExitCode != 0)
+            return StepResult.Fail("The app-owned WSL distro could not reach the native llama-server router.");
+
+        try
+        {
+            using JsonDocument health = DecodeMarker(result.Stdout, HealthMarker);
+            using JsonDocument models = DecodeMarker(result.Stdout, ModelsMarker);
+            ValidateHealth(health.RootElement);
+            ValidateModel(models.RootElement, plan.Model.Id, install.ModelPath);
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException or InvalidDataException)
+        {
+            return StepResult.Fail($"The WSL Local AI evidence was invalid: {ex.Message}", ex);
+        }
+
+        return StepResult.Ok(
+            $"The app-owned WSL distro can reach llama-server on 127.0.0.1:{install.Endpoint.Port}.");
+    }
+
+    internal static string BuildProbeScript(int port)
+    {
+        if (port is <= 0 or > 65_535)
+            throw new ArgumentOutOfRangeException(nameof(port));
+
+        return $$"""
+            set -euo pipefail
+            base_url='http://127.0.0.1:{{port}}'
+            health_json="$(curl --fail --silent --show-error --max-time 15 "$base_url/health")"
+            models_json="$(curl --fail --silent --show-error --max-time 15 "$base_url/models?autoload=false")"
+            printf '{{HealthMarker}}%s\n' "$(printf '%s' "$health_json" | base64 -w0)"
+            printf '{{ModelsMarker}}%s\n' "$(printf '%s' "$models_json" | base64 -w0)"
+            """;
+    }
+
+    private static JsonDocument DecodeMarker(string stdout, string marker)
+    {
+        string? encoded = stdout
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .SingleOrDefault(line => line.StartsWith(marker, StringComparison.Ordinal))?
+            [marker.Length..];
+        if (string.IsNullOrWhiteSpace(encoded) || encoded.Length > MaximumEvidenceBytes * 2)
+            throw new InvalidDataException($"Missing or oversized evidence marker '{marker}'.");
+
+        byte[] payload = Convert.FromBase64String(encoded);
+        if (payload.Length > MaximumEvidenceBytes)
+            throw new InvalidDataException($"Evidence marker '{marker}' exceeded the size limit.");
+        return JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 24 });
+    }
+
+    private static void ValidateHealth(JsonElement health)
+    {
+        if (health.ValueKind != JsonValueKind.Object ||
+            !health.TryGetProperty("status", out JsonElement status) ||
+            status.ValueKind != JsonValueKind.String ||
+            !string.Equals(status.GetString(), "ok", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("llama-server did not report healthy status to WSL.");
+        }
+    }
+
+    private static void ValidateModel(JsonElement root, string alias, string expectedPath)
+    {
+        if (LlamaServerModelStatusParser.Parse(root, alias, expectedPath) is null)
+            throw new InvalidDataException("llama-server did not expose the selected managed model to WSL.");
     }
 }

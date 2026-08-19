@@ -70,7 +70,11 @@ public static class LocalInferenceEligibility
             return Unsupported(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete);
         }
 
-        if (gpu.GpuVisibleMemoryBytes < MinimumQualifiedGpuMemoryBytes)
+        long totalEligibleMemoryBytes = GetEffectiveGpuMemoryBytes(
+            gpu.GpuVisibleMemoryBytes.Value,
+            gpu.SharedGpuMemoryBytes,
+            plan.HardwareProfile.UsesSharedGpuMemory);
+        if (totalEligibleMemoryBytes < MinimumQualifiedGpuMemoryBytes)
             return Unsupported(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, selectedGpu: gpu);
 
         if (!Version.TryParse(gpu.DriverVersion, out Version? driverVersion) ||
@@ -83,7 +87,9 @@ public static class LocalInferenceEligibility
             return Unsupported(LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow, selectedGpu: gpu);
 
         long requiredFreeMemoryBytes = plan.Model.Weights.SizeBytes;
-        long? availableFreeMemoryBytes = gpu.FreeGpuVisibleMemoryBytes;
+        long? availableFreeMemoryBytes = GetAvailableGpuMemoryBytes(
+            gpu,
+            plan.HardwareProfile.UsesSharedGpuMemory);
         LocalInferenceEligibilityStatus status =
             availableFreeMemoryBytes is not null && availableFreeMemoryBytes < requiredFreeMemoryBytes
                 ? LocalInferenceEligibilityStatus.EligibleButBusy
@@ -111,4 +117,35 @@ public static class LocalInferenceEligibility
             selectedGpu,
             0,
             selectedGpu?.FreeGpuVisibleMemoryBytes);
+
+    private static long GetEffectiveGpuMemoryBytes(
+        long gpuMemoryBytes,
+        long? sharedGpuMemoryBytes,
+        bool usesSharedGpuMemory)
+    {
+        if (!usesSharedGpuMemory || sharedGpuMemoryBytes is not > 0)
+            return gpuMemoryBytes;
+
+        return sharedGpuMemoryBytes.Value > long.MaxValue - gpuMemoryBytes
+            ? long.MaxValue
+            : gpuMemoryBytes + sharedGpuMemoryBytes.Value;
+    }
+
+    private static long? GetAvailableGpuMemoryBytes(GpuInfo gpu, bool usesSharedGpuMemory)
+    {
+        if (gpu.FreeGpuVisibleMemoryBytes is not { } freeGpuMemoryBytes)
+            return null;
+
+        if (usesSharedGpuMemory &&
+            gpu.SharedGpuMemoryBytes is > 0 &&
+            gpu.FreeSharedGpuMemoryBytes is null)
+        {
+            return null;
+        }
+
+        return GetEffectiveGpuMemoryBytes(
+            freeGpuMemoryBytes,
+            gpu.FreeSharedGpuMemoryBytes,
+            usesSharedGpuMemory);
+    }
 }

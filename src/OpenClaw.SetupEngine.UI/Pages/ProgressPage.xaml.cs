@@ -36,16 +36,17 @@ public sealed partial class ProgressPage : Page
     // Map pipeline step IDs to display groups (N:1)
     private static readonly (string GroupId, string DisplayName, string[] StepIds)[] StepGroups =
     [
-        ("preflight", "Check system and Local AI compatibility", ["validate-distro-path", "preflight-os", "preflight-wsl", "preflight-windows-tailscale", "preflight-local-ai-hardware"]),
-        ("local-ai-network", "Prepare WSL access to Local AI", ["configure-local-ai-wsl-networking"]),
+        ("preflight", "Check system and Local AI compatibility", ["validate-distro-path", "preflight-os", "preflight-local-ai-hardware", "preflight-wsl", "preflight-windows-tailscale"]),
+        ("local-ai-engine", "Install verified llama-server", ["acquire-local-ai-runtime"]),
+        ("local-ai-model", "Download verified model from Hugging Face", ["acquire-local-ai-model"]),
+        ("local-ai-verify", "Verify Local AI before WSL setup", ["persist-local-ai-manifest", "start-local-ai-runtime", "capture-local-ai-gpu-baseline", "verify-local-ai-inference", "verify-local-ai-gpu-load"]),
+        ("wsl-platform", "Prepare WSL platform", ["ensure-wsl-platform", "configure-local-ai-wsl-networking"]),
         ("cleanup", "Removing existing gateway", ["cleanup-distro", "cleanup-gateway"]),
         ("port", "Checking gateway port", ["preflight-port"]),
         ("wsl-create", "Installing clean WSL gateway", ["wsl-create"]),
         ("wsl-configure", "Configuring instance", ["wsl-configure", "validate-wsl-lockdown"]),
         ("install-cli", "Installing OpenClaw", ["install-cli"]),
-        ("local-ai-engine", "Installing verified llama-server", ["acquire-local-ai-runtime"]),
-        ("local-ai-model", "Downloading verified model from Hugging Face", ["acquire-local-ai-model"]),
-        ("local-ai-verify", "Verifying model, GPU, and WSL access", ["persist-local-ai-manifest", "start-local-ai-runtime", "capture-local-ai-gpu-baseline", "verify-local-ai-inference", "verify-local-ai-gpu-load", "verify-local-ai-wsl"]),
+        ("local-ai-wsl", "Verify WSL access to Local AI", ["verify-local-ai-wsl"]),
         ("tailscale-auth", "Connecting Tailscale", ["install-tailscale", "authorize-tailscale"]),
         ("configure", "Preparing gateway", ["configure-gateway", "configure-local-ai-gateway", "install-service"]),
         ("start", "Starting gateway", ["start-gateway", "mint-token"]),

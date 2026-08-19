@@ -43,6 +43,23 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+    }
+
+    [Fact]
+    public void BundledConfig_RequiresExplicitLocalAiOptIn()
+    {
+        var repositoryRoot = Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT")
+            ?? Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..", ".."));
+        var config = SetupConfig.LoadFromFile(Path.Combine(
+            repositoryRoot,
+            "src",
+            "OpenClaw.SetupEngine",
+            "default-config.json"));
+
+        Assert.False(config.LocalAi.Enabled);
     }
 
     [Fact]

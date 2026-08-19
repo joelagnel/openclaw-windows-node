@@ -122,7 +122,7 @@ public sealed partial class ProgressPage : Page
             "[12:04:01] [info] Windows 11 26100 · WSL 2 present\n" +
             "[12:04:03] [info] port 127.0.0.1:18789 available\n" +
             "[12:04:05] [info] wsl --install -d Ubuntu-24.04 --name OpenClawGateway --no-launch\n" +
-            "[12:04:38] [info] downloading distro … 142/200 MB\n" +
+            "[12:04:38] [info] downloading distro image (disk use varies)\n" +
             "[12:04:38] [changed] created %LOCALAPPDATA%\\OpenClawTray\\wsl\\OpenClawGateway\\\n" +
             "[12:04:38] [info] next: install CLI via HTTPS, configure loopback gateway\n";
     }

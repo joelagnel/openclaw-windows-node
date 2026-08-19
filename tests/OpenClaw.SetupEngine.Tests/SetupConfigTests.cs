@@ -404,6 +404,7 @@ public class SetupConfigTests : IDisposable
 
             Assert.Contains("Debian", summary.DistroTitle);
             Assert.Contains("CustomClaw", summary.DistroDescription);
+            Assert.Contains("several GB", summary.DistroDescription);
             Assert.Contains("19999", summary.GatewayEndpoint);
             Assert.Contains("LAN bind enabled", summary.GatewayDescription);
             Assert.Contains("example.test", summary.InstallerDescription);

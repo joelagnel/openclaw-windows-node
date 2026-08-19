@@ -54,6 +54,11 @@ internal interface IHuggingFaceModelAcquirer
         CancellationToken cancellationToken);
 
     void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install);
+
+    void RemovePartialModel(
+        string localDataDirectory,
+        LocalAiComponentIdentity component,
+        LocalModelInfo model);
 }
 
 /// <summary>
@@ -114,6 +119,11 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
             throw new HuggingFaceModelInstallException(pathError);
         }
 
+        if (Directory.Exists(modelPath))
+            throw new HuggingFaceModelInstallException("The managed Local AI model path is an existing directory.");
+        if (Directory.Exists(partialPath))
+            throw new HuggingFaceModelInstallException("The managed Local AI partial model path is an existing directory.");
+
         if (File.Exists(modelPath))
         {
             if (await VerifyFileAsync(modelPath, model.Weights, cancellationToken).ConfigureAwait(false))
@@ -124,21 +134,41 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
                     CreatedThisRun: false);
             }
 
-            throw new HuggingFaceModelInstallException(
-                "The existing Local AI model does not match the pinned size and SHA-256 digest.");
+            if (!LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+                    localDataDirectory,
+                    modelPath,
+                    out string invalidModelPath,
+                    out pathError))
+            {
+                throw new HuggingFaceModelInstallException(pathError);
+            }
+            File.Delete(invalidModelPath);
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(modelPath)!);
         var promoted = false;
+        var preservePartial = false;
         try
         {
-            await DownloadAndVerifyAsync(
-                    model.Weights,
-                    localDataDirectory,
-                    partialPath,
-                    progress,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            bool verifiedCompletePartial = File.Exists(partialPath) &&
+                new FileInfo(partialPath).Length == model.Weights.SizeBytes &&
+                await VerifyFileAsync(partialPath, model.Weights, cancellationToken).ConfigureAwait(false);
+            if (!verifiedCompletePartial)
+            {
+                if (File.Exists(partialPath) &&
+                    new FileInfo(partialPath).Length >= model.Weights.SizeBytes)
+                {
+                    TryDeletePartial(localDataDirectory, partialPath);
+                }
+
+                await DownloadAndVerifyAsync(
+                        model.Weights,
+                        localDataDirectory,
+                        partialPath,
+                        progress,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             if (!LocalAiPathPolicy.TryResolve(
@@ -176,9 +206,20 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
                 HuggingFaceModelInstallDisposition.Downloaded,
                 CreatedThisRun: true);
         }
+        catch (OperationCanceledException)
+        {
+            preservePartial = File.Exists(partialPath);
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException or HttpRequestException or TransientHuggingFaceModelInstallException)
+        {
+            preservePartial = File.Exists(partialPath);
+            throw;
+        }
         finally
         {
-            if (!promoted)
+            if (!promoted && !preservePartial)
                 TryDeletePartial(localDataDirectory, partialPath);
         }
     }
@@ -200,6 +241,49 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
 
         if (File.Exists(deletePath))
             File.Delete(deletePath);
+    }
+
+    public void RemovePartialModel(
+        string localDataDirectory,
+        LocalAiComponentIdentity component,
+        LocalModelInfo model)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+        ArgumentNullException.ThrowIfNull(model);
+        if (model.Weights.Source is not HuggingFaceRevisionSource source)
+            throw new InvalidDataException("The Local AI model does not have immutable Hugging Face provenance.");
+        if (!LocalAiPathPolicy.TryResolve(
+                localDataDirectory,
+                component,
+                out LocalAiSetupPaths paths,
+                out string error) ||
+            !LocalAiPathPolicy.TryGetModelPaths(
+                paths,
+                source.RepositoryId,
+                source.RevisionSha,
+                model.Weights.RelativePath,
+                out _,
+                out string partialPath,
+                out error))
+        {
+            throw new InvalidDataException(
+                string.IsNullOrWhiteSpace(error) ? "The Local AI partial model path is invalid." : error);
+        }
+
+        if (Directory.Exists(partialPath))
+            throw new InvalidDataException("The Local AI partial model path is an existing directory.");
+        if (File.Exists(partialPath))
+        {
+            if (!LocalAiPathPolicy.TryValidateManagedDeleteTarget(
+                    localDataDirectory,
+                    partialPath,
+                    out string deletePath,
+                    out error))
+            {
+                throw new InvalidDataException(error);
+            }
+            File.Delete(deletePath);
+        }
     }
 
     private async Task DownloadAndVerifyAsync(
@@ -259,7 +343,7 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
             throw new HuggingFaceModelInstallException(
                 $"The Hugging Face range request failed with HTTP status {(int)response.StatusCode} ({response.StatusCode}).");
         }
-        if (resumeOffset == 0 && !response.IsSuccessStatusCode)
+        if (resumeOffset == 0 && response.StatusCode != HttpStatusCode.OK)
         {
             throw new HuggingFaceModelInstallException(
                 $"The Hugging Face download failed with HTTP status {(int)response.StatusCode} ({response.StatusCode}).");
@@ -444,7 +528,7 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
         }
     }
 
-    private static async Task<bool> VerifyFileAsync(
+    internal static async Task<bool> VerifyFileAsync(
         string path,
         PinnedArtifact artifact,
         CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 using OpenClaw.Shared;
 using OpenClawTray.Services;
 using OpenClaw.Connection;
+using OpenClawTray;
 
 namespace OpenClaw.Tray.Tests;
 
@@ -586,6 +587,18 @@ public class StartupSetupStateTests
         // This test guards against accidentally changing the constant.
         var settings = new SettingsManager(Path.GetTempPath()) { GatewayUrl = "ws://localhost:18789" };
         Assert.True(StartupSetupState.RequiresSetup(settings, Path.GetTempPath()));
+    }
+
+    [Fact]
+    public void LegacyIpv4GatewayUrl_IsAlsoTreatedAsDefault()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path)
+        {
+            GatewayUrl = $"ws://127.0.0.1:{AppIdentity.SetupGatewayPort}"
+        };
+
+        Assert.True(StartupSetupState.RequiresSetup(settings, temp.Path));
     }
 
     private static void StoreDeviceToken(string dataPath)

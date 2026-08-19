@@ -488,6 +488,7 @@ public sealed class SetupContext
     internal bool LocalAiManifestCreatedThisRun { get; set; }
     internal ILocalAiRuntime? LocalAiRuntime { get; set; }
     internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
+    internal LocalAiGatewayPriorState? LocalAiGatewayPriorState { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }

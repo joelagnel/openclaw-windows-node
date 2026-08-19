@@ -74,6 +74,7 @@ public static class SetupStepFactory
             new InstallTailscaleStep(),
             new AuthorizeTailscaleStep(),
             new ConfigureGatewayStep(),
+            new ConfigureLocalAiGatewayStep(),
             new InstallGatewayServiceStep(),
             new StartGatewayStep(),
             new FinalizeTailscaleServeStep(),

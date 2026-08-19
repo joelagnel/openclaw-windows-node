@@ -43,6 +43,19 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+    }
+
+    [Fact]
+    public void BundledConfig_RequiresExplicitLocalAiOptIn()
+    {
+        var config = SetupConfig.LoadFromFile(Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "OpenClaw.SetupEngine",
+            "default-config.json"));
+
+        Assert.False(config.LocalAi.Enabled);
     }
 
     [Fact]
@@ -609,5 +622,22 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(0, new PipelineResult(PipelineOutcome.Success).ExitCode);
         Assert.Equal(1, new PipelineResult(PipelineOutcome.Failed).ExitCode);
         Assert.Equal(3, new PipelineResult(PipelineOutcome.Cancelled).ExitCode);
+    }
+
+    private static string RepositoryRoot()
+    {
+        if (Environment.GetEnvironmentVariable("OPENCLAW_REPO_ROOT") is { Length: > 0 } configured)
+            return configured;
+
+        var directory = AppContext.BaseDirectory;
+        while (!string.IsNullOrWhiteSpace(directory))
+        {
+            if (File.Exists(Path.Combine(directory, "src", "OpenClaw.SetupEngine", "default-config.json")))
+                return directory;
+
+            directory = Directory.GetParent(directory)?.FullName;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate repository root for default-config.json.");
     }
 }

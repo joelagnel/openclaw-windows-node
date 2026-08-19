@@ -311,6 +311,117 @@ internal static class LocalAiPathPolicy
         return true;
     }
 
+    /// <summary>
+    /// Deletes one app-owned Local AI tree without following filesystem links.
+    /// The entire tree is validated before the first delete so a reparse point
+    /// or inaccessible entry leaves the tree untouched.
+    /// </summary>
+    public static bool TryDeleteManagedTree(
+        string localDataDirectory,
+        string candidatePath,
+        bool allowRoot,
+        out string error)
+    {
+        error = "";
+        string localDataRoot;
+        string root;
+        string deletePath;
+        try
+        {
+            localDataRoot = NormalizePath(localDataDirectory);
+            root = NormalizePath(Path.Combine(localDataRoot, RootDirectoryName));
+            deletePath = NormalizePath(candidatePath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            error = $"Invalid Local AI deletion path: {ex.Message}";
+            return false;
+        }
+
+        bool isRoot = PathEquals(deletePath, root);
+        if ((!allowRoot || !isRoot) && !IsStrictDescendant(deletePath, root))
+        {
+            error = $"Refusing to delete Local AI path '{deletePath}'; it is not below the app-owned root '{root}'.";
+            return false;
+        }
+        if (allowRoot && !isRoot && !IsStrictDescendant(deletePath, root))
+        {
+            error = $"Refusing to delete Local AI path '{deletePath}'; it is not the app-owned root or one of its descendants.";
+            return false;
+        }
+        if (isRoot && !PathEquals(Path.GetDirectoryName(root), localDataRoot))
+        {
+            error = $"Refusing to delete Local AI root '{root}'; it is not an immediate child of '{localDataRoot}'.";
+            return false;
+        }
+        if (!TryValidateExistingPathChain(localDataRoot, deletePath, out error))
+            return false;
+
+        try
+        {
+            if (!File.Exists(deletePath) && !Directory.Exists(deletePath))
+                return true;
+
+            FileAttributes rootAttributes = File.GetAttributes(deletePath);
+            if (rootAttributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                error = $"Refusing to delete Local AI path '{deletePath}' because it is a reparse point.";
+                return false;
+            }
+            if (!rootAttributes.HasFlag(FileAttributes.Directory))
+            {
+                File.Delete(deletePath);
+                return true;
+            }
+
+            var files = new List<string>();
+            var directories = new List<string>();
+            var pending = new Stack<string>();
+            pending.Push(deletePath);
+            while (pending.Count > 0)
+            {
+                string directory = pending.Pop();
+                directories.Add(directory);
+                foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+                {
+                    FileAttributes attributes = File.GetAttributes(entry);
+                    if (attributes.HasFlag(FileAttributes.ReparsePoint))
+                    {
+                        error = $"Refusing to delete Local AI tree because '{entry}' is a reparse point.";
+                        return false;
+                    }
+
+                    if (attributes.HasFlag(FileAttributes.Directory))
+                        pending.Push(entry);
+                    else
+                        files.Add(entry);
+                }
+            }
+
+            foreach (string file in files)
+            {
+                if (!TryValidateExistingPathChain(localDataRoot, file, out error))
+                    return false;
+                File.Delete(file);
+            }
+            for (int index = directories.Count - 1; index >= 0; index--)
+            {
+                string directory = directories[index];
+                if (!TryValidateExistingPathChain(localDataRoot, directory, out error))
+                    return false;
+                Directory.Delete(directory, recursive: false);
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            error = $"Could not safely delete Local AI path '{deletePath}': {ex.Message}";
+            return false;
+        }
+    }
+
     public static bool TryResolveArchiveEntryDestination(
         string stagingDirectory,
         string entryName,

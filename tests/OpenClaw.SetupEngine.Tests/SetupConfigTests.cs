@@ -414,13 +414,15 @@ public class SetupConfigTests : IDisposable
                     Bind = "lan",
                     InstallUrl = "https://example.test/install.sh",
                     Version = GatewayReleasePolicy.SecurityFloor
-                }
+                },
+                LocalAi = { Enabled = true }
             };
 
             var summary = SetupReviewSummaryBuilder.Build(config);
 
             Assert.Contains("Debian", summary.DistroTitle);
             Assert.Contains("CustomClaw", summary.DistroDescription);
+            Assert.Contains("several GB", summary.DistroDescription);
             Assert.Contains("19999", summary.GatewayEndpoint);
             Assert.Contains("LAN bind enabled", summary.GatewayDescription);
             Assert.Contains("example.test", summary.InstallerDescription);
@@ -428,6 +430,9 @@ public class SetupConfigTests : IDisposable
             Assert.Contains("CustomClaw", summary.ExactCommands);
             Assert.Contains("19999", summary.ExactCommands);
             Assert.Equal("CustomClaw · LAN:19999", summary.CompletionGatewaySummary);
+            Assert.StartsWith("llama-server · ", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.DoesNotContain("immutable revision", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.DoesNotContain("llama-server b", summary.LocalAiDescription, StringComparison.Ordinal);
         }
         finally
         {

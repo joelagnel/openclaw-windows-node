@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "capturedAtLocalDate": "2026-08-18",
+  "codeUnderTest": "702caa43",
+  "postRunFixValidatedAt": "7d3577c6",
+  "hardware": {
+    "profileId": "rtx-spark-n1x",
+    "name": "NVIDIA RTX Spark N1X",
+    "driverVersion": "616.00",
+    "gpuVisibleMemoryMiB": 24512
+  },
+  "runtime": {
+    "engine": "llama-server",
+    "version": "b10488",
+    "architecture": "arm64",
+    "runtimeId": "b10488-cuda13-arm64",
+    "endpoint": "http://127.0.0.1:52057/v1",
+    "contextLength": 262144,
+    "cacheTypeK": "f16",
+    "cacheTypeV": "f16",
+    "gpuLayers": "42/42",
+    "parallel": 1,
+    "loadOnStartup": false
+  },
+  "model": {
+    "catalogId": "qwen3.6-35b-a3b-mtp-q4-k-m",
+    "repository": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+    "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
+    "fileName": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "sizeBytes": 22663387424,
+    "sha256": "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b"
+  },
+  "gpuMemory": {
+    "nvidiaSmiUsedMiB": 24244,
+    "nvidiaSmiFreeMiB": 255,
+    "routerDedicatedBytes": 142770176,
+    "routerSharedBytes": 67108864,
+    "workerDedicatedBytes": 24531591168,
+    "workerSharedBytes": 12266242048,
+    "cudaModelBufferMiB": 21087.70,
+    "cudaKvBufferMiB": 5120.00,
+    "cudaComputeBufferMiB": 2592.13
+  },
+  "setupTimingsSeconds": {
+    "inferenceVerification": 23.369914,
+    "gpuLoadVerification": 6.736,
+    "wslReachability": 6.856,
+    "operatorPairing": 5.919,
+    "nodePairing": 12.677,
+    "gatewayEndToEnd": 15.705
+  },
+  "wsl": {
+    "appDistro": "OpenClawGateway",
+    "appDistroVersion": 2,
+    "unrelatedDistro": "Ubuntu-24.04",
+    "unrelatedDistroSentinelSha256": "5b4d29711620cc60ded1c0a84a883df8ce1f3f3a746fd0893b864ff4b511a71c",
+    "mirroredNetworking": true,
+    "nativeEndpointReachableFromAppDistro": true,
+    "gatewayServiceEnabled": true,
+    "gatewayServiceActive": true
+  },
+  "chat": {
+    "prompt": "Reply exactly: OPENCLAW LLAMA SERVER READY",
+    "response": "OPENCLAW LLAMA SERVER READY"
+  }
+}

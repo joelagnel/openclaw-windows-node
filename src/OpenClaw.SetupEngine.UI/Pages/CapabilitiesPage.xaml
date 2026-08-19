@@ -73,6 +73,11 @@
                                     </RadioButton>
                                 </RadioButtons>
 
+                                <TextBlock Text="Local AI setup is independent of this choice and does not require Full access."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+
                                 <Expander x:Name="CapabilityExpander" Margin="0,4,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                           Background="Transparent" BorderThickness="0"
                                           Header="Fine-tune individual capabilities (optional)">
@@ -111,6 +116,7 @@
                                 </Border>
                                 <Border x:Name="LocalAiInstallReviewCard"
                                         AutomationProperties.AutomationId="LocalAiInstallReviewCard"
+                                        Visibility="Collapsed"
                                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="1" CornerRadius="4" Padding="14,12">

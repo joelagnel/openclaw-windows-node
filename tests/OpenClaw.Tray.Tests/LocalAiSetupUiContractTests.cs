@@ -5,6 +5,36 @@ public sealed class LocalAiSetupUiContractTests
     private static string Root => TestRepositoryPaths.GetRepositoryRoot();
 
     [Fact]
+    public void Welcome_AdvertisesQualifiedLocalAiBeforeGatewayChoice()
+    {
+        string xaml = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml");
+        string source = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "WelcomePage.xaml.cs");
+        string window = Read("src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs");
+        string capabilities = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs");
+
+        Assert.Contains("AutomationProperties.AutomationId=\"WelcomeLocalAiAvailable\"", xaml);
+        Assert.Contains("AutomationProperties.AutomationId=\"WelcomeLocalAiHardware\"", xaml);
+        Assert.Contains("Local AI available", xaml);
+        Assert.Contains("without installing a gateway or configuring Local AI", xaml);
+        Assert.Contains("DetectLocalAiAvailabilityAsync", source);
+        Assert.Contains("eligibility.CanInstall", source);
+        Assert.Contains("gpu.Name", source);
+        Assert.Contains("GetLocalAiHardwareAsync", window);
+        Assert.Contains("await setupWindow.GetLocalAiHardwareAsync()", source);
+        Assert.Contains("await setupWindow.GetLocalAiHardwareAsync()", capabilities);
+    }
+
+    [Fact]
+    public void CapabilityProfile_DoesNotGateLocalAiOrWslNetworking()
+    {
+        string xaml = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml");
+
+        Assert.Contains("does not require Full access", xaml);
+        Assert.Contains("Local AI needs mirrored WSL networking", xaml);
+        Assert.Contains("LocalAiNetworkingConsentCheckBox", xaml);
+    }
+
+    [Fact]
     public void InstallReview_OffersQualifiedLocalAiWithExplicitModelChoice()
     {
         string xaml = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml");

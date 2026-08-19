@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using OpenClaw.SetupEngine.UI.Pages;
+using OpenClaw.Shared.Inference;
 using System.Runtime.InteropServices;
 
 namespace OpenClaw.SetupEngine.UI;
@@ -25,6 +26,8 @@ public sealed partial class SetupWindow : Window
     private bool _showStartupPreferenceOnComplete = true;
     private readonly string _dataDir;
     private readonly string _localDataDir;
+    private readonly object _localAiHardwareProbeLock = new();
+    private Task<HostHardwareInfo>? _localAiHardwareProbeTask;
 
     public static SetupWindow? Active { get; private set; }
 
@@ -198,6 +201,14 @@ public sealed partial class SetupWindow : Window
     public void NavigateToWelcome(bool back = false) => NavigateTo(typeof(WelcomePage), _config, back);
     public bool IsWelcomeInstallSelected => _isWelcomeInstallSelected;
     public void SetWelcomeInstallSelected(bool installSelected) => _isWelcomeInstallSelected = installSelected;
+    internal Task<HostHardwareInfo> GetLocalAiHardwareAsync()
+    {
+        lock (_localAiHardwareProbeLock)
+        {
+            return _localAiHardwareProbeTask ??=
+                Task.Run(() => new NvmlHostHardwareProbe().Probe());
+        }
+    }
     public void NavigateToAdvancedSetup() => NavigateTo(typeof(AdvancedSetupPage), _config);
     public void NavigateToCapabilities() => NavigateTo(typeof(CapabilitiesPage), _config);
     public void NavigateToProgress() => NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: false));

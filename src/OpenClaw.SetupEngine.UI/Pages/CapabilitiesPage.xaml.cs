@@ -101,7 +101,11 @@ public sealed partial class CapabilitiesPage : Page
         var localAiReviewPreview = previewPage is "capabilities-review" or "capabilities-review-consent";
         if (localAiReviewPreview)
             _config.LocalAi.Enabled = true;
-        InitializeLocalAiReview(forceNetworkingConsent: previewPage == "capabilities-review-consent");
+        AsyncEventHandlerGuard.Run(
+            () => InitializeLocalAiReviewAsync(
+                forceNetworkingConsent: previewPage == "capabilities-review-consent"),
+            NullLogger.Instance,
+            nameof(InitializeLocalAiReviewAsync));
         ApplySetupReviewSummary(_config);
         GoToStep(localAiReviewPreview ? 3 : 1);
         if (localAiReviewPreview)
@@ -257,11 +261,17 @@ public sealed partial class CapabilitiesPage : Page
         ExactCommandsText.Text = summary.ExactCommands;
     }
 
-    private void InitializeLocalAiReview(bool forceNetworkingConsent)
+    private async Task InitializeLocalAiReviewAsync(bool forceNetworkingConsent)
     {
         try
         {
-            _localAiHardware = new NvmlHostHardwareProbe().Probe();
+            SetupWindow? setupWindow = _setupWindow;
+            _localAiHardware = setupWindow is not null
+                ? await setupWindow.GetLocalAiHardwareAsync()
+                : await Task.Run(() => new NvmlHostHardwareProbe().Probe());
+            if (_setupWindow is null && setupWindow is not null)
+                return;
+
             LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
                 _localAiHardware,
                 _config!.LocalAi.SelectedModelId);
@@ -281,6 +291,7 @@ public sealed partial class CapabilitiesPage : Page
             LocalAiToggle.IsOn = _config.LocalAi.Enabled;
             _suppressLocalAiToggle = false;
             UpdateLocalAiOptions(forceNetworkingConsent);
+            ApplySetupReviewSummary(_config);
         }
         catch
         {

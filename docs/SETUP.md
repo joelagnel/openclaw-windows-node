@@ -54,11 +54,11 @@ On first launch, Molty opens the onboarding wizard when there is no usable saved
 
 1. **Security notice** - Confirms this is a trusted PC before local setup starts.
 
-2. **Welcome** - Choose **Install a local gateway (WSL)** to install the app-owned WSL gateway, or **Connect to an existing gateway** to open the tray app's Connections tab.
+2. **Welcome** - Choose **Install a local gateway (WSL)** to install the app-owned WSL gateway, or **Connect to an existing gateway** to open the tray app's Connections tab. On supported NVIDIA hardware, the recommended local-gateway choice identifies the detected GPU and explains that Local AI is available before the user commits to a setup path.
 
    For the role split behind these choices, see [Operator and node concepts](OPERATOR_NODE_CONCEPTS.md).
 
-3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and see exactly what setup will install before anything runs.
+3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and see exactly what setup will install before anything runs. Local AI does not require the **Full access** capability profile. When Local AI needs mirrored WSL networking, setup requests separate consent before changing `.wslconfig` or stopping running WSL distributions once.
 
 4. **Local setup progress** - Installs a fresh app-owned `OpenClawGateway` WSL instance and connects Molty to it. This does not modify an existing user Ubuntu distro.
 

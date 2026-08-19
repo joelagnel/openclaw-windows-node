@@ -219,6 +219,7 @@ public sealed class AppServiceRegistrationTests
         });
 
         Assert.Same(runtime, provider.GetRequiredService<ILocalAiRuntime>());
+        using LocalAiPageViewModel viewModel = provider.GetRequiredService<LocalAiPageViewModel>();
         provider.Dispose();
         Assert.False(runtime.Disposed);
     }

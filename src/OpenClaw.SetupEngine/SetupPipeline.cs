@@ -58,6 +58,7 @@ public static class SetupStepFactory
             new PreflightWslStep(),
             new PreflightWindowsTailscaleStep(),
             new EnsureWslPlatformStep(),
+            new ReconcileLocalAiInstallationStep(),
             new AcquireLocalAiRuntimeStep(),
             new AcquireLocalAiModelStep(),
             new PersistLocalAiManifestStep(),
@@ -77,6 +78,7 @@ public static class SetupStepFactory
             new InstallTailscaleStep(),
             new AuthorizeTailscaleStep(),
             new ConfigureGatewayStep(),
+            new ConfigureLocalAiGatewayStep(),
             new InstallGatewayServiceStep(),
             new StartGatewayStep(),
             new FinalizeTailscaleServeStep(),
@@ -320,6 +322,8 @@ public sealed class SetupPipeline
             ctx.Logger.Error("Uninstall requires --confirm-destructive flag");
             return new PipelineResult(PipelineOutcome.Failed, Message: "Safety gate: --confirm-destructive required for live uninstall");
         }
+
+        ctx.IsUninstalling = true;
 
         ctx.Journal.RecordPipelineEvent("uninstall_started", $"steps={_steps.Count}, dry_run={ctx.Config.DryRun}");
         ctx.Logger.Info($"Uninstall starting — {_steps.Count} steps in reverse order (dry_run={ctx.Config.DryRun})");

@@ -79,23 +79,24 @@ public class SetupPipelineTests
     {
         var steps = SetupStepFactory.BuildDefaultSteps();
 
-        Assert.Equal(36, steps.Count);
+        Assert.Equal(37, steps.Count);
         Assert.IsType<ValidateDistroInstallPathStep>(steps[0]);
         Assert.IsType<PreflightOsStep>(steps[1]);
         Assert.IsType<PreflightLocalAiHardwareStep>(steps[2]);
         Assert.IsType<PreflightWslStep>(steps[3]);
         Assert.IsType<PreflightWindowsTailscaleStep>(steps[4]);
         Assert.IsType<EnsureWslPlatformStep>(steps[5]);
-        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[6]);
-        Assert.IsType<AcquireLocalAiModelStep>(steps[7]);
-        Assert.IsType<PersistLocalAiManifestStep>(steps[8]);
-        Assert.IsType<StartLocalAiRuntimeStep>(steps[9]);
-        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[10]);
-        Assert.IsType<VerifyLocalAiInferenceStep>(steps[11]);
-        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[12]);
-        Assert.IsType<ConfigureLocalAiWslNetworkingStep>(steps[13]);
-        Assert.IsType<CleanupStaleDistroStep>(steps[14]);
-        Assert.IsType<CleanupStaleGatewayStep>(steps[15]);
+        Assert.IsType<ReconcileLocalAiInstallationStep>(steps[6]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[7]);
+        Assert.IsType<AcquireLocalAiModelStep>(steps[8]);
+        Assert.IsType<PersistLocalAiManifestStep>(steps[9]);
+        Assert.IsType<StartLocalAiRuntimeStep>(steps[10]);
+        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[11]);
+        Assert.IsType<VerifyLocalAiInferenceStep>(steps[12]);
+        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[13]);
+        Assert.IsType<ConfigureLocalAiWslNetworkingStep>(steps[14]);
+        Assert.IsType<CleanupStaleDistroStep>(steps[15]);
+        Assert.IsType<CleanupStaleGatewayStep>(steps[16]);
         Assert.Contains(steps, s => s is ValidateWslLockdownStep);
         var lockdownIndex = steps.FindIndex(s => s is ValidateWslLockdownStep);
         var cliInstallIndex = steps.FindIndex(s => s is InstallCliStep);

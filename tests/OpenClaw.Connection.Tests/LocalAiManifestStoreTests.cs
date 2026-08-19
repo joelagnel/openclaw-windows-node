@@ -24,7 +24,7 @@ public sealed class LocalAiManifestStoreTests
             Path.Combine(paths.RootDirectory, "models", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
             loaded.ModelPath);
         Assert.Equal(18803, loaded.Endpoint.Port);
-        Assert.Equal("nvidia-rtx-spark-n1x", loaded.Manifest.HardwareProfileId);
+        Assert.Equal("rtx-spark-n1x", loaded.Manifest.HardwareProfileId);
         Assert.Equal("b10488-cuda13-arm64", loaded.Manifest.RuntimeId);
         Assert.Equal("qwen3.6-35b-a3b-mtp-q4-k-m", loaded.Manifest.ModelCatalogId);
         Assert.Equal("GPU-01234567-89ab-cdef-0123-456789abcdef", loaded.Manifest.SelectedGpuId);
@@ -92,6 +92,8 @@ public sealed class LocalAiManifestStoreTests
     [InlineData("http://192.0.2.10:18803")]
     [InlineData("https://127.0.0.1:18803")]
     [InlineData("http://user:secret@127.0.0.1:18803")]
+    [InlineData("http://localhost:18803/v1")]
+    [InlineData("http://127.0.0.1:18803")]
     public async Task Save_RejectsEndpointThatIsNotPlainHttpLoopback(string endpoint)
     {
         using var temp = new TempDirectory("local-ai-manifest-");
@@ -264,7 +266,7 @@ public sealed class LocalAiManifestStoreTests
     {
         EngineVersion = "b10488",
         Architecture = "arm64",
-        HardwareProfileId = "nvidia-rtx-spark-n1x",
+        HardwareProfileId = "rtx-spark-n1x",
         RuntimeId = "b10488-cuda13-arm64",
         ModelCatalogId = "qwen3.6-35b-a3b-mtp-q4-k-m",
         SelectedGpuId = "GPU-01234567-89ab-cdef-0123-456789abcdef",
@@ -288,7 +290,7 @@ public sealed class LocalAiManifestStoreTests
         ],
         ModelPath = Path.Combine("models", "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"),
         ModelId = "unsloth/Qwen3.6-35B-A3B-MTP-GGUF@5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
-        ModelAlias = "qwen3.6-35b-a3b-q4",
+        ModelAlias = "qwen3.6-35b-a3b-mtp-q4-k-m",
         ModelAsset = new LocalAiAssetReceipt
         {
             FileName = "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",

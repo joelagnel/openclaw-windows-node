@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,6 +18,7 @@ public sealed class LocalAiPaths
         DownloadsDirectory = Path.Combine(RootDirectory, "downloads");
         StagingDirectory = Path.Combine(RootDirectory, "staging");
         LogsDirectory = Path.Combine(RootDirectory, "logs");
+        RouterPresetPath = Path.Combine(RootDirectory, "llama-server-models.ini");
         StandardOutputLogPath = Path.Combine(LogsDirectory, "llama-server.stdout.log");
         StandardErrorLogPath = Path.Combine(LogsDirectory, "llama-server.stderr.log");
     }
@@ -31,6 +31,7 @@ public sealed class LocalAiPaths
     public string DownloadsDirectory { get; }
     public string StagingDirectory { get; }
     public string LogsDirectory { get; }
+    public string RouterPresetPath { get; }
     public string StandardOutputLogPath { get; }
     public string StandardErrorLogPath { get; }
 
@@ -293,14 +294,15 @@ public sealed class LocalAiManifestStore
 
         if (!Uri.TryCreate(manifest.Endpoint, UriKind.Absolute, out var endpoint) ||
             endpoint.Scheme != Uri.UriSchemeHttp ||
-            !IsLoopback(endpoint) ||
+            !string.Equals(endpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
             endpoint.IsDefaultPort ||
             endpoint.Port is <= 0 or > 65535 ||
             !string.IsNullOrEmpty(endpoint.UserInfo) ||
             !string.IsNullOrEmpty(endpoint.Query) ||
-            !string.IsNullOrEmpty(endpoint.Fragment))
+            !string.IsNullOrEmpty(endpoint.Fragment) ||
+            !string.Equals(endpoint.AbsolutePath, "/v1", StringComparison.Ordinal))
         {
-            throw new InvalidDataException("The local AI endpoint must be an HTTP loopback address with an explicit port.");
+            throw new InvalidDataException("The local AI endpoint must be an HTTP IPv4 loopback /v1 address with an explicit port.");
         }
 
         return new LocalAiResolvedInstall(manifest, executable, model, endpoint);
@@ -380,7 +382,4 @@ public sealed class LocalAiManifestStore
         }
     }
 
-    private static bool IsLoopback(Uri endpoint) =>
-        string.Equals(endpoint.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-        (IPAddress.TryParse(endpoint.Host, out var address) && IPAddress.IsLoopback(address));
 }

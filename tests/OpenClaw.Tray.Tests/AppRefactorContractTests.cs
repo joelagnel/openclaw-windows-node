@@ -1352,6 +1352,39 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void CapabilitiesPage_AggregatesHardwareAndWslLocalAiDiagnosis()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml"));
+        Assert.Contains("LocalAiUnavailableDetailsButton", xaml);
+        Assert.Contains("Why Local AI is unavailable", source);
+        Assert.Contains("LocalAiInstallReviewCard.Visibility = Visibility.Visible", ExtractMethod(source, "ShowLocalAiUnavailable"));
+        Assert.Contains("LocalAiAvailabilityReasons.Build", source);
+        Assert.Contains("One or more Local AI requirements are unavailable.", xaml);
+        Assert.Matches(
+            new Regex(
+                "<InfoBar\\s+x:Name=\"LocalAiUnavailablePanel\"[^>]*>\\s*" +
+                "<StackPanel\\s+Orientation=\"Horizontal\"\\s+Spacing=\"8\"\\s+Margin=\"0,-12,0,12\">"),
+            xaml);
+    }
+
+    [Fact]
+    public void CapabilitiesPage_FiltersModelsBySelectedGpuCapacityAndShowsMemoryEvidence()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+
+        Assert.Contains("LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes", source);
+        Assert.Contains("eligibility.RequiredTotalMemoryBytes", source);
+        Assert.Contains("eligibility.DetectedTotalMemoryBytes", source);
+        Assert.Contains("model weights, KV cache, and runtime workspace", source);
+        Assert.DoesNotContain("2 GiB runtime margin", source);
+        Assert.DoesNotContain("HardwareProfile", source);
+        Assert.DoesNotContain("RTX PRO 6000", source);
+    }
+
+    [Fact]
     public void WizardSecondaryButton_DoesNotSkipEntireWizardInErrorState()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

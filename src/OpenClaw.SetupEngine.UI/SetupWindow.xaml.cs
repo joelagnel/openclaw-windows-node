@@ -333,6 +333,7 @@ public sealed partial class SetupWindow : Window
             "capabilities-review" => typeof(CapabilitiesPage),
             "capabilities-review-consent" => typeof(CapabilitiesPage),
             "progress" => typeof(ProgressPage),
+            "progress-local-ai" => typeof(ProgressPage),
             "milestone" => typeof(ProgressPage),
             "wizard" => typeof(WizardPage),
             "wizard-error" => typeof(WizardPage),
@@ -342,9 +343,14 @@ public sealed partial class SetupWindow : Window
         },
         page switch
         {
-            "complete" => new CompletePageArgs(true, TimeSpan.FromMinutes(3), null),
+            "complete" => new CompletePageArgs(
+                true,
+                TimeSpan.FromMinutes(3),
+                null,
+                ReviewSummary: SetupReviewSummaryBuilder.Build(_config, _dataDir, _localDataDir)),
             "complete-error" => new CompletePageArgs(false, TimeSpan.FromMinutes(3), null, "Setup could not finish. Review the details, then retry setup when you are ready."),
             "progress" => CreateProgressPageArgs(showMilestoneOnly: false),
+            "progress-local-ai" => CreateProgressPageArgs(showMilestoneOnly: false),
             "milestone" => CreateProgressPageArgs(showMilestoneOnly: true),
             _ => _config,
         });

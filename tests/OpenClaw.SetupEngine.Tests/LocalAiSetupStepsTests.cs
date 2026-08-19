@@ -236,12 +236,17 @@ public sealed class LocalAiSetupStepsTests
         var step = new AcquireLocalAiRuntimeStep(acquirer);
         SetupContext context = CreateContext(new LocalAiConfig { Enabled = true });
         context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(CreateSparkHardware());
+        var details = new List<SetupDetailProgressEvent>();
+        context.DetailProgress = new RecordingProgress<SetupDetailProgressEvent>(details.Add);
 
         StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
 
         Assert.Equal(StepOutcome.Success, result.Outcome);
         Assert.Equal(LlamaRuntimeCatalog.Arm64RuntimeId, acquirer.Runtime?.Id);
         Assert.NotNull(context.LocalAiRuntimeInstall);
+        SetupDetailProgressEvent detail = Assert.Single(details);
+        Assert.Equal("acquire-local-ai-runtime", detail.StepId);
+        Assert.Equal(SetupDetailProgressUnit.Bytes, detail.Unit);
     }
 
     [Fact]
@@ -286,12 +291,17 @@ public sealed class LocalAiSetupStepsTests
             CreateSparkHardware(),
             LocalModelCatalog.Qwen9BModelId);
         context.LocalAiRuntimeInstall = RuntimeInstall(context.LocalDataDir);
+        var details = new List<SetupDetailProgressEvent>();
+        context.DetailProgress = new RecordingProgress<SetupDetailProgressEvent>(details.Add);
 
         StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
 
         Assert.Equal(StepOutcome.Success, result.Outcome);
         Assert.Equal(LocalModelCatalog.Qwen9BModelId, acquirer.Model?.Id);
         Assert.NotNull(context.LocalAiModelInstall);
+        SetupDetailProgressEvent detail = Assert.Single(details);
+        Assert.Equal("acquire-local-ai-model", detail.StepId);
+        Assert.Contains("Qwen3.5-9B-Q4_K_M.gguf", detail.Detail);
     }
 
     [Fact]
@@ -886,6 +896,14 @@ public sealed class LocalAiSetupStepsTests
         {
             InstallCount++;
             Runtime = runtime;
+            progress?.Report(new LocalAiArtifactInstallProgress(
+                LocalAiArtifactInstallPhase.Downloading,
+                "llama-runtime.zip",
+                1,
+                2,
+                4_194_304,
+                8_388_608,
+                LocalAiArtifactProgressUnit.Bytes));
             return Task.FromResult(RuntimeInstall(localDataDirectory));
         }
 
@@ -908,6 +926,9 @@ public sealed class LocalAiSetupStepsTests
         {
             InstallCount++;
             Model = model;
+            progress?.Report(new HuggingFaceModelInstallProgress(
+                model.Weights.SizeBytes / 2,
+                model.Weights.SizeBytes));
             return Task.FromResult(new HuggingFaceModelInstallResult(
                 Path.Combine(localDataDirectory, "LocalAI", "models", model.Weights.RelativePath),
                 HuggingFaceModelInstallDisposition.Downloaded,
@@ -916,6 +937,11 @@ public sealed class LocalAiSetupStepsTests
 
         public void RemoveInstalledModel(string localDataDirectory, HuggingFaceModelInstallResult install) =>
             RemoveCount++;
+    }
+
+    private sealed class RecordingProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     private sealed class FakeLocalAiRuntime(

@@ -49,6 +49,50 @@ public sealed class LocalAiSetupUiContractTests
         Assert.Contains("\"capabilities-review-consent\" => typeof(CapabilitiesPage)", window);
     }
 
+    [Fact]
+    public void ProgressPage_MapsEveryLocalAiStepAndUsesTypedByteProgress()
+    {
+        string source = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs");
+        string context = Read("src", "OpenClaw.SetupEngine", "SetupContext.cs");
+
+        string[] stepIds =
+        [
+            "preflight-local-ai-hardware",
+            "configure-local-ai-wsl-networking",
+            "acquire-local-ai-runtime",
+            "acquire-local-ai-model",
+            "persist-local-ai-manifest",
+            "start-local-ai-runtime",
+            "capture-local-ai-gpu-baseline",
+            "verify-local-ai-inference",
+            "verify-local-ai-gpu-load",
+            "verify-local-ai-wsl",
+            "configure-local-ai-gateway",
+        ];
+        foreach (string stepId in stepIds)
+            Assert.Contains($"\"{stepId}\"", source);
+
+        Assert.Contains("IProgress<SetupDetailProgressEvent>? DetailProgress", context);
+        Assert.Contains("ctx.DetailProgress = new DirectProgress<SetupDetailProgressEvent>", source);
+        Assert.Contains("SetupDetailProgressUnit.Bytes", source);
+        Assert.Contains("progress-local-ai", source);
+        int detailHandlerStart = source.IndexOf("private void OnDetailProgress", StringComparison.Ordinal);
+        int logHandlerStart = source.IndexOf("private void OnLogEmitted", StringComparison.Ordinal);
+        Assert.DoesNotContain("LogEntry", source[detailHandlerStart..logHandlerStart]);
+    }
+
+    [Fact]
+    public void CompletePage_ReportsVerifiedOnDemandLocalAiAndOpensChat()
+    {
+        string xaml = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "CompletePage.xaml");
+        string source = Read("src", "OpenClaw.SetupEngine.UI", "Pages", "CompletePage.xaml.cs");
+
+        Assert.Contains("AutomationProperties.AutomationId=\"LocalAiCompletionSummary\"", xaml);
+        Assert.Contains("review.LocalAiEnabled", source);
+        Assert.Contains("model loads on the first request", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("LaunchButton.Content = \"Open chat\"", source);
+    }
+
     private static string Read(params string[] parts) =>
         File.ReadAllText(Path.Combine(new[] { Root }.Concat(parts).ToArray()));
 }

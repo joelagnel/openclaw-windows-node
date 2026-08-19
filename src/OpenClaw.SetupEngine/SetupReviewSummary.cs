@@ -10,7 +10,12 @@ public sealed record SetupReviewSummary(
     string GatewayDescription,
     string GatewayEndpoint,
     string ExactCommands,
-    string CompletionGatewaySummary);
+    string CompletionGatewaySummary)
+{
+    public bool LocalAiEnabled { get; init; }
+    public string? LocalAiTitle { get; init; }
+    public string? LocalAiDescription { get; init; }
+}
 
 public static class SetupReviewSummaryBuilder
 {
@@ -68,7 +73,7 @@ public static class SetupReviewSummaryBuilder
             ]
             : [];
 
-        return new SetupReviewSummary(
+        var summary = new SetupReviewSummary(
             DistroTitle: $"Install an isolated {baseDistro} instance",
             DistroDescription: $"WSL distro \"{distroName}\" at {installPath}. Separate from any Linux distributions you already have.",
             InstallerDescription: installerDescription,
@@ -94,6 +99,17 @@ public static class SetupReviewSummaryBuilder
                     $"writes -> {gatewayDataPath} + identity"
                 }).Where(line => line is not null)),
             CompletionGatewaySummary: $"{distroName} · {gatewayEndpoint}");
+        return summary with
+        {
+            LocalAiEnabled = config.LocalAi.Enabled,
+            LocalAiTitle = config.LocalAi.Enabled
+                ? $"Local AI verified with {localAiModel.DisplayName}"
+                : null,
+            LocalAiDescription = config.LocalAi.Enabled
+                ? $"llama-server {LlamaRuntimeCatalog.ReleaseTag} · Hugging Face immutable revision · " +
+                    $"{localAiModel.Recipe.ContextTokens / 1024}K context · FP16 KV · full CUDA offload · loads on first request"
+                : null,
+        };
     }
 
     private static string Display(string? value, string fallback)

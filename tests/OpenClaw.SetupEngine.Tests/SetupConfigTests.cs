@@ -510,6 +510,9 @@ public class SetupConfigTests : IDisposable
         Assert.Contains("model loads on first request", summary.ExactCommands);
         Assert.Contains("primary llamacpp/qwen3.6-27b-mtp-q4-k-m", summary.ExactCommands);
         Assert.DoesNotContain("Ollama", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.True(summary.LocalAiEnabled);
+        Assert.Contains("Qwen3.6 27B", summary.LocalAiTitle);
+        Assert.Contains("loads on first request", summary.LocalAiDescription);
     }
 
     [Fact]
@@ -522,6 +525,9 @@ public class SetupConfigTests : IDisposable
         Assert.DoesNotContain("llama-server", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Hugging Face", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("provider llamacpp", summary.ExactCommands, StringComparison.OrdinalIgnoreCase);
+        Assert.False(summary.LocalAiEnabled);
+        Assert.Null(summary.LocalAiTitle);
+        Assert.Null(summary.LocalAiDescription);
     }
 
     [Fact]

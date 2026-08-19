@@ -477,6 +477,7 @@ public sealed class SetupContext
     public string? WindowsTailnetDnsSuffix { get; set; }
     public string? TailscaleDnsName { get; set; }
     public IExternalAuthorizationPresenter? ExternalAuthorizationPresenter { get; set; }
+    public IProgress<SetupDetailProgressEvent>? DetailProgress { get; set; }
     public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
         EndpointProvenanceProbe { get; set; }
     public HostHardwareInfo? LocalAiHardware { get; set; }

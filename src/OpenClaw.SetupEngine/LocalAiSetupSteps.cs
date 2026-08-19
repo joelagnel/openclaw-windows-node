@@ -316,10 +316,29 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
+            var progress = new SynchronousProgress<LocalAiArtifactInstallProgress>(value =>
+            {
+                string archive = string.IsNullOrWhiteSpace(value.ArchiveFileName)
+                    ? "llama-server runtime"
+                    : value.ArchiveFileName;
+                string detail = value.ArchiveCount > 1
+                    ? $"{value.Phase}: {archive} ({value.ArchiveNumber}/{value.ArchiveCount})"
+                    : $"{value.Phase}: {archive}";
+                ctx.DetailProgress?.Report(new SetupDetailProgressEvent(
+                    Id,
+                    detail,
+                    value.Completed,
+                    value.Total,
+                    value.Unit == LocalAiArtifactProgressUnit.Bytes
+                        ? SetupDetailProgressUnit.Bytes
+                        : value.Unit == LocalAiArtifactProgressUnit.Entries
+                            ? SetupDetailProgressUnit.Items
+                            : SetupDetailProgressUnit.None));
+            });
             LlamaRuntimeInstallResult install = await _acquirer.InstallAsync(
                 ctx.LocalDataDir,
                 plan.Runtime,
-                progress: null,
+                progress,
                 linked.Token);
             ctx.LocalAiRuntimeInstall = install;
             return StepResult.Ok($"Installed llama-server {LlamaRuntimeCatalog.ReleaseTag}.");
@@ -398,11 +417,18 @@ public sealed class AcquireLocalAiModelStep : SetupStep
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         try
         {
+            var progress = new SynchronousProgress<HuggingFaceModelInstallProgress>(value =>
+                ctx.DetailProgress?.Report(new SetupDetailProgressEvent(
+                    Id,
+                    $"Downloading {plan.Model.Weights.RelativePath}",
+                    value.CompletedBytes,
+                    value.TotalBytes,
+                    SetupDetailProgressUnit.Bytes)));
             HuggingFaceModelInstallResult install = await _acquirer.InstallAsync(
                 ctx.LocalDataDir,
                 LlamaRuntimeInstaller.Component(plan.Runtime),
                 plan.Model,
-                progress: null,
+                progress,
                 linked.Token);
             ctx.LocalAiModelInstall = install;
             string action = install.Disposition == HuggingFaceModelInstallDisposition.ReusedVerified

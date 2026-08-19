@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "request-cold-versus-hot-streaming",
+  "model": "qwen3.6-35b-a3b-mtp-q4-k-m",
+  "maxCompletionTokens": 64,
+  "ttftDefinition": "First streamed content or reasoning_content token",
+  "coldDefinition": "Companion restarted and router reported zero loaded models before request",
+  "runs": [
+    { "cycle": 1, "state": "cold", "ttftSeconds": 34.514, "totalSeconds": 35.349, "completionTokens": 64, "postTtftTokensPerSecond": 76.14 },
+    { "cycle": 1, "state": "hot",  "ttftSeconds": 0.155,  "totalSeconds": 0.866,  "completionTokens": 64, "postTtftTokensPerSecond": 88.57 },
+    { "cycle": 2, "state": "cold", "ttftSeconds": 32.641, "totalSeconds": 33.452, "completionTokens": 64, "postTtftTokensPerSecond": 77.74 },
+    { "cycle": 2, "state": "hot",  "ttftSeconds": 0.129,  "totalSeconds": 0.846,  "completionTokens": 64, "postTtftTokensPerSecond": 87.99 },
+    { "cycle": 3, "state": "cold", "ttftSeconds": 31.879, "totalSeconds": 32.675, "completionTokens": 64, "postTtftTokensPerSecond": 79.35 },
+    { "cycle": 3, "state": "hot",  "ttftSeconds": 0.177,  "totalSeconds": 0.897,  "completionTokens": 64, "postTtftTokensPerSecond": 87.46 }
+  ],
+  "summary": {
+    "coldMedianTtftSeconds": 32.641,
+    "hotMedianTtftSeconds": 0.155,
+    "coldMedianPostTtftTokensPerSecond": 77.74,
+    "hotMedianPostTtftTokensPerSecond": 87.99
+  },
+  "limitations": [
+    "Process-cold, not Windows reboot-cold",
+    "Windows file cache was available",
+    "TTFT includes reasoning tokens when the model streams reasoning_content first"
+  ]
+}

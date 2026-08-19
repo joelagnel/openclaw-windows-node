@@ -78,6 +78,7 @@ These are the canonical homes. Do not reintroduce private copies elsewhere.
 | Deep-link/protocol/toast/forwarded activation normalization, current-user IPC, and semantic activation plans | `ActivationRouter` | authoritative |
 | Post-save settings change effect ordering, detached snapshot comparison, and concurrent save serialization | `SettingsChangeCoordinator` | authoritative |
 | Exactly-once ordered app shutdown sequencing | `AppShutdownCoordinator` | authoritative |
+| Native Local AI router process lifecycle | App-owned `ILocalAiRuntime` / `LlamaServerRuntimeService`, registered as a pre-built DI instance | authoritative |
 | App composition-root startup sequencing | `AppBootstrapper` (planned) | planned |
 | Windows node connection generation, cancellation, start ordering, recovery, events, and telemetry | `NodeConnectionCoordinator` | authoritative |
 | Bootstrap/shared/device credential handoff, durable clear gate, and operator token recovery timing | `BootstrapTokenLifecycle` | authoritative |

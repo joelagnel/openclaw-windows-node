@@ -47,6 +47,36 @@ public sealed class AppSurfaceOwnershipContractTests
     }
 
     [Fact]
+    public void App_OwnsLazyLocalAiRouterAcrossStartupAndOrderedShutdown()
+    {
+        var app = Read("App.xaml.cs");
+        var shutdown = Read("App.AppShutdownCoordinator.cs");
+        var registration = Read("Presentation", "AppServiceRegistration.cs");
+
+        Assert.Contains("private ILocalAiRuntime? _localAiRuntime;", app);
+        Assert.Contains("new LlamaServerRuntimeService(", app);
+        Assert.Contains("Paths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory())", app);
+        Assert.Contains("StartLocalAiRouterInBackground();", app);
+        Assert.Contains("runtime.EnsureStartedAsync()", app);
+        Assert.Contains("load-on-startup=false", app);
+        Assert.Contains("services.AddSingleton(context.LocalAiRuntime)", registration);
+
+        AssertInOrder(
+            app,
+            "_localAiRuntime = new LlamaServerRuntimeService(",
+            "InitializeServiceProvider();",
+            "StartLocalAiRouterInBackground();",
+            "InitializeGatewayClient();");
+        AssertInOrder(
+            shutdown,
+            "\"chat coordinator\"",
+            "\"gateway client\"",
+            "\"local AI runtime\"",
+            "\"OpenTelemetry endpoint\"",
+            "\"service provider\"");
+    }
+
+    [Fact]
     public void WindowManager_OwnsConcreteWindowLifetimes()
     {
         var manager = Read("Services", "WindowManager.cs");

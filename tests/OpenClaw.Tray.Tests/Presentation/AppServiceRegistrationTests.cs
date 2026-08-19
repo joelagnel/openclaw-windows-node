@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using OpenClaw.Shared;
 using OpenClaw.Shared.ExecApprovals;
+using OpenClaw.Connection.LocalAi;
 using OpenClawTray.Chat;
 using OpenClawTray.Presentation;
 using OpenClawTray.Services;
@@ -195,6 +196,56 @@ public sealed class AppServiceRegistrationTests
             Assert.Same(execApprovalsStore, first);
             Assert.Same(first, second);
             Assert.False(File.Exists(ExecApprovalsStore.ResolveFilePath(temp.Path)));
+        }
+    }
+
+    [Fact]
+    public void LocalAiRuntime_IsExactPrebuiltInstanceAndProviderDoesNotDisposeIt()
+    {
+        using var temp = new TempDir();
+        var runtime = new FakeLocalAiRuntime();
+        var services = new ServiceCollection();
+        services.AddOpenClawTrayCore(new AppServiceContext(
+            new RecordingUiDispatcher(),
+            new FakeAppCommands(),
+            new SettingsManager(temp.Path),
+            new ExecApprovalsStore(temp.Path, NullLogger.Instance),
+            new FakePermissionsPageRuntimeHost(),
+            runtime));
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+            ValidateOnBuild = true,
+        });
+
+        Assert.Same(runtime, provider.GetRequiredService<ILocalAiRuntime>());
+        provider.Dispose();
+        Assert.False(runtime.Disposed);
+    }
+
+    private sealed class FakeLocalAiRuntime : ILocalAiRuntime
+    {
+        public bool Disposed { get; private set; }
+        public LocalAiRuntimeSnapshot Snapshot { get; } = LocalAiRuntimeSnapshot.Initial(
+            new Uri("http://127.0.0.1:18803/v1"),
+            DateTimeOffset.UtcNow);
+        public event EventHandler<LocalAiRuntimeSnapshotChangedEventArgs>? StateChanged
+        {
+            add { }
+            remove { }
+        }
+        public Task<LocalAiRuntimeSnapshot> EnsureStartedAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> StopAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> RestartAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+        public Task<LocalAiRuntimeSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
         }
     }
 }

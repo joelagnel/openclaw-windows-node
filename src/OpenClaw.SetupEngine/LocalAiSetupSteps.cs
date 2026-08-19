@@ -230,6 +230,62 @@ public sealed class ConfigureLocalAiWslNetworkingStep : SetupStep
     }
 }
 
+/// <summary>Reuses a complete manifest-owned installation after current catalog verification.</summary>
+public sealed class ReconcileLocalAiInstallationStep : SetupStep
+{
+    private readonly LocalAiInstallReconciler _reconciler;
+
+    public ReconcileLocalAiInstallationStep()
+        : this(new LocalAiInstallReconciler())
+    {
+    }
+
+    internal ReconcileLocalAiInstallationStep(LocalAiInstallReconciler reconciler) =>
+        _reconciler = reconciler ?? throw new ArgumentNullException(nameof(reconciler));
+
+    public override string Id => "reconcile-local-ai-installation";
+    public override string DisplayName => "Checking for an existing Local AI installation";
+    public override bool CanRetry => false;
+    public override RetryPolicy Retry => RetryPolicy.None;
+    public override bool CanSkip(SetupContext ctx) => !ctx.Config.LocalAi.Enabled;
+
+    public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
+    {
+        if (ctx.LocalAiEligibility?.Plan is not { } plan ||
+            ctx.LocalAiEligibility.SelectedGpu?.StableId is not { Length: > 0 } selectedGpuId)
+        {
+            return StepResult.Terminal(
+                "Local AI installation recovery requires a qualified hardware plan.");
+        }
+
+        try
+        {
+            LocalAiReconcileResult result = await _reconciler
+                .ReconcileAsync(ctx.LocalDataDir, plan, selectedGpuId, ct)
+                .ConfigureAwait(false);
+            if (!result.Reused)
+                return StepResult.Skip("No completed managed Local AI installation was found.");
+
+            ctx.LocalAiResolvedInstall = result.ResolvedInstall;
+            ctx.LocalAiRuntimeInstall = result.RuntimeInstall;
+            ctx.LocalAiModelInstall = result.ModelInstall;
+            ctx.LocalAiPort = result.ResolvedInstall!.Endpoint.Port;
+            return StepResult.Ok("Reused the verified managed Local AI installation.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return StepResult.Terminal(
+                $"The existing Local AI installation could not be reused safely: {ex.Message} " +
+                "Run uninstall to remove it before retrying setup.",
+                ex);
+        }
+    }
+}
+
 /// <summary>Installs the two pinned llama.cpp runtime archives as one atomic component.</summary>
 public sealed class AcquireLocalAiRuntimeStep : SetupStep
 {
@@ -260,6 +316,8 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
+        if (ctx.LocalAiRuntimeInstall is { CreatedThisRun: false })
+            return StepResult.Skip("Reusing the verified managed llama-server runtime.");
         if (ctx.LocalAiEligibility?.Plan is not { } plan)
             return StepResult.Terminal("Local AI runtime installation requires a qualified hardware plan.");
         if (ctx.Config.LocalAi.AcquisitionTimeoutSeconds <= 0)
@@ -359,6 +417,8 @@ public sealed class AcquireLocalAiModelStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
+        if (ctx.LocalAiModelInstall is { CreatedThisRun: false })
+            return StepResult.Skip("Reusing the verified managed Local AI model.");
         if (ctx.LocalAiEligibility?.Plan is not { } plan)
             return StepResult.Terminal("Local AI model download requires a qualified hardware plan.");
         if (ctx.LocalAiRuntimeInstall is null)
@@ -416,6 +476,13 @@ public sealed class AcquireLocalAiModelStep : SetupStep
             _acquirer.RemoveInstalledModel(ctx.LocalDataDir, install);
             ctx.LocalAiModelInstall = null;
         }
+        if (ctx.LocalAiEligibility?.Plan is { } plan)
+        {
+            _acquirer.RemovePartialModel(
+                ctx.LocalDataDir,
+                LlamaRuntimeInstaller.Component(plan.Runtime),
+                plan.Model);
+        }
 
         return Task.CompletedTask;
     }
@@ -433,6 +500,8 @@ public sealed class PersistLocalAiManifestStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
+        if (ctx.LocalAiResolvedInstall is not null && !ctx.LocalAiManifestCreatedThisRun)
+            return StepResult.Skip("Reusing the matching managed Local AI installation receipt.");
         if (ctx.LocalAiEligibility?.Plan is not { } plan ||
             ctx.LocalAiEligibility.SelectedGpu is not { StableId: { Length: > 0 } gpuId } ||
             ctx.LocalAiPort is not { } requestedPort ||
@@ -508,6 +577,28 @@ public sealed class PersistLocalAiManifestStep : SetupStep
 
     public override async Task RollbackAsync(SetupContext ctx, CancellationToken ct)
     {
+        if (ctx.IsUninstalling)
+        {
+            ct.ThrowIfCancellationRequested();
+            string root = new LocalAiPaths(ctx.LocalDataDir).RootDirectory;
+            if (!LocalAiPathPolicy.TryDeleteManagedTree(
+                    ctx.LocalDataDir,
+                    root,
+                    allowRoot: true,
+                    out string error))
+            {
+                throw new InvalidDataException(
+                    $"Managed Local AI files could not be removed safely: {error} " +
+                    "Close the OpenClaw companion and retry uninstall.");
+            }
+
+            ctx.LocalAiRuntimeInstall = null;
+            ctx.LocalAiModelInstall = null;
+            ctx.LocalAiResolvedInstall = null;
+            ctx.LocalAiManifestCreatedThisRun = false;
+            return;
+        }
+
         if (!ctx.LocalAiManifestCreatedThisRun)
             return;
 
@@ -576,7 +667,7 @@ public sealed class StartLocalAiRuntimeStep : SetupStep
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {
-        if (ctx.LocalAiResolvedInstall is null || !ctx.LocalAiManifestCreatedThisRun)
+        if (ctx.LocalAiResolvedInstall is null)
             return StepResult.Terminal("llama-server startup requires a verified installation receipt.");
         if (ctx.LocalAiRuntime is not null)
             return StepResult.Terminal("A Local AI runtime is already attached to this setup transaction.");

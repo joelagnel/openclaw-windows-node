@@ -71,6 +71,73 @@ public sealed class HuggingFaceModelInstallerTests
     }
 
     [Fact]
+    public async Task Install_ResumesAfterResponseEndsPrematurely()
+    {
+        using var temp = new TempDirectory("hf-model-");
+        byte[] payload = "network interruption must resume"u8.ToArray();
+        LocalModelInfo model = Model(payload);
+        var calls = 0;
+        var observedDelays = new List<TimeSpan>();
+        var handler = new RecordingHandler((request, _) =>
+        {
+            calls++;
+            if (calls == 1)
+                return InterruptingResponse(payload, bytesBeforeFailure: 7);
+
+            RangeItemHeaderValue range = Assert.Single(request.Headers.Range!.Ranges);
+            Assert.Equal(7, range.From);
+            var response = Response(HttpStatusCode.PartialContent, payload[7..]);
+            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(7, payload.Length - 1, payload.Length);
+            return response;
+        });
+        using var client = new HttpClient(handler);
+        var installer = new HuggingFaceModelInstaller(
+            client,
+            (delay, _) =>
+            {
+                observedDelays.Add(delay);
+                return Task.CompletedTask;
+            });
+
+        HuggingFaceModelInstallResult result = await installer.InstallAsync(
+            temp.Path,
+            Component,
+            model,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(result.ModelPath));
+        Assert.Equal(2, handler.CallCount);
+        Assert.Equal([TimeSpan.FromSeconds(1)], observedDelays);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task Install_RetriesTransientHttpStatus(HttpStatusCode transientStatus)
+    {
+        using var temp = new TempDirectory("hf-model-");
+        byte[] payload = "retry status"u8.ToArray();
+        LocalModelInfo model = Model(payload);
+        var calls = 0;
+        var handler = new RecordingHandler((_, _) =>
+            ++calls == 1 ? Response(transientStatus, []) : Response(HttpStatusCode.OK, payload));
+        using var client = new HttpClient(handler);
+        var installer = new HuggingFaceModelInstaller(client, (_, _) => Task.CompletedTask);
+
+        HuggingFaceModelInstallResult result = await installer.InstallAsync(
+            temp.Path,
+            Component,
+            model,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(result.ModelPath));
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
     public async Task Install_ReusesOnlyExactExistingModelWithoutNetwork()
     {
         using var temp = new TempDirectory("hf-model-");
@@ -301,6 +368,62 @@ public sealed class HuggingFaceModelInstallerTests
         };
         response.Content.Headers.ContentLength = content.Length;
         return response;
+    }
+
+    private static HttpResponseMessage InterruptingResponse(byte[] content, int bytesBeforeFailure)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new InterruptingStream(content, bytesBeforeFailure)),
+        };
+        response.Content.Headers.ContentLength = content.Length;
+        return response;
+    }
+
+    private sealed class InterruptingStream(byte[] content, int bytesBeforeFailure) : Stream
+    {
+        private readonly MemoryStream _inner = new(content, writable: false);
+        private bool _failed;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => content.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_failed)
+                throw new IOException("response ended prematurely");
+
+            int remainingBeforeFailure = bytesBeforeFailure - (int)_inner.Position;
+            if (remainingBeforeFailure <= 0)
+            {
+                _failed = true;
+                throw new IOException("response ended prematurely");
+            }
+
+            int count = Math.Min(buffer.Length, remainingBeforeFailure);
+            return _inner.ReadAsync(buffer[..count], cancellationToken);
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class RecordingHandler(

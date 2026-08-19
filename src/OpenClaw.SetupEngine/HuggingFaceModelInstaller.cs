@@ -23,7 +23,7 @@ internal sealed record HuggingFaceModelInstallResult(
     HuggingFaceModelInstallDisposition Disposition,
     bool CreatedThisRun);
 
-internal sealed class HuggingFaceModelInstallException : Exception
+internal class HuggingFaceModelInstallException : Exception
 {
     public HuggingFaceModelInstallException(string message)
         : base(message)
@@ -32,6 +32,14 @@ internal sealed class HuggingFaceModelInstallException : Exception
 
     public HuggingFaceModelInstallException(string message, Exception innerException)
         : base(message, innerException)
+    {
+    }
+}
+
+internal sealed class TransientHuggingFaceModelInstallException : HuggingFaceModelInstallException
+{
+    public TransientHuggingFaceModelInstallException(string message)
+        : base(message)
     {
     }
 }
@@ -59,11 +67,21 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
     private const int BufferSize = 1024 * 1024;
     private const int ProgressIntervalBytes = 4 * 1024 * 1024;
     private const int MaximumRedirects = 5;
+    private const int MaximumDownloadAttempts = 4;
 
     private readonly HttpClient _httpClient;
+    private readonly Func<TimeSpan, CancellationToken, Task> _retryDelay;
 
     public HuggingFaceModelInstaller(HttpClient httpClient) =>
-        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        (_httpClient, _retryDelay) =
+            (httpClient ?? throw new ArgumentNullException(nameof(httpClient)), Task.Delay);
+
+    internal HuggingFaceModelInstaller(
+        HttpClient httpClient,
+        Func<TimeSpan, CancellationToken, Task> retryDelay) =>
+        (_httpClient, _retryDelay) =
+            (httpClient ?? throw new ArgumentNullException(nameof(httpClient)),
+             retryDelay ?? throw new ArgumentNullException(nameof(retryDelay)));
 
     public event EventHandler<HuggingFaceModelInstallProgress>? ProgressChanged;
 
@@ -185,6 +203,37 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
     }
 
     private async Task DownloadAndVerifyAsync(
+        PinnedArtifact artifact,
+        string localDataDirectory,
+        string partialPath,
+        IProgress<HuggingFaceModelInstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await DownloadAndVerifyAttemptAsync(
+                        artifact,
+                        localDataDirectory,
+                        partialPath,
+                        progress,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (Exception exception) when (
+                exception is IOException or HttpRequestException or TransientHuggingFaceModelInstallException &&
+                attempt < MaximumDownloadAttempts &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                TimeSpan delay = TimeSpan.FromSeconds(1 << (attempt - 1));
+                await _retryDelay(delay, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task DownloadAndVerifyAttemptAsync(
         PinnedArtifact artifact,
         string localDataDirectory,
         string partialPath,
@@ -314,7 +363,18 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
             Uri observed = response.RequestMessage?.RequestUri ?? current;
             ValidateDownloadUri(observed, initialRequest: false);
             if (!IsRedirect(response.StatusCode))
+            {
+                if (IsTransientStatus(response.StatusCode))
+                {
+                    int statusCode = (int)response.StatusCode;
+                    string reason = response.StatusCode.ToString();
+                    response.Dispose();
+                    throw new TransientHuggingFaceModelInstallException(
+                        $"The Hugging Face download returned transient HTTP status {statusCode} ({reason}).");
+                }
+
                 return response;
+            }
 
             if (redirect == MaximumRedirects || response.Headers.Location is null)
             {
@@ -357,6 +417,10 @@ internal sealed class HuggingFaceModelInstaller : IHuggingFaceModelAcquirer
         HttpStatusCode.RedirectMethod or
         HttpStatusCode.TemporaryRedirect or
         HttpStatusCode.PermanentRedirect;
+
+    private static bool IsTransientStatus(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests ||
+        (int)statusCode is >= 500 and <= 599;
 
     private static async Task HashExistingPartialAsync(
         string partialPath,

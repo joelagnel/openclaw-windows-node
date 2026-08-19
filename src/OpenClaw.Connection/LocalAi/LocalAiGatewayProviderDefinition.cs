@@ -6,12 +6,84 @@ namespace OpenClaw.Connection.LocalAi;
 /// <summary>Canonical gateway configuration for the companion-owned llama.cpp provider.</summary>
 public static class LocalAiGatewayProviderDefinition
 {
+    private const string ApiType = "openai-completions";
+    public const string CliRedactedApiKey = "__OPENCLAW_REDACTED__";
     public const string ProviderPath = "models.providers.llamacpp";
     public const string PrimaryModelPath = "agents.defaults.model.primary";
     public const int ProviderTimeoutSeconds = 300;
     public const int MaximumOutputTokens = 8_192;
 
     public static string BuildProviderJson(LocalAiResolvedInstall install)
+    {
+        return BuildProviderJson(install, "llama-local");
+    }
+
+    /// <summary>
+    /// Compares a provider returned by <c>openclaw config get --json</c> with
+    /// the managed definition. The CLI intentionally redacts secret values,
+    /// so the API key may be either its written value or the documented
+    /// redaction marker; every routing and model field must still match.
+    /// </summary>
+    public static bool MatchesProviderJson(string providerJson, LocalAiResolvedInstall install)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerJson);
+        ArgumentNullException.ThrowIfNull(install);
+
+        try
+        {
+            using JsonDocument actual = JsonDocument.Parse(providerJson);
+            using JsonDocument expected = JsonDocument.Parse(BuildProviderJson(install));
+            if (JsonEquals(actual.RootElement, expected.RootElement))
+                return true;
+
+            using JsonDocument redacted = JsonDocument.Parse(
+                BuildProviderJson(install, CliRedactedApiKey));
+            return JsonEquals(actual.RootElement, redacted.RootElement);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool JsonEquals(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind != right.ValueKind)
+            return false;
+
+        if (left.ValueKind == JsonValueKind.Object)
+        {
+            JsonProperty[] leftProperties = [.. left.EnumerateObject()];
+            JsonProperty[] rightProperties = [.. right.EnumerateObject()];
+            if (leftProperties.Length != rightProperties.Length)
+                return false;
+            foreach (JsonProperty property in leftProperties)
+            {
+                if (!right.TryGetProperty(property.Name, out JsonElement rightValue) ||
+                    !JsonEquals(property.Value, rightValue))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (left.ValueKind == JsonValueKind.Array)
+        {
+            JsonElement.ArrayEnumerator leftItems = left.EnumerateArray();
+            JsonElement.ArrayEnumerator rightItems = right.EnumerateArray();
+            while (leftItems.MoveNext())
+            {
+                if (!rightItems.MoveNext() || !JsonEquals(leftItems.Current, rightItems.Current))
+                    return false;
+            }
+            return !rightItems.MoveNext();
+        }
+
+        return JsonElement.DeepEquals(left, right);
+    }
+
+    private static string BuildProviderJson(LocalAiResolvedInstall install, string apiKey)
     {
         ArgumentNullException.ThrowIfNull(install);
         Uri endpoint = install.Endpoint
@@ -24,8 +96,8 @@ public static class LocalAiGatewayProviderDefinition
         var value = new
         {
             baseUrl = endpoint.AbsoluteUri.TrimEnd('/'),
-            api = "openai-completions",
-            apiKey = "llama-local",
+            api = ApiType,
+            apiKey,
             timeoutSeconds = ProviderTimeoutSeconds,
             models = new[]
             {
@@ -40,6 +112,7 @@ public static class LocalAiGatewayProviderDefinition
                     contextTokens = install.Manifest.ContextLength,
                     maxTokens = MaximumOutputTokens,
                     compat = new { supportsTools = true, supportsUsageInStreaming = true },
+                    api = ApiType,
                 },
             },
         };

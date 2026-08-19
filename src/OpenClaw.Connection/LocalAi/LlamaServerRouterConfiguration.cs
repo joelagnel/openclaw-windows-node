@@ -16,12 +16,17 @@ public sealed record LlamaServerRouterLaunchPlan(
 
 public static class LlamaServerRouterConfiguration
 {
-    public static LlamaServerRouterLaunchPlan Build(LocalAiPaths paths, LocalAiResolvedInstall install)
+    public static LlamaServerRouterLaunchPlan Build(
+        LocalAiPaths paths,
+        LocalAiResolvedInstall install,
+        int? listenPort = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(install);
 
         LocalAiInstallManifest manifest = install.Manifest;
+        int port = listenPort ?? manifest.RequestedPort;
+        LocalAiPortPolicy.Validate(port);
         SupportedHardwareProfile profile = SupportedHardwareProfiles.Profiles.SingleOrDefault(
             candidate => string.Equals(candidate.Id, manifest.HardwareProfileId, StringComparison.Ordinal))
             ?? throw new InvalidDataException("The managed local AI hardware profile is no longer qualified.");
@@ -38,7 +43,7 @@ public static class LlamaServerRouterConfiguration
             nameof(paths.RouterPresetPath));
         var arguments = ImmutableArray.Create(
             "--host", "127.0.0.1",
-            "--port", install.Endpoint.Port.ToString(CultureInfo.InvariantCulture),
+            "--port", port.ToString(CultureInfo.InvariantCulture),
             "--models-preset", presetPath,
             "--models-max", "1",
             "--models-autoload",

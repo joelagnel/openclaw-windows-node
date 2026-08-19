@@ -263,6 +263,7 @@ public sealed class LlamaServerClient : ILlamaServerClient
             endpoint.Scheme != Uri.UriSchemeHttp ||
             !string.Equals(endpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||
             endpoint.Port is <= 0 or > 65535 ||
+            endpoint.Port == 80 ||
             !string.Equals(endpoint.AbsolutePath, "/v1", StringComparison.Ordinal) ||
             !string.IsNullOrEmpty(endpoint.UserInfo) ||
             !string.IsNullOrEmpty(endpoint.Query) ||

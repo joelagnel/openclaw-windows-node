@@ -38,6 +38,7 @@ public sealed class SetupConfig
     public PairingConfig Pairing { get; set; } = new();
     public WindowsNodeContextConfig WindowsNodeContext { get; set; } = new();
     public TailscaleConfig Tailscale { get; set; } = new();
+    public LocalAiConfig LocalAi { get; set; } = new();
 
     public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://localhost:{GatewayPort}";
 
@@ -129,6 +130,19 @@ public sealed class SetupConfig
 }
 
 // ─── WSL Configuration ───
+
+// Native local inference is disabled for programmatic and backward-compatible
+// configs. The bundled product config explicitly enables it for onboarding.
+public sealed class LocalAiConfig
+{
+    public bool Enabled { get; set; }
+    public string? SelectedModelId { get; set; }
+    /// <summary>Managed llama-server port. Zero selects a free loopback port during setup.</summary>
+    public int Port { get; set; }
+    public bool WslMirroredNetworkingConsent { get; set; }
+    public int HealthTimeoutSeconds { get; set; } = 15;
+    public int AcquisitionTimeoutSeconds { get; set; } = 7_200;
+}
 
 public sealed class WslConfig
 {

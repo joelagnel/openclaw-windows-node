@@ -43,6 +43,40 @@ public class SetupConfigTests : IDisposable
         Assert.Equal(TailscaleAuthMode.Browser, config.Tailscale.AuthMode);
         Assert.Equal(300, config.Tailscale.AuthTimeoutSeconds);
         Assert.Equal(300, config.Tailscale.ServeApprovalTimeoutSeconds);
+        Assert.False(config.LocalAi.Enabled);
+        Assert.Null(config.LocalAi.SelectedModelId);
+        Assert.Equal(0, config.LocalAi.Port);
+        Assert.False(config.LocalAi.WslMirroredNetworkingConsent);
+        Assert.Equal(15, config.LocalAi.HealthTimeoutSeconds);
+        Assert.Equal(7_200, config.LocalAi.AcquisitionTimeoutSeconds);
+    }
+
+    [Fact]
+    public void LocalAiConfig_RoundTripsExplicitModelChoiceAndConsent()
+    {
+        var config = new SetupConfig
+        {
+            LocalAi = new LocalAiConfig
+            {
+                Enabled = true,
+                SelectedModelId = "qwen3.6-27b-mtp-q4-k-m",
+                Port = 18808,
+                WslMirroredNetworkingConsent = true,
+                HealthTimeoutSeconds = 30,
+                AcquisitionTimeoutSeconds = 3_600,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(config, SetupConfig.JsonWriteOptions);
+        SetupConfig? loaded = JsonSerializer.Deserialize<SetupConfig>(json, SetupConfig.JsonOptions);
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded.LocalAi.Enabled);
+        Assert.Equal("qwen3.6-27b-mtp-q4-k-m", loaded.LocalAi.SelectedModelId);
+        Assert.Equal(18808, loaded.LocalAi.Port);
+        Assert.True(loaded.LocalAi.WslMirroredNetworkingConsent);
+        Assert.Equal(30, loaded.LocalAi.HealthTimeoutSeconds);
+        Assert.Equal(3_600, loaded.LocalAi.AcquisitionTimeoutSeconds);
     }
 
     [Fact]

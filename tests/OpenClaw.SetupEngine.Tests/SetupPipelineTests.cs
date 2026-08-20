@@ -388,6 +388,48 @@ public class SetupPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_CancelledDuringStep_RollsBackInterruptedThenCompletedWithFreshTokens()
+    {
+        using var cts = new CancellationTokenSource();
+        var rollbacks = new List<(string StepId, bool WasCancelled)>();
+        var config = new SetupConfig { RollbackOnFailure = true };
+        var ctx = CreateContext(config, cts.Token);
+
+        Task RecordRollback(string stepId, CancellationToken ct)
+        {
+            rollbacks.Add((stepId, ct.IsCancellationRequested));
+            return Task.CompletedTask;
+        }
+
+        var pipeline = new SetupPipeline([
+            new MockStep(
+                "s1",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, ct) => RecordRollback("s1", ct)),
+            new MockStep(
+                "s2",
+                (_, _) => Task.FromResult(StepResult.Ok()),
+                (_, ct) => RecordRollback("s2", ct)),
+            new MockStep(
+                "s3",
+                (_, ct) =>
+                {
+                    cts.Cancel();
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(StepResult.Ok());
+                },
+                (_, ct) => RecordRollback("s3", ct)),
+        ]);
+
+        var result = await pipeline.RunAsync(ctx);
+
+        Assert.Equal(PipelineOutcome.Cancelled, result.Outcome);
+        Assert.Equal(
+            [("s3", false), ("s2", false), ("s1", false)],
+            rollbacks);
+    }
+
+    [Fact]
     public async Task RunAsync_StepThrowsException_ReturnsFail()
     {
         var ctx = CreateContext();

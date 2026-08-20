@@ -27,16 +27,13 @@ public static class LlamaServerRouterConfiguration
         LocalAiInstallManifest manifest = install.Manifest;
         int port = listenPort ?? manifest.RequestedPort;
         LocalAiPortPolicy.Validate(port);
-        SupportedHardwareProfile profile = SupportedHardwareProfiles.Profiles.SingleOrDefault(
-            candidate => string.Equals(candidate.Id, manifest.HardwareProfileId, StringComparison.Ordinal))
-            ?? throw new InvalidDataException("The managed local AI hardware profile is no longer qualified.");
         LlamaRuntimeVariant runtime = LlamaRuntimeCatalog.Variants.SingleOrDefault(
             candidate => string.Equals(candidate.Id, manifest.RuntimeId, StringComparison.Ordinal))
             ?? throw new InvalidDataException("The managed llama-server runtime is no longer qualified.");
         LocalModelInfo model = LocalModelCatalog.Find(manifest.ModelCatalogId)
             ?? throw new InvalidDataException("The managed local AI model is no longer qualified.");
 
-        ValidateQualifiedReceipt(manifest, profile, runtime, model);
+        ValidateQualifiedReceipt(manifest, runtime, model);
 
         string presetPath = paths.ResolveContainedPath(
             Path.GetRelativePath(paths.RootDirectory, paths.RouterPresetPath),
@@ -67,7 +64,6 @@ public static class LlamaServerRouterConfiguration
 
     private static void ValidateQualifiedReceipt(
         LocalAiInstallManifest manifest,
-        SupportedHardwareProfile profile,
         LlamaRuntimeVariant runtime,
         LocalModelInfo model)
     {
@@ -77,11 +73,9 @@ public static class LlamaServerRouterConfiguration
             "arm64" => Architecture.Arm64,
             _ => throw new InvalidDataException("The managed local AI architecture is invalid."),
         };
-        if (profile.Architecture != expectedArchitecture ||
-            runtime.Architecture != expectedArchitecture ||
-            !string.Equals(profile.RuntimeId, runtime.Id, StringComparison.Ordinal))
+        if (runtime.Architecture != expectedArchitecture)
         {
-            throw new InvalidDataException("The managed local AI hardware and runtime receipt do not match.");
+            throw new InvalidDataException("The managed local AI architecture and runtime receipt do not match.");
         }
         if (!string.Equals(manifest.EngineVersion, LlamaRuntimeCatalog.ReleaseTag, StringComparison.Ordinal) ||
             !string.Equals(manifest.ModelAlias, model.Id, StringComparison.Ordinal) ||

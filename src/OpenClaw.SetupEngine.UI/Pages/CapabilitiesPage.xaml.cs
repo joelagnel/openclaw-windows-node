@@ -28,6 +28,8 @@ public sealed partial class CapabilitiesPage : Page
     private bool _localAiSelectionEligible;
     private bool _localAiNetworkingConsentRequired;
     private HostHardwareInfo? _localAiHardware;
+    private string? _localAiRecommendedModelId;
+    private long? _localAiSelectedGpuCapacityBytes;
     private WslGlobalConfigStatus? _localAiNetworkingStatus;
     private string _localAiUnavailableReason = string.Empty;
     private bool _treatBundledAllOnAsPlaceholder;
@@ -279,6 +281,12 @@ public sealed partial class CapabilitiesPage : Page
             eligibility = LocalInferenceEligibility.Evaluate(
                 _localAiHardware,
                 _config!.LocalAi.SelectedModelId);
+            _localAiSelectedGpuCapacityBytes = eligibility.DetectedTotalMemoryBytes;
+            _localAiRecommendedModelId = LocalModelCatalog.Models
+                .OrderByDescending(model => model.Weights.SizeBytes)
+                .FirstOrDefault(model =>
+                    _localAiSelectedGpuCapacityBytes is { } capacityBytes &&
+                    LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes)?.Id;
             if (!eligibility.CanInstall || eligibility.Plan is null || eligibility.SelectedGpu is null)
                 hardwareReason = DescribeLocalAiUnavailable(eligibility);
         }
@@ -335,6 +343,7 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiUnavailablePanel.Visibility = Visibility.Collapsed;
         LocalAiToggle.Visibility = Visibility.Visible;
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
+        _config!.LocalAi.SelectedModelId ??= eligibility.Plan!.Model.Id;
         PopulateLocalAiModels();
         _suppressLocalAiToggle = true;
         LocalAiToggle.IsOn = _config!.LocalAi.Enabled;
@@ -435,16 +444,26 @@ public sealed partial class CapabilitiesPage : Page
         _suppressLocalAiSelection = true;
         LocalAiModelSelector.Items.Clear();
         int selectedIndex = 0;
-        for (int index = 0; index < LocalModelCatalog.Models.Count; index++)
+        LocalModelInfo[] fittingModels = LocalModelCatalog.Models
+            .Where(model =>
+                _localAiSelectedGpuCapacityBytes is { } capacityBytes &&
+                LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes)
+            .ToArray();
+        for (int index = 0; index < fittingModels.Length; index++)
         {
-            LocalModelInfo model = LocalModelCatalog.Models[index];
+            LocalModelInfo model = fittingModels[index];
+            bool isRecommended = string.Equals(
+                _localAiRecommendedModelId,
+                model.Id,
+                StringComparison.OrdinalIgnoreCase);
             LocalAiModelSelector.Items.Add(new ComboBoxItem
             {
                 Content = $"{model.DisplayName} ({FormatSize(model.Weights.SizeBytes)})" +
-                    (model.IsDefault ? " - Recommended" : string.Empty),
+                    (isRecommended ? " - Recommended" : string.Empty),
                 Tag = model.Id,
             });
-            if (string.Equals(_config!.LocalAi.SelectedModelId, model.Id, StringComparison.OrdinalIgnoreCase))
+            string? selectedModelId = _config!.LocalAi.SelectedModelId ?? _localAiRecommendedModelId;
+            if (string.Equals(selectedModelId, model.Id, StringComparison.OrdinalIgnoreCase))
                 selectedIndex = index;
         }
         LocalAiModelSelector.SelectedIndex = selectedIndex;
@@ -532,9 +551,17 @@ public sealed partial class CapabilitiesPage : Page
         }
 
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
-        LocalAiHardwareStatusText.Text = _localAiSelectionEligible
-            ? $"Detected {gpu.Name}. Using the {plan.HardwareProfile.DisplayName} recipe."
-            : $"Detected {gpu.Name}, but the GPU is currently busy. Close GPU applications and retry setup.";
+        LocalAiHardwareStatusText.Text = eligibility.Status switch
+        {
+            LocalInferenceEligibilityStatus.Eligible =>
+                $"Detected {gpu.Name} with {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}. " +
+                $"The selected model requires {FormatSize(eligibility.RequiredTotalMemoryBytes)}.",
+            LocalInferenceEligibilityStatus.EligibleButBusy =>
+                $"Detected {gpu.Name}, but only {FormatOptionalSize(eligibility.AvailableFreeMemoryBytes)} of " +
+                $"{FormatSize(eligibility.RequiredFreeMemoryBytes)} required GPU memory is currently free. " +
+                "Close GPU applications and retry setup.",
+            _ => DescribeLocalAiUnavailable(eligibility),
+        };
         LocalAiEngineDetailText.Text =
             "llama-server for Windows; " +
             $"{FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))} verified download";
@@ -563,6 +590,9 @@ public sealed partial class CapabilitiesPage : Page
 
     private static string FormatSize(long bytes) =>
         $"{bytes / 1_000_000_000d:0.#} GB";
+
+    private static string FormatOptionalSize(long? bytes) =>
+        bytes is { } value ? FormatSize(value) : "an unknown amount";
 
     private void TailscaleToggle_Toggled(object sender, RoutedEventArgs e)
     {

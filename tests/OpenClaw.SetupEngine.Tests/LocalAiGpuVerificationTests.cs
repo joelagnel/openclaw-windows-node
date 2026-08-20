@@ -30,7 +30,7 @@ public class LocalAiGpuVerificationTests
     }
 
     [Fact]
-    public void HasRequiredGpuLoadEvidence_AcceptsFullOffloadCudaBufferForSharedGpuProfile()
+    public void HasRequiredGpuLoadEvidence_AcceptsFullOffloadCudaBuffer()
     {
         var evidence = new LocalAiGpuLoadEvidence(
             ProcessId: 123,
@@ -45,14 +45,34 @@ public class LocalAiGpuVerificationTests
 
         bool accepted = VerifyLocalAiGpuLoadStep.HasRequiredGpuLoadEvidence(
             evidence,
-            usesSharedGpuMemory: true,
             minimumDeltaBytes: 10L * 1024 * 1024 * 1024);
 
         Assert.True(accepted);
     }
 
     [Fact]
-    public void HasRequiredGpuLoadEvidence_RejectsCudaBufferForDedicatedOnlyProfile()
+    public void HasRequiredGpuLoadEvidence_AcceptsFullOffloadNvmlDelta()
+    {
+        var evidence = new LocalAiGpuLoadEvidence(
+            ProcessId: 123,
+            SelectedGpuId: "GPU-123",
+            CudaModulePath: @"C:\LocalAI\ggml-cuda.dll",
+            OffloadedLayers: 42,
+            TotalLayers: 42,
+            TotalGpuVisibleBytes: 24L * 1024 * 1024 * 1024,
+            FreeGpuVisibleBytesBeforeLoad: 20L * 1024 * 1024 * 1024,
+            FreeGpuVisibleBytesAfterLoad: 5L * 1024 * 1024 * 1024,
+            CudaModelBufferBytes: null);
+
+        bool accepted = VerifyLocalAiGpuLoadStep.HasRequiredGpuLoadEvidence(
+            evidence,
+            minimumDeltaBytes: 10L * 1024 * 1024 * 1024);
+
+        Assert.True(accepted);
+    }
+
+    [Fact]
+    public void HasRequiredGpuLoadEvidence_RejectsWhenNeitherMemoryProofMeetsThreshold()
     {
         var evidence = new LocalAiGpuLoadEvidence(
             ProcessId: 123,
@@ -63,11 +83,10 @@ public class LocalAiGpuVerificationTests
             TotalGpuVisibleBytes: 8L * 1024 * 1024 * 1024,
             FreeGpuVisibleBytesBeforeLoad: 7L * 1024 * 1024 * 1024,
             FreeGpuVisibleBytesAfterLoad: 6L * 1024 * 1024 * 1024,
-            CudaModelBufferBytes: 21L * 1024 * 1024 * 1024);
+            CudaModelBufferBytes: 2L * 1024 * 1024 * 1024);
 
         bool accepted = VerifyLocalAiGpuLoadStep.HasRequiredGpuLoadEvidence(
             evidence,
-            usesSharedGpuMemory: false,
             minimumDeltaBytes: 10L * 1024 * 1024 * 1024);
 
         Assert.False(accepted);

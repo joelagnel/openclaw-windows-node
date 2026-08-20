@@ -17,7 +17,8 @@ public sealed record SupportedHardwareProfile
         string runtimeId,
         IReadOnlyList<string> reportedGpuNames,
         CatalogProvenance catalogProvenance,
-        bool usesSharedGpuMemory = false)
+        bool usesSharedGpuMemory = false,
+        bool isMemoryQualifiedFallback = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -26,7 +27,8 @@ public sealed record SupportedHardwareProfile
         ArgumentNullException.ThrowIfNull(catalogProvenance);
         if (architecture is not (Architecture.X64 or Architecture.Arm64))
             throw new ArgumentOutOfRangeException(nameof(architecture));
-        if (reportedGpuNames.Count == 0 || reportedGpuNames.Any(string.IsNullOrWhiteSpace))
+        if ((!isMemoryQualifiedFallback && reportedGpuNames.Count == 0) ||
+            reportedGpuNames.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("At least one non-empty reported GPU name is required.", nameof(reportedGpuNames));
 
         Id = id;
@@ -36,6 +38,7 @@ public sealed record SupportedHardwareProfile
         ReportedGpuNames = Array.AsReadOnly(reportedGpuNames.ToArray());
         CatalogProvenance = catalogProvenance;
         UsesSharedGpuMemory = usesSharedGpuMemory;
+        IsMemoryQualifiedFallback = isMemoryQualifiedFallback;
     }
 
     public string Id { get; }
@@ -45,6 +48,7 @@ public sealed record SupportedHardwareProfile
     public IReadOnlyList<string> ReportedGpuNames { get; }
     public CatalogProvenance CatalogProvenance { get; }
     public bool UsesSharedGpuMemory { get; }
+    public bool IsMemoryQualifiedFallback { get; }
 }
 
 /// <summary>
@@ -57,6 +61,8 @@ public static class SupportedHardwareProfiles
     public const string RtxPro6000ProfileId = "rtx-pro-6000-blackwell-workstation";
     public const string Rtx5090ProfileId = "geforce-rtx-5090";
     public const string RtxSparkN1XProfileId = "rtx-spark-n1x";
+    public const string MemoryQualifiedX64ProfileId = "memory-qualified-nvidia-x64";
+    public const string MemoryQualifiedArm64ProfileId = "memory-qualified-nvidia-arm64";
 
     private static readonly ReadOnlyCollection<SupportedHardwareProfile> s_profiles = Array.AsReadOnly(
         new[]
@@ -83,9 +89,27 @@ public static class SupportedHardwareProfiles
                     "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
                 ],
                 usesSharedGpuMemory: true),
+            Profile(
+                MemoryQualifiedX64ProfileId,
+                "24,000 MiB NVIDIA GPU (x64)",
+                Architecture.X64,
+                LlamaRuntimeCatalog.X64RuntimeId,
+                [],
+                isMemoryQualifiedFallback: true),
+            Profile(
+                MemoryQualifiedArm64ProfileId,
+                "24,000 MiB NVIDIA GPU (ARM64)",
+                Architecture.Arm64,
+                LlamaRuntimeCatalog.Arm64RuntimeId,
+                [],
+                isMemoryQualifiedFallback: true),
         });
 
     public static IReadOnlyList<SupportedHardwareProfile> Profiles => s_profiles;
+
+    public static SupportedHardwareProfile? FindMemoryQualifiedFallback(Architecture architecture) =>
+        s_profiles.SingleOrDefault(
+            profile => profile.Architecture == architecture && profile.IsMemoryQualifiedFallback);
 
     public static SupportedHardwareProfile? Find(Architecture architecture, string? reportedGpuName)
     {
@@ -127,7 +151,8 @@ public static class SupportedHardwareProfiles
         Architecture architecture,
         string runtimeId,
         string[] reportedGpuNames,
-        bool usesSharedGpuMemory = false) =>
+        bool usesSharedGpuMemory = false,
+        bool isMemoryQualifiedFallback = false) =>
         new(
             id,
             displayName,
@@ -135,5 +160,6 @@ public static class SupportedHardwareProfiles
             runtimeId,
             reportedGpuNames,
             LocalInferenceCatalogProvenance.NvidiaCair,
-            usesSharedGpuMemory);
+            usesSharedGpuMemory,
+            isMemoryQualifiedFallback);
 }

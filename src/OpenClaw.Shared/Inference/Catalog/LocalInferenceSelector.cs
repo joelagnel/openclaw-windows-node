@@ -58,9 +58,10 @@ public sealed record LocalInferenceSelectionResult
 }
 
 /// <summary>
-/// Pure selection from a hardware snapshot and optional model ID. Model-fit
-/// eligibility is intentionally separate: this selector does not infer an
-/// unqualified memory threshold or silently downgrade an explicit choice.
+/// Pure selection from a hardware snapshot and optional model ID. Qualified
+/// names are preferred; otherwise a supported architecture may use the
+/// documented minimum NVIDIA memory threshold. Model-fit eligibility remains
+/// separate and explicit model choices are never silently downgraded.
 /// </summary>
 public static class LocalInferenceSelector
 {
@@ -109,6 +110,8 @@ public static class LocalInferenceSelector
         string[] reportedNvidiaNames = hardware.NvidiaGpus.Select(gpu => gpu.Name).ToArray();
         foreach (SupportedHardwareProfile candidate in SupportedHardwareProfiles.Profiles)
         {
+            if (candidate.IsMemoryQualifiedFallback)
+                continue;
             if (candidate.Architecture != hardware.CpuArchitecture)
                 continue;
             if (reportedNvidiaNames.Any(
@@ -118,8 +121,13 @@ public static class LocalInferenceSelector
             }
         }
 
-        return null;
+        return hardware.NvidiaGpus.Any(IsMemoryQualifiedFallbackCandidate)
+            ? SupportedHardwareProfiles.FindMemoryQualifiedFallback(hardware.CpuArchitecture)
+            : null;
     }
+
+    internal static bool IsMemoryQualifiedFallbackCandidate(GpuInfo gpu) =>
+        gpu.GpuVisibleMemoryBytes is >= LocalInferenceEligibility.MinimumQualifiedGpuMemoryBytes;
 
     private static bool HasQualifiedGpuNameOnAnotherArchitecture(HostHardwareInfo hardware)
     {

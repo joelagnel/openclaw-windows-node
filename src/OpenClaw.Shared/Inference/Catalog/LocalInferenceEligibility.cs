@@ -58,9 +58,11 @@ public static class LocalInferenceEligibility
         }
 
         LocalInferencePlan plan = selection.Plan;
-        GpuInfo? gpu = hardware.NvidiaGpus.FirstOrDefault(
-            candidate => SupportedHardwareProfiles.Find(hardware.CpuArchitecture, candidate.Name)?.Id ==
-                plan.HardwareProfile.Id);
+        GpuInfo? gpu = plan.HardwareProfile.IsMemoryQualifiedFallback
+            ? hardware.NvidiaGpus.FirstOrDefault(LocalInferenceSelector.IsMemoryQualifiedFallbackCandidate)
+            : hardware.NvidiaGpus.FirstOrDefault(
+                candidate => SupportedHardwareProfiles.Find(hardware.CpuArchitecture, candidate.Name)?.Id ==
+                    plan.HardwareProfile.Id);
         if (gpu is null ||
             string.IsNullOrWhiteSpace(gpu.StableId) ||
             gpu.GpuVisibleMemoryBytes is not > 0 ||

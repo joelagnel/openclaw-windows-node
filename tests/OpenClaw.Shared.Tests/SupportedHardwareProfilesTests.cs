@@ -82,6 +82,97 @@ public class SupportedHardwareProfilesTests
         Assert.Equal(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, result.FailureCode);
     }
 
+    [Theory]
+    [InlineData(
+        System.Runtime.InteropServices.Architecture.X64,
+        SupportedHardwareProfiles.MemoryQualifiedX64ProfileId)]
+    [InlineData(
+        System.Runtime.InteropServices.Architecture.Arm64,
+        SupportedHardwareProfiles.MemoryQualifiedArm64ProfileId)]
+    public void Evaluate_UsesMemoryQualifiedFallbackForUnknownNvidiaGpu(
+        System.Runtime.InteropServices.Architecture architecture,
+        string expectedProfileId)
+    {
+        var hardware = new HostHardwareInfo(
+            architecture,
+            TotalPhysicalMemoryBytes: 64 * Gibibyte,
+            AvailablePhysicalMemoryBytes: 48 * Gibibyte,
+            Gpus:
+            [
+                new GpuInfo(
+                    GpuVendor.Nvidia,
+                    "JMJWOA-Generic-GPU",
+                    GpuVisibleMemoryBytes: LocalInferenceEligibility.MinimumQualifiedGpuMemoryBytes,
+                    FreeGpuVisibleMemoryBytes: LocalInferenceEligibility.MinimumQualifiedGpuMemoryBytes,
+                    DriverVersion: "616.30",
+                    CudaMajorVersion: 13,
+                    StableId: "GPU-123"),
+            ],
+            VulkanAvailable: false);
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
+        Assert.Equal(expectedProfileId, result.Plan?.HardwareProfile.Id);
+        Assert.Equal("GPU-123", result.SelectedGpu?.StableId);
+    }
+
+    [Fact]
+    public void Evaluate_RejectsUnknownNvidiaGpuBelowMemoryFallbackThreshold()
+    {
+        var hardware = new HostHardwareInfo(
+            System.Runtime.InteropServices.Architecture.Arm64,
+            TotalPhysicalMemoryBytes: 64 * Gibibyte,
+            AvailablePhysicalMemoryBytes: 48 * Gibibyte,
+            Gpus:
+            [
+                new GpuInfo(
+                    GpuVendor.Nvidia,
+                    "JMJWOA-Generic-GPU",
+                    GpuVisibleMemoryBytes: LocalInferenceEligibility.MinimumQualifiedGpuMemoryBytes - 1,
+                    FreeGpuVisibleMemoryBytes: LocalInferenceEligibility.MinimumQualifiedGpuMemoryBytes - 1,
+                    DriverVersion: "616.30",
+                    CudaMajorVersion: 13,
+                    StableId: "GPU-123"),
+            ],
+            VulkanAvailable: false);
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+
+        Assert.Equal(LocalInferenceEligibilityFailureCode.CatalogSelectionFailed, result.FailureCode);
+        Assert.Equal(LocalInferenceSelectionFailureCode.UnsupportedGpu, result.SelectionFailureCode);
+    }
+
+    [Fact]
+    public void Evaluate_AppliesDriverRequirementAfterMemoryQualifiedFallback()
+    {
+        var hardware = new HostHardwareInfo(
+            System.Runtime.InteropServices.Architecture.Arm64,
+            TotalPhysicalMemoryBytes: 64 * Gibibyte,
+            AvailablePhysicalMemoryBytes: 48 * Gibibyte,
+            Gpus:
+            [
+                new GpuInfo(
+                    GpuVendor.Nvidia,
+                    "JMJWOA-Generic-GPU",
+                    GpuVisibleMemoryBytes: 24_512L * 1024 * 1024,
+                    FreeGpuVisibleMemoryBytes: 23_279L * 1024 * 1024,
+                    DriverVersion: "592.22",
+                    CudaMajorVersion: 13,
+                    StableId: "GPU-123"),
+            ],
+            VulkanAvailable: false);
+
+        LocalInferenceSelectionResult selection = LocalInferenceSelector.Select(hardware);
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+
+        Assert.Equal(LocalInferenceEligibilityFailureCode.DriverTooOld, result.FailureCode);
+        Assert.Equal(
+            SupportedHardwareProfiles.MemoryQualifiedArm64ProfileId,
+            selection.Plan?.HardwareProfile.Id);
+        Assert.Equal("GPU-123", result.SelectedGpu?.StableId);
+    }
+
     [Fact]
     public void Probe_JoinsSparkN1XNvmlAndDxgiNamesWithDifferentCoreCountSuffixes()
     {

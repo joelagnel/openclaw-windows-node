@@ -9,7 +9,7 @@ using OpenClaw.Shared.Inference.Catalog;
 namespace OpenClaw.SetupEngine;
 
 /// <summary>
-/// Selects one qualified SKU/runtime/model plan before setup mutates WSL,
+/// Selects one qualified NVIDIA GPU/runtime/model plan before setup mutates WSL,
 /// downloads artifacts, or changes gateway configuration.
 /// </summary>
 public sealed class PreflightLocalAiHardwareStep : SetupStep

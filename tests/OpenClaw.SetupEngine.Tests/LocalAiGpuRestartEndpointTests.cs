@@ -46,7 +46,8 @@ public sealed class LocalAiGpuRestartEndpointTests
                 TotalLayers: 42,
                 TotalGpuVisibleBytes: 48L * 1024 * 1024 * 1024,
                 FreeGpuVisibleBytesBeforeLoad: 40L * 1024 * 1024 * 1024,
-                FreeGpuVisibleBytesAfterLoad: 16L * 1024 * 1024 * 1024)),
+                FreeGpuVisibleBytesAfterLoad: 16L * 1024 * 1024 * 1024,
+                CudaModelBufferBytes: null)),
             (_, _) => Task.FromResult<LocalAiResolvedInstall?>(
                 durableReceiptUsesRestartedEndpoint ? restartedInstall : originalInstall));
 

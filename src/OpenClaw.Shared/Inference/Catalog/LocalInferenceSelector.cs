@@ -13,8 +13,8 @@ public enum LocalInferenceSelectionStatus
 public enum LocalInferenceSelectionFailureCode
 {
     None = 0,
-    UnsupportedArchitecture = 1,
-    UnsupportedGpu = 2,
+    RuntimeUnavailable = 1,
+    NoNvidiaGpu = 2,
     UnknownModel = 3,
 }
 
@@ -27,7 +27,6 @@ public enum LocalInferenceModelSelectionOrigin
 
 /// <summary>A complete, immutable native inference choice.</summary>
 public sealed record LocalInferencePlan(
-    SupportedHardwareProfile HardwareProfile,
     LlamaRuntimeVariant Runtime,
     LocalModelInfo Model,
     LocalInferenceModelSelectionOrigin ModelSelectionOrigin);
@@ -58,9 +57,9 @@ public sealed record LocalInferenceSelectionResult
 }
 
 /// <summary>
-/// Pure selection from a hardware snapshot and optional model ID. Model-fit
-/// eligibility is intentionally separate: this selector does not infer an
-/// unqualified memory threshold or silently downgrade an explicit choice.
+/// Pure selection from a hardware snapshot and optional model ID. The CPU
+/// architecture chooses only the native runtime. GPU names and CPU/GPU SKU
+/// pairings are not part of qualification.
 /// </summary>
 public static class LocalInferenceSelector
 {
@@ -70,24 +69,25 @@ public static class LocalInferenceSelector
     {
         ArgumentNullException.ThrowIfNull(hardware);
 
-        if (hardware.CpuArchitecture is not (Architecture.X64 or Architecture.Arm64))
+        LlamaRuntimeVariant? runtime = LlamaRuntimeCatalog.Find(hardware.CpuArchitecture);
+        if (runtime is null)
             return LocalInferenceSelectionResult.Unsupported(
-                LocalInferenceSelectionFailureCode.UnsupportedArchitecture);
+                LocalInferenceSelectionFailureCode.RuntimeUnavailable);
 
-        SupportedHardwareProfile? profile = FindPreferredProfile(hardware);
-        if (profile is null)
-        {
-            LocalInferenceSelectionFailureCode failureCode = HasQualifiedGpuNameOnAnotherArchitecture(hardware)
-                ? LocalInferenceSelectionFailureCode.UnsupportedArchitecture
-                : LocalInferenceSelectionFailureCode.UnsupportedGpu;
-            return LocalInferenceSelectionResult.Unsupported(failureCode);
-        }
+        if (!hardware.HasNvidiaGpu)
+            return LocalInferenceSelectionResult.Unsupported(LocalInferenceSelectionFailureCode.NoNvidiaGpu);
 
         LocalModelInfo? model;
         LocalInferenceModelSelectionOrigin modelSelectionOrigin;
         if (string.IsNullOrWhiteSpace(requestedModelId))
         {
-            model = LocalModelCatalog.Default;
+            model = LocalModelCatalog.Models
+                .OrderByDescending(candidate => candidate.Weights.SizeBytes)
+                .FirstOrDefault(candidate => hardware.NvidiaGpus.Any(gpu =>
+                    LocalInferenceQualificationPolicy.HasRuntimePrerequisites(gpu, runtime) &&
+                    LocalInferenceQualificationPolicy.GetEffectiveTotalMemoryBytes(gpu) >=
+                        LocalInferenceQualificationPolicy.GetRequiredMemoryBytes(candidate)))
+                ?? LocalModelCatalog.Models.OrderBy(candidate => candidate.Weights.SizeBytes).First();
             modelSelectionOrigin = LocalInferenceModelSelectionOrigin.Default;
         }
         else
@@ -98,35 +98,49 @@ public static class LocalInferenceSelector
             modelSelectionOrigin = LocalInferenceModelSelectionOrigin.Explicit;
         }
 
-        LlamaRuntimeVariant runtime = LlamaRuntimeCatalog.Variants.Single(
-            candidate => string.Equals(candidate.Id, profile.RuntimeId, StringComparison.Ordinal));
         return LocalInferenceSelectionResult.Selected(
-            new LocalInferencePlan(profile, runtime, model, modelSelectionOrigin));
+            new LocalInferencePlan(runtime, model, modelSelectionOrigin));
     }
+}
 
-    private static SupportedHardwareProfile? FindPreferredProfile(HostHardwareInfo hardware)
+internal static class LocalInferenceQualificationPolicy
+{
+    public const long CapacityMarginBytes = 2L * 1024 * 1024 * 1024;
+
+    public static bool HasCompleteFacts(GpuInfo gpu) =>
+        IsStableGpuId(gpu.StableId) &&
+        gpu.GpuVisibleMemoryBytes is > 0 &&
+        !string.IsNullOrWhiteSpace(gpu.DriverVersion) &&
+        gpu.CudaMajorVersion is not null;
+
+    public static bool HasRuntimePrerequisites(GpuInfo gpu, LlamaRuntimeVariant runtime)
     {
-        string[] reportedNvidiaNames = hardware.NvidiaGpus.Select(gpu => gpu.Name).ToArray();
-        foreach (SupportedHardwareProfile candidate in SupportedHardwareProfiles.Profiles)
-        {
-            if (candidate.Architecture != hardware.CpuArchitecture)
-                continue;
-            if (reportedNvidiaNames.Any(
-                name => SupportedHardwareProfiles.Find(hardware.CpuArchitecture, name)?.Id == candidate.Id))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        ArgumentNullException.ThrowIfNull(gpu);
+        ArgumentNullException.ThrowIfNull(runtime);
+        return HasCompleteFacts(gpu) &&
+            Version.TryParse(gpu.DriverVersion, out Version? driverVersion) &&
+            driverVersion >= LocalInferenceEligibility.MinimumNvidiaDriverVersion &&
+            gpu.CudaMajorVersion >= runtime.CudaVersion.Major;
     }
 
-    private static bool HasQualifiedGpuNameOnAnotherArchitecture(HostHardwareInfo hardware)
+    public static long GetRequiredMemoryBytes(LocalModelInfo model)
     {
-        Architecture otherArchitecture = hardware.CpuArchitecture == Architecture.X64
-            ? Architecture.Arm64
-            : Architecture.X64;
-        return hardware.NvidiaGpus.Any(
-            gpu => SupportedHardwareProfiles.Find(otherArchitecture, gpu.Name) is not null);
+        ArgumentNullException.ThrowIfNull(model);
+        return SaturatingAdd(model.Weights.SizeBytes, CapacityMarginBytes);
     }
+
+    public static long GetEffectiveTotalMemoryBytes(GpuInfo gpu) =>
+        gpu.GpuVisibleMemoryBytes is not > 0
+            ? 0
+            : gpu.GpuVisibleMemoryBytes.Value;
+
+    public static long? GetEffectiveFreeMemoryBytes(GpuInfo gpu) =>
+        gpu.FreeGpuVisibleMemoryBytes is >= 0 ? gpu.FreeGpuVisibleMemoryBytes : null;
+
+    private static bool IsStableGpuId(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character));
+
+    public static long SaturatingAdd(long left, long right) =>
+        right > long.MaxValue - left ? long.MaxValue : left + right;
 }

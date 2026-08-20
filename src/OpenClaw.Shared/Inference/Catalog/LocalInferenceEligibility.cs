@@ -23,6 +23,8 @@ public sealed record LocalInferenceEligibilityResult(
     LocalInferenceSelectionFailureCode SelectionFailureCode,
     LocalInferencePlan? Plan,
     GpuInfo? SelectedGpu,
+    long RequiredTotalMemoryBytes,
+    long? DetectedTotalMemoryBytes,
     long RequiredFreeMemoryBytes,
     long? AvailableFreeMemoryBytes)
 {
@@ -32,16 +34,17 @@ public sealed record LocalInferenceEligibilityResult(
 }
 
 /// <summary>
-/// Applies the measured first-release capacity and driver guardrails after the
-/// pure SKU/model catalog selection. Total GPU-visible memory is stable
-/// capacity. Free GPU-visible memory is launch readiness and never changes the
-/// selected model automatically.
+/// Applies the pinned model capacity, driver, and CUDA guardrails after catalog
+/// selection. Total GPU memory is stable capacity. Free GPU memory is launch
+/// readiness and never changes the selected model automatically.
 /// </summary>
 public static class LocalInferenceEligibility
 {
-    public const long MinimumQualifiedGpuMemoryMiB = 24_000;
-    public const long MinimumQualifiedGpuMemoryBytes = MinimumQualifiedGpuMemoryMiB * 1024 * 1024;
+    public const long ModelCapacityMarginBytes = LocalInferenceQualificationPolicy.CapacityMarginBytes;
     public static Version MinimumNvidiaDriverVersion { get; } = new(615, 0);
+
+    public static long GetRequiredMemoryBytes(LocalModelInfo model) =>
+        LocalInferenceQualificationPolicy.GetRequiredMemoryBytes(model);
 
     public static LocalInferenceEligibilityResult Evaluate(
         HostHardwareInfo hardware,
@@ -58,51 +61,30 @@ public static class LocalInferenceEligibility
         }
 
         LocalInferencePlan plan = selection.Plan;
-        GpuInfo? gpu = hardware.NvidiaGpus.FirstOrDefault(
-            candidate => SupportedHardwareProfiles.Find(hardware.CpuArchitecture, candidate.Name)?.Id ==
-                plan.HardwareProfile.Id);
-        if (gpu is null ||
-            string.IsNullOrWhiteSpace(gpu.StableId) ||
-            gpu.GpuVisibleMemoryBytes is not > 0 ||
-            string.IsNullOrWhiteSpace(gpu.DriverVersion) ||
-            gpu.CudaMajorVersion is null)
-        {
+        long requiredMemoryBytes = GetRequiredMemoryBytes(plan.Model);
+        CandidateAssessment? selected = hardware.NvidiaGpus
+            .Select(gpu => Assess(gpu, plan.Runtime, requiredMemoryBytes))
+            .OrderBy(candidate => StatusRank(candidate.Status))
+            .ThenByDescending(candidate => candidate.FreeMemoryBytes.HasValue)
+            .ThenByDescending(candidate => candidate.FreeMemoryBytes ?? long.MinValue)
+            .ThenByDescending(candidate => candidate.TotalMemoryBytes)
+            .ThenBy(candidate => candidate.Gpu.StableId ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Gpu.Name, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        if (selected is null)
             return Unsupported(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete);
-        }
-
-        long totalEligibleMemoryBytes = GetEffectiveGpuMemoryBytes(
-            gpu.GpuVisibleMemoryBytes.Value,
-            gpu.SharedGpuMemoryBytes,
-            plan.HardwareProfile.UsesSharedGpuMemory);
-        if (totalEligibleMemoryBytes < MinimumQualifiedGpuMemoryBytes)
-            return Unsupported(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, selectedGpu: gpu);
-
-        if (!Version.TryParse(gpu.DriverVersion, out Version? driverVersion) ||
-            driverVersion < MinimumNvidiaDriverVersion)
-        {
-            return Unsupported(LocalInferenceEligibilityFailureCode.DriverTooOld, selectedGpu: gpu);
-        }
-
-        if (gpu.CudaMajorVersion < plan.Runtime.CudaVersion.Major)
-            return Unsupported(LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow, selectedGpu: gpu);
-
-        long requiredFreeMemoryBytes = plan.Model.Weights.SizeBytes;
-        long? availableFreeMemoryBytes = GetAvailableGpuMemoryBytes(
-            gpu,
-            plan.HardwareProfile.UsesSharedGpuMemory);
-        LocalInferenceEligibilityStatus status =
-            availableFreeMemoryBytes is not null && availableFreeMemoryBytes < requiredFreeMemoryBytes
-                ? LocalInferenceEligibilityStatus.EligibleButBusy
-                : LocalInferenceEligibilityStatus.Eligible;
 
         return new LocalInferenceEligibilityResult(
-            status,
-            LocalInferenceEligibilityFailureCode.None,
+            selected.Status,
+            selected.FailureCode,
             LocalInferenceSelectionFailureCode.None,
             plan,
-            gpu,
-            requiredFreeMemoryBytes,
-            availableFreeMemoryBytes);
+            selected.Gpu,
+            requiredMemoryBytes,
+            selected.TotalMemoryBytes > 0 ? selected.TotalMemoryBytes : null,
+            requiredMemoryBytes,
+            selected.FreeMemoryBytes);
     }
 
     private static LocalInferenceEligibilityResult Unsupported(
@@ -116,36 +98,89 @@ public static class LocalInferenceEligibility
             null,
             selectedGpu,
             0,
-            selectedGpu?.FreeGpuVisibleMemoryBytes);
+            selectedGpu is null ? null : LocalInferenceQualificationPolicy.GetEffectiveTotalMemoryBytes(selectedGpu),
+            0,
+            selectedGpu is null ? null : LocalInferenceQualificationPolicy.GetEffectiveFreeMemoryBytes(selectedGpu));
 
-    private static long GetEffectiveGpuMemoryBytes(
-        long gpuMemoryBytes,
-        long? sharedGpuMemoryBytes,
-        bool usesSharedGpuMemory)
+    private static CandidateAssessment Assess(
+        GpuInfo gpu,
+        LlamaRuntimeVariant runtime,
+        long requiredMemoryBytes)
     {
-        if (!usesSharedGpuMemory || sharedGpuMemoryBytes is not > 0)
-            return gpuMemoryBytes;
-
-        return sharedGpuMemoryBytes.Value > long.MaxValue - gpuMemoryBytes
-            ? long.MaxValue
-            : gpuMemoryBytes + sharedGpuMemoryBytes.Value;
-    }
-
-    private static long? GetAvailableGpuMemoryBytes(GpuInfo gpu, bool usesSharedGpuMemory)
-    {
-        if (gpu.FreeGpuVisibleMemoryBytes is not { } freeGpuMemoryBytes)
-            return null;
-
-        if (usesSharedGpuMemory &&
-            gpu.SharedGpuMemoryBytes is > 0 &&
-            gpu.FreeSharedGpuMemoryBytes is null)
+        long totalMemoryBytes = LocalInferenceQualificationPolicy.GetEffectiveTotalMemoryBytes(gpu);
+        long? freeMemoryBytes = LocalInferenceQualificationPolicy.GetEffectiveFreeMemoryBytes(gpu);
+        if (!LocalInferenceQualificationPolicy.HasCompleteFacts(gpu))
         {
-            return null;
+            return UnsupportedCandidate(
+                gpu,
+                LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete,
+                totalMemoryBytes,
+                freeMemoryBytes);
         }
 
-        return GetEffectiveGpuMemoryBytes(
-            freeGpuMemoryBytes,
-            gpu.FreeSharedGpuMemoryBytes,
-            usesSharedGpuMemory);
+        if (!Version.TryParse(gpu.DriverVersion, out Version? driverVersion) ||
+            driverVersion < MinimumNvidiaDriverVersion)
+        {
+            return UnsupportedCandidate(
+                gpu,
+                LocalInferenceEligibilityFailureCode.DriverTooOld,
+                totalMemoryBytes,
+                freeMemoryBytes);
+        }
+
+        if (gpu.CudaMajorVersion < runtime.CudaVersion.Major)
+        {
+            return UnsupportedCandidate(
+                gpu,
+                LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow,
+                totalMemoryBytes,
+                freeMemoryBytes);
+        }
+
+        if (totalMemoryBytes < requiredMemoryBytes)
+        {
+            return UnsupportedCandidate(
+                gpu,
+                LocalInferenceEligibilityFailureCode.InsufficientGpuMemory,
+                totalMemoryBytes,
+                freeMemoryBytes);
+        }
+
+        LocalInferenceEligibilityStatus status =
+            freeMemoryBytes is not null && freeMemoryBytes < requiredMemoryBytes
+                ? LocalInferenceEligibilityStatus.EligibleButBusy
+                : LocalInferenceEligibilityStatus.Eligible;
+        return new CandidateAssessment(
+            gpu,
+            status,
+            LocalInferenceEligibilityFailureCode.None,
+            totalMemoryBytes,
+            freeMemoryBytes);
     }
+
+    private static CandidateAssessment UnsupportedCandidate(
+        GpuInfo gpu,
+        LocalInferenceEligibilityFailureCode failureCode,
+        long totalMemoryBytes,
+        long? freeMemoryBytes) =>
+        new(
+            gpu,
+            LocalInferenceEligibilityStatus.Unsupported,
+            failureCode,
+            totalMemoryBytes,
+            freeMemoryBytes);
+
+    private static int StatusRank(LocalInferenceEligibilityStatus status) => status switch
+    {
+        LocalInferenceEligibilityStatus.Eligible => 0,
+        LocalInferenceEligibilityStatus.EligibleButBusy => 1,
+        _ => 2,
+    };
+
+    private sealed record CandidateAssessment(
+        GpuInfo Gpu,
+        LocalInferenceEligibilityStatus Status,
+        LocalInferenceEligibilityFailureCode FailureCode,
+        long TotalMemoryBytes,
+        long? FreeMemoryBytes);
 }

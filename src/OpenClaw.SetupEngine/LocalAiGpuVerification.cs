@@ -291,10 +291,7 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
                     "llama-server loaded CUDA from outside the managed runtime directory.");
             }
             long minimumDelta = Math.Max(512L * 1024 * 1024, plan.Model.Weights.SizeBytes / 2);
-            if (!HasRequiredGpuLoadEvidence(
-                    evidence,
-                    plan.HardwareProfile.UsesSharedGpuMemory,
-                    minimumDelta))
+            if (!HasRequiredGpuLoadEvidence(evidence, minimumDelta))
             {
                 throw new InvalidDataException(
                     "The selected model did not produce the required full-offload GPU memory evidence.");
@@ -354,7 +351,6 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
 
     internal static bool HasRequiredGpuLoadEvidence(
         LocalAiGpuLoadEvidence evidence,
-        bool usesSharedGpuMemory,
         long minimumDeltaBytes)
     {
         ArgumentNullException.ThrowIfNull(evidence);
@@ -364,8 +360,7 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
         if (evidence.LoadDeltaBytes >= minimumDeltaBytes)
             return true;
 
-        return usesSharedGpuMemory &&
-            evidence.CudaModelBufferBytes is { } cudaModelBufferBytes &&
+        return evidence.CudaModelBufferBytes is { } cudaModelBufferBytes &&
             cudaModelBufferBytes >= minimumDeltaBytes;
     }
 }

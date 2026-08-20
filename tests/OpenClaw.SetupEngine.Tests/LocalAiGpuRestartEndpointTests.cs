@@ -121,7 +121,6 @@ public sealed class LocalAiGpuRestartEndpointTests
         {
             EngineVersion = "b10488",
             Architecture = "arm64",
-            HardwareProfileId = "nvidia-spark-arm64",
             RuntimeId = "llama-server-b10488-win-arm64-cuda13",
             ModelCatalogId = model.Id,
             SelectedGpuId = "GPU-SPARK",

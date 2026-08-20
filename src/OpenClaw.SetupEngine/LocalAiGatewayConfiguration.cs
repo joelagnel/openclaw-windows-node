@@ -100,6 +100,12 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
 
     public override async Task RollbackAsync(SetupContext ctx, CancellationToken ct)
     {
+        if (ctx.IsUninstalling)
+        {
+            await RemoveManagedStateForUninstallAsync(ctx, ct).ConfigureAwait(false);
+            return;
+        }
+
         if (ctx.LocalAiGatewayPriorState is not { } prior)
             return;
 
@@ -153,6 +159,70 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
             if (result.ExitCode != 0 || result.TimedOut)
                 ctx.Logger.Warn("Removing setup-created Local AI gateway settings failed.");
         }
+    }
+
+    private static async Task RemoveManagedStateForUninstallAsync(
+        SetupContext ctx,
+        CancellationToken ct)
+    {
+        LocalAiResolvedInstall? install = ctx.LocalAiResolvedInstall;
+        if (install is null)
+        {
+            install = await new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir))
+                .LoadAsync(ct)
+                .ConfigureAwait(false);
+        }
+        if (install is null)
+            return;
+
+        CommandResult currentResult = await CaptureStateAsync(ctx, ct).ConfigureAwait(false);
+        if (currentResult.ExitCode != 0 || currentResult.TimedOut)
+        {
+            throw new IOException(
+                "Could not safely inspect the managed Local AI gateway configuration during uninstall.");
+        }
+
+        LocalAiGatewayPriorState current = ParseSnapshot(currentResult.Stdout);
+        if (!current.ProviderExisted && !current.PrimaryModelExisted)
+            return;
+        if (install.Endpoint is null)
+        {
+            throw new InvalidDataException(
+                "The Local AI manifest has no verified endpoint, so existing gateway settings cannot be proven app-owned.");
+        }
+
+        string expectedProvider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        string expectedPrimary = JsonSerializer.Serialize(
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        if ((current.ProviderExisted && !JsonEquals(current.ProviderJson!, expectedProvider)) ||
+            (current.PrimaryModelExisted && !JsonEquals(current.PrimaryModelJson!, expectedPrimary)))
+        {
+            throw new InvalidDataException(
+                "Local AI gateway settings changed after setup; preserving them instead of removing unproven values.");
+        }
+
+        var unset = new List<string>(capacity: 2);
+        if (current.PrimaryModelExisted)
+            unset.Add($"openclaw config unset {LocalAiGatewayConfigBuilder.PrimaryModelPath}");
+        if (current.ProviderExisted)
+            unset.Add($"openclaw config unset {LocalAiGatewayConfigBuilder.ProviderPath}");
+
+        string script = $"set -e\n{ctx.WslPathPrefix}\n{string.Join("\n", unset)}\necho LOCAL_AI_GATEWAY_UNSET";
+        CommandResult result = await ctx.Commands.RunInWslAsync(
+            ctx.DistroName!, script, TimeSpan.FromMinutes(2), ct: ct,
+            user: ctx.Config.Wsl.User, inputViaStdin: true);
+        if (result.ExitCode != 0 || result.TimedOut ||
+            !result.Stdout.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal))
+        {
+            throw new IOException("Removing the managed Local AI gateway settings failed.");
+        }
+
+        CommandResult verifiedResult = await CaptureStateAsync(ctx, ct).ConfigureAwait(false);
+        if (verifiedResult.ExitCode != 0 || verifiedResult.TimedOut)
+            throw new IOException("Could not verify Local AI gateway removal during uninstall.");
+        LocalAiGatewayPriorState verified = ParseSnapshot(verifiedResult.Stdout);
+        if (verified.ProviderExisted || verified.PrimaryModelExisted)
+            throw new IOException("Managed Local AI gateway settings remained after uninstall cleanup.");
     }
 
     private static Task<CommandResult> CaptureStateAsync(SetupContext ctx, CancellationToken ct)

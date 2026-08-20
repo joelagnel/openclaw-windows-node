@@ -4,7 +4,6 @@ using OpenClaw.Shared;
 using OpenClaw.Shared.Inference.Catalog;
 using OpenClawTray.Services;
 using System.Collections.Immutable;
-using System.Text.Json;
 
 namespace OpenClaw.Tray.Tests;
 
@@ -26,11 +25,25 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     [Fact]
+    public async Task Quiesce_AcceptsCliRedactedManagedApiKey()
+    {
+        LocalAiResolvedInstall install = Install(28_765);
+        string observed = RedactApiKey(LocalAiGatewayProviderDefinition.BuildProviderJson(install));
+        var commands = new FakeWslCommandRunner(observed);
+        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.True(result.Success);
+        Assert.Null(commands.ProviderJson);
+    }
+
+    [Fact]
     public async Task Quiesce_PreservesProviderDriftAndFailsClosed()
     {
         LocalAiResolvedInstall install = Install(28_765);
         string drifted = LocalAiGatewayProviderDefinition.BuildProviderJson(install)
-            .Replace("llama-local", "user-owned-key", StringComparison.Ordinal);
+            .Replace("28765", "39876", StringComparison.Ordinal);
         var commands = new FakeWslCommandRunner(drifted);
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
@@ -48,14 +61,14 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         string expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
         var commands = new FakeWslCommandRunner(providerJson: null)
         {
-            ProviderAfterApply = expected,
+            ProviderAfterApply = RedactApiKey(expected),
         };
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
         LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
 
         Assert.True(result.Success);
-        Assert.True(JsonEqual(expected, commands.ProviderJson!));
+        Assert.True(LocalAiGatewayProviderDefinition.MatchesProviderJson(commands.ProviderJson!, install));
         IReadOnlyList<string> apply = Assert.Single(commands.Calls, call => call.Contains("/bin/sh"));
         string script = apply[^1];
         Assert.Contains("--dry-run", script, StringComparison.Ordinal);
@@ -145,12 +158,10 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         return new(manifest, "llama-server.exe", "model.gguf", endpoint);
     }
 
-    private static bool JsonEqual(string left, string right)
-    {
-        using JsonDocument leftDocument = JsonDocument.Parse(left);
-        using JsonDocument rightDocument = JsonDocument.Parse(right);
-        return JsonElement.DeepEquals(leftDocument.RootElement, rightDocument.RootElement);
-    }
+    private static string RedactApiKey(string value) => value.Replace(
+        "llama-local",
+        LocalAiGatewayProviderDefinition.CliRedactedApiKey,
+        StringComparison.Ordinal);
 
     private sealed class FakeWslCommandRunner(string? providerJson) : IWslCommandRunner
     {

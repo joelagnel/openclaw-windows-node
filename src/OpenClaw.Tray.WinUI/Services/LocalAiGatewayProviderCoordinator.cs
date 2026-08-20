@@ -41,16 +41,15 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         if (!current.Exists)
             return LocalAiEndpointLifecycleResult.Ok();
 
-        string expected;
         try
         {
-            expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+            _ = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
             return Failed(ex.Message);
         }
-        if (!JsonEquals(current.Json!, expected))
+        if (!LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install))
             return Failed("The llamacpp provider was changed outside the companion; preserving it and refusing to cycle the managed endpoint.");
 
         WslCommandResult unset = await RunOpenClawAsync(
@@ -71,11 +70,9 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(install);
-        string expected;
         string batch;
         try
         {
-            expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
             batch = LocalAiGatewayProviderDefinition.BuildProviderBatchJson(install);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
@@ -88,7 +85,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
             return Failed(current.Detail ?? "The managed Local AI provider could not be inspected.");
         if (current.Exists)
         {
-            return JsonEquals(current.Json!, expected)
+            return LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install)
                 ? LocalAiEndpointLifecycleResult.Ok()
                 : Failed("The llamacpp provider was changed outside the companion; preserving it instead of publishing the managed endpoint.");
         }
@@ -105,7 +102,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         if (!applied.Success)
         {
             LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
-                    expected,
+                    install,
                     cancellationToken)
                 .ConfigureAwait(false);
             return PublicationFailed(
@@ -114,10 +111,11 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         }
 
         ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
-        if (!verified.Success || !verified.Exists || !JsonEquals(verified.Json!, expected))
+        if (!verified.Success || !verified.Exists ||
+            !LocalAiGatewayProviderDefinition.MatchesProviderJson(verified.Json!, install))
         {
             LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
-                    expected,
+                    install,
                     cancellationToken)
                 .ConfigureAwait(false);
             return PublicationFailed(
@@ -128,7 +126,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
     }
 
     private async Task<LocalAiEndpointLifecycleResult> RemoveExactPublishedProviderAsync(
-        string expected,
+        LocalAiResolvedInstall install,
         CancellationToken cancellationToken)
     {
         ProviderCapture current = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
@@ -139,7 +137,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         }
         if (!current.Exists)
             return LocalAiEndpointLifecycleResult.Ok();
-        if (!JsonEquals(current.Json!, expected))
+        if (!LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install))
         {
             return LocalAiEndpointLifecycleResult.Failed(
                 "The provider changed during publication, so cleanup preserved the unproven value.");
@@ -224,20 +222,6 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
     {
         _logger.Warn(detail);
         return LocalAiEndpointLifecycleResult.Failed(detail);
-    }
-
-    private static bool JsonEquals(string left, string right)
-    {
-        try
-        {
-            using JsonDocument leftDocument = JsonDocument.Parse(left);
-            using JsonDocument rightDocument = JsonDocument.Parse(right);
-            return JsonElement.DeepEquals(leftDocument.RootElement, rightDocument.RootElement);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 
     private sealed record ProviderCapture(bool Success, bool Exists, string? Json, string? Detail);

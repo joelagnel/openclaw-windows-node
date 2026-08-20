@@ -4,23 +4,27 @@ using OpenClaw.Shared;
 using OpenClaw.Shared.Inference.Catalog;
 using OpenClawTray.Services;
 using System.Collections.Immutable;
+using System.Text.Json;
 
 namespace OpenClaw.Tray.Tests;
 
 public sealed class LocalAiGatewayProviderCoordinatorTests
 {
     [Fact]
-    public async Task Quiesce_RemovesOnlyExactManagedProvider()
+    public async Task Quiesce_RemovesExactManagedRouteWhenNoFallbackExists()
     {
         LocalAiResolvedInstall install = Install(28_765);
         string expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
-        var commands = new FakeWslCommandRunner(expected);
+        var commands = new FakeWslCommandRunner(
+            expected,
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
         Assert.True(result.Success);
         Assert.Null(commands.ProviderJson);
+        Assert.Null(commands.PrimaryModel);
         Assert.Contains(commands.Calls, call => call.Contains("unset"));
     }
 
@@ -29,13 +33,16 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     {
         LocalAiResolvedInstall install = Install(28_765);
         string observed = RedactApiKey(LocalAiGatewayProviderDefinition.BuildProviderJson(install));
-        var commands = new FakeWslCommandRunner(observed);
+        var commands = new FakeWslCommandRunner(
+            observed,
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
         Assert.True(result.Success);
         Assert.Null(commands.ProviderJson);
+        Assert.Null(commands.PrimaryModel);
     }
 
     [Fact]
@@ -44,7 +51,9 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         LocalAiResolvedInstall install = Install(28_765);
         string drifted = LocalAiGatewayProviderDefinition.BuildProviderJson(install)
             .Replace("28765", "39876", StringComparison.Ordinal);
-        var commands = new FakeWslCommandRunner(drifted);
+        var commands = new FakeWslCommandRunner(
+            drifted,
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
@@ -62,6 +71,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(providerJson: null)
         {
             ProviderAfterApply = RedactApiKey(expected),
+            PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
         };
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
 
@@ -69,6 +79,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
 
         Assert.True(result.Success);
         Assert.True(LocalAiGatewayProviderDefinition.MatchesProviderJson(commands.ProviderJson!, install));
+        Assert.Equal(LocalAiGatewayProviderDefinition.BuildPrimaryModel(install), commands.PrimaryModel);
         IReadOnlyList<string> apply = Assert.Single(commands.Calls, call => call.Contains("/bin/sh"));
         string script = apply[^1];
         Assert.Contains("--dry-run", script, StringComparison.Ordinal);
@@ -84,6 +95,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(providerJson: null)
         {
             ProviderAfterApply = expected,
+            PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
             FailedReadCalls = [2],
         };
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
@@ -93,6 +105,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         Assert.False(result.Success);
         Assert.Contains("was removed", result.Detail, StringComparison.Ordinal);
         Assert.Null(commands.ProviderJson);
+        Assert.Null(commands.PrimaryModel);
         Assert.Contains(commands.Calls, call => call.Contains("unset"));
     }
 
@@ -104,6 +117,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(providerJson: null)
         {
             ProviderAfterApply = expected,
+            PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
             FailedReadCalls = [2, 3],
         };
         var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
@@ -113,6 +127,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         Assert.False(result.Success);
         Assert.Contains("Cleanup also failed", result.Detail, StringComparison.Ordinal);
         Assert.Equal(expected, commands.ProviderJson);
+        Assert.Equal(LocalAiGatewayProviderDefinition.BuildPrimaryModel(install), commands.PrimaryModel);
         Assert.DoesNotContain(commands.Calls, call => call.Contains("unset"));
     }
 
@@ -128,7 +143,45 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         Assert.False(result.Success);
     }
 
-    private static LocalAiResolvedInstall Install(int port)
+    [Fact]
+    public async Task Quiesce_RestoresFallbackBeforeRemovingProvider()
+    {
+        LocalAiResolvedInstall install = Install(28_770, "openai/gpt-5");
+        var commands = new FakeWslCommandRunner(
+            LocalAiGatewayProviderDefinition.BuildProviderJson(install),
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install))
+        {
+            PrimaryAfterApply = "openai/gpt-5",
+        };
+        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.True(result.Success);
+        Assert.Null(commands.ProviderJson);
+        Assert.Equal("openai/gpt-5", commands.PrimaryModel);
+        int restoreIndex = commands.Calls.FindIndex(call => call.Contains("/bin/sh"));
+        int unsetIndex = commands.Calls.FindIndex(call =>
+            call.Contains("unset") && call.Contains(LocalAiGatewayProviderDefinition.ProviderPath));
+        Assert.True(restoreIndex >= 0 && unsetIndex > restoreIndex);
+    }
+
+    [Fact]
+    public async Task Publish_PreservesUnexpectedPrimaryAndFailsClosed()
+    {
+        LocalAiResolvedInstall install = Install(28_771, "openai/gpt-5");
+        var commands = new FakeWslCommandRunner(providerJson: null, primaryModel: "anthropic/claude");
+        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Null(commands.ProviderJson);
+        Assert.Equal("anthropic/claude", commands.PrimaryModel);
+        Assert.DoesNotContain(commands.Calls, call => call.Contains("/bin/sh"));
+    }
+
+    private static LocalAiResolvedInstall Install(int port, string? fallbackModel = null)
     {
         var endpoint = new Uri($"http://127.0.0.1:{port}/v1");
         var manifest = new LocalAiInstallManifest
@@ -153,6 +206,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             },
             RequestedPort = 0,
             Endpoint = endpoint.AbsoluteUri,
+            GatewayFallbackModel = fallbackModel,
             ContextLength = LocalModelCatalog.NativeContextTokens,
         };
         return new(manifest, "llama-server.exe", "model.gguf", endpoint);
@@ -163,10 +217,12 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         $"\"apiKey\":\"{LocalAiGatewayProviderDefinition.CliRedactedApiKey}\",\"api\":\"openai-completions\"",
         StringComparison.Ordinal);
 
-    private sealed class FakeWslCommandRunner(string? providerJson) : IWslCommandRunner
+    private sealed class FakeWslCommandRunner(string? providerJson, string? primaryModel = null) : IWslCommandRunner
     {
         public string? ProviderJson { get; private set; } = providerJson;
+        public string? PrimaryModel { get; private set; } = primaryModel;
         public string? ProviderAfterApply { get; init; }
+        public string? PrimaryAfterApply { get; init; }
         public bool FailReads { get; init; }
         public HashSet<int> FailedReadCalls { get; init; } = [];
         public List<IReadOnlyList<string>> Calls { get; } = [];
@@ -188,12 +244,17 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
                 return Result(1, string.Empty, "wsl.exe failed");
             if (command.Contains("/bin/sh"))
             {
-                ProviderJson = ProviderAfterApply;
-                return Result(ProviderJson is null ? 1 : 0, string.Empty);
+                if (ProviderAfterApply is not null)
+                    ProviderJson = ProviderAfterApply;
+                PrimaryModel = PrimaryAfterApply;
+                return Result(PrimaryModel is null ? 1 : 0, string.Empty);
             }
             if (command.Contains("unset"))
             {
-                ProviderJson = null;
+                if (command.Contains(LocalAiGatewayProviderDefinition.ProviderPath))
+                    ProviderJson = null;
+                if (command.Contains(LocalAiGatewayProviderDefinition.PrimaryModelPath))
+                    PrimaryModel = null;
                 return Result(0, string.Empty);
             }
             if (command.Contains(LocalAiGatewayProviderDefinition.ProviderPath))
@@ -203,6 +264,13 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
                         string.Empty,
                         $"Config path not found: {LocalAiGatewayProviderDefinition.ProviderPath}")
                     : Result(0, ProviderJson);
+            if (command.Contains(LocalAiGatewayProviderDefinition.PrimaryModelPath))
+                return PrimaryModel is null
+                    ? Result(
+                        1,
+                        string.Empty,
+                        $"Config path not found: {LocalAiGatewayProviderDefinition.PrimaryModelPath}")
+                    : Result(0, JsonSerializer.Serialize(PrimaryModel));
             return Result(1, string.Empty);
         }
 

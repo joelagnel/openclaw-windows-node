@@ -20,6 +20,32 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public async Task Manifest_RoundTripsValidatedGatewayFallbackModel()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await store.SaveAsync(ValidManifest() with { GatewayFallbackModel = "openai/gpt-5" });
+
+        LocalAiResolvedInstall saved = (await store.LoadAsync())!;
+        Assert.Equal("openai/gpt-5", saved.Manifest.GatewayFallbackModel);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("llamacpp/other-model")]
+    [InlineData("missing-provider-separator")]
+    [InlineData("provider/model/extra")]
+    public async Task Manifest_RejectsUnsafeGatewayFallbackModel(string fallbackModel)
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var store = new LocalAiManifestStore(new LocalAiPaths(temp.Path));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveAsync(ValidManifest() with { GatewayFallbackModel = fallbackModel }));
+    }
+
+    [Fact]
     public async Task AutomaticPort_IsBoundByChildAndPersistedOnlyAfterOwnedHealth()
     {
         using var temp = new TempDirectory("local-ai-port-");

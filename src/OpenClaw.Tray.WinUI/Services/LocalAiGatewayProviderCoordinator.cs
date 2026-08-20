@@ -35,33 +35,67 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(install);
-        ProviderCapture current = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
+        GatewayCapture current = await CaptureGatewayAsync(cancellationToken).ConfigureAwait(false);
         if (!current.Success)
-            return Failed(current.Detail ?? "The managed Local AI provider could not be inspected.");
-        if (!current.Exists)
-            return LocalAiEndpointLifecycleResult.Ok();
+            return Failed(current.Detail ?? "The managed Local AI gateway route could not be inspected.");
 
+        string managedPrimary;
         try
         {
             _ = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+            managedPrimary = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install);
+            LocalAiGatewayProviderDefinition.ValidateFallbackModel(
+                install.Manifest.GatewayFallbackModel);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
             return Failed(ex.Message);
         }
-        if (!LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install))
+        if (current.ProviderExists &&
+            !LocalAiGatewayProviderDefinition.MatchesProviderJson(current.ProviderJson!, install))
+        {
             return Failed("The llamacpp provider was changed outside the companion; preserving it and refusing to cycle the managed endpoint.");
+        }
 
-        WslCommandResult unset = await RunOpenClawAsync(
-                ["config", "unset", LocalAiGatewayProviderDefinition.ProviderPath],
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!unset.Success)
-            return Failed("The managed llamacpp provider could not be disabled before the endpoint changed.");
+        bool primaryIsManaged = current.PrimaryExists &&
+            string.Equals(current.PrimaryModel, managedPrimary, StringComparison.Ordinal);
+        if (current.PrimaryExists &&
+            !primaryIsManaged &&
+            current.PrimaryModel!.StartsWith("llamacpp/", StringComparison.OrdinalIgnoreCase))
+        {
+            return Failed("The llamacpp primary model was changed outside the companion; preserving it and refusing to cycle the managed endpoint.");
+        }
 
-        ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
-        if (!verified.Success || verified.Exists)
-            return Failed("The managed llamacpp provider remained configured after it was disabled.");
+        string? expectedPrimary = current.PrimaryModel;
+        if (primaryIsManaged)
+        {
+            expectedPrimary = install.Manifest.GatewayFallbackModel;
+            LocalAiEndpointLifecycleResult primaryResult = expectedPrimary is null
+                ? await UnsetAsync(LocalAiGatewayProviderDefinition.PrimaryModelPath, cancellationToken)
+                    .ConfigureAwait(false)
+                : await SetPrimaryAsync(expectedPrimary, cancellationToken).ConfigureAwait(false);
+            if (!primaryResult.Success)
+                return primaryResult;
+        }
+
+        if (current.ProviderExists)
+        {
+            LocalAiEndpointLifecycleResult providerResult = await UnsetAsync(
+                    LocalAiGatewayProviderDefinition.ProviderPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!providerResult.Success)
+                return providerResult;
+        }
+
+        GatewayCapture verified = await CaptureGatewayAsync(cancellationToken).ConfigureAwait(false);
+        if (!verified.Success || verified.ProviderExists ||
+            verified.PrimaryExists != (expectedPrimary is not null) ||
+            (expectedPrimary is not null &&
+                !string.Equals(verified.PrimaryModel, expectedPrimary, StringComparison.Ordinal)))
+        {
+            return Failed("The managed Local AI gateway route remained active after it was disabled.");
+        }
         return LocalAiEndpointLifecycleResult.Ok();
     }
 
@@ -80,121 +114,163 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
             return Failed(ex.Message);
         }
 
-        ProviderCapture current = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
+        GatewayCapture current = await CaptureGatewayAsync(cancellationToken).ConfigureAwait(false);
         if (!current.Success)
-            return Failed(current.Detail ?? "The managed Local AI provider could not be inspected.");
-        if (current.Exists)
+            return Failed(current.Detail ?? "The managed Local AI gateway route could not be inspected.");
+        string managedPrimary = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install);
+        if (current.ProviderExists)
         {
-            return LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install)
+            return LocalAiGatewayProviderDefinition.MatchesProviderJson(current.ProviderJson!, install) &&
+                   current.PrimaryExists &&
+                   string.Equals(current.PrimaryModel, managedPrimary, StringComparison.Ordinal)
                 ? LocalAiEndpointLifecycleResult.Ok()
-                : Failed("The llamacpp provider was changed outside the companion; preserving it instead of publishing the managed endpoint.");
+                : Failed("The Local AI gateway route changed outside the companion; preserving it instead of publishing the managed endpoint.");
         }
 
-        string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(batch));
-        string script =
-            $"set -e\nprintf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin --dry-run\n" +
-            $"printf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin";
-        WslCommandResult applied = await _commands.RunInDistroAsync(
-                _distroName,
-                ["/usr/bin/env", $"PATH={FixedPath}", "/bin/sh", "-c", script],
-                cancellationToken)
-            .ConfigureAwait(false);
+        string? fallbackModel = install.Manifest.GatewayFallbackModel;
+        if (current.PrimaryExists != (fallbackModel is not null) ||
+            (fallbackModel is not null &&
+                !string.Equals(current.PrimaryModel, fallbackModel, StringComparison.Ordinal)))
+        {
+            return Failed("The gateway primary model changed while Local AI was stopped; preserving it instead of overwriting it.");
+        }
+
+        WslCommandResult applied = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
         if (!applied.Success)
         {
-            LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
-                    install,
-                    cancellationToken)
+            LocalAiEndpointLifecycleResult cleanup = await QuiesceAsync(install, cancellationToken)
                 .ConfigureAwait(false);
             return PublicationFailed(
-                "The verified Local AI endpoint could not be published to the app-owned gateway.",
+                "The verified Local AI route could not be published to the app-owned gateway.",
                 cleanup);
         }
 
-        ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
-        if (!verified.Success || !verified.Exists ||
-            !LocalAiGatewayProviderDefinition.MatchesProviderJson(verified.Json!, install))
+        GatewayCapture verified = await CaptureGatewayAsync(cancellationToken).ConfigureAwait(false);
+        if (!verified.Success || !verified.ProviderExists ||
+            !LocalAiGatewayProviderDefinition.MatchesProviderJson(verified.ProviderJson!, install) ||
+            !verified.PrimaryExists ||
+            !string.Equals(verified.PrimaryModel, managedPrimary, StringComparison.Ordinal))
         {
-            LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
-                    install,
-                    cancellationToken)
+            LocalAiEndpointLifecycleResult cleanup = await QuiesceAsync(install, cancellationToken)
                 .ConfigureAwait(false);
             return PublicationFailed(
-                "The app-owned gateway did not retain the verified Local AI endpoint.",
+                "The app-owned gateway did not retain the verified Local AI route.",
                 cleanup);
         }
         return LocalAiEndpointLifecycleResult.Ok();
     }
 
-    private async Task<LocalAiEndpointLifecycleResult> RemoveExactPublishedProviderAsync(
-        LocalAiResolvedInstall install,
-        CancellationToken cancellationToken)
-    {
-        ProviderCapture current = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
-        if (!current.Success)
-        {
-            return LocalAiEndpointLifecycleResult.Failed(
-                "The just-written provider could not be inspected for safe cleanup.");
-        }
-        if (!current.Exists)
-            return LocalAiEndpointLifecycleResult.Ok();
-        if (!LocalAiGatewayProviderDefinition.MatchesProviderJson(current.Json!, install))
-        {
-            return LocalAiEndpointLifecycleResult.Failed(
-                "The provider changed during publication, so cleanup preserved the unproven value.");
-        }
-
-        WslCommandResult unset = await RunOpenClawAsync(
-                ["config", "unset", LocalAiGatewayProviderDefinition.ProviderPath],
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!unset.Success)
-        {
-            return LocalAiEndpointLifecycleResult.Failed(
-                "The just-written provider could not be removed after publication failed.");
-        }
-
-        ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
-        return verified.Success && !verified.Exists
-            ? LocalAiEndpointLifecycleResult.Ok()
-            : LocalAiEndpointLifecycleResult.Failed(
-                "The just-written provider remained configured after cleanup.");
-    }
-
     private LocalAiEndpointLifecycleResult PublicationFailed(
         string detail,
         LocalAiEndpointLifecycleResult cleanup) => cleanup.Success
-            ? Failed($"{detail} The just-written provider was removed.")
+            ? Failed($"{detail} The just-written route was removed.")
             : Failed($"{detail} Cleanup also failed: {cleanup.Detail}");
 
-    private async Task<ProviderCapture> CaptureProviderAsync(CancellationToken cancellationToken)
+    private async Task<GatewayCapture> CaptureGatewayAsync(CancellationToken cancellationToken)
     {
-        WslCommandResult direct = await RunOpenClawAsync(
-                ["config", "get", LocalAiGatewayProviderDefinition.ProviderPath, "--json"],
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (direct.Success)
-            return ParseProvider(direct.StandardOutput);
-        // Validated OpenClaw releases report an absent key with this exact error.
-        // Every other CLI/distro failure is operationally ambiguous and fails closed.
-        string missing = $"Config path not found: {LocalAiGatewayProviderDefinition.ProviderPath}";
-        return direct.StandardError.Contains(missing, StringComparison.Ordinal)
-            ? new(true, false, null, null)
-            : new(false, false, null, "The app-owned gateway provider configuration could not be read.");
+        SettingCapture provider = await CaptureSettingAsync(
+            LocalAiGatewayProviderDefinition.ProviderPath,
+            cancellationToken).ConfigureAwait(false);
+        if (!provider.Success)
+            return new(false, false, null, false, null, provider.Detail);
+
+        SettingCapture primary = await CaptureSettingAsync(
+            LocalAiGatewayProviderDefinition.PrimaryModelPath,
+            cancellationToken).ConfigureAwait(false);
+        if (!primary.Success)
+            return new(false, false, null, false, null, primary.Detail);
+
+        string? providerJson = null;
+        if (provider.Exists)
+        {
+            try
+            {
+                using JsonDocument document = ParseBounded(provider.Json!);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return new(false, false, null, false, null, "The managed llamacpp provider has an invalid shape.");
+                providerJson = document.RootElement.GetRawText();
+            }
+            catch (JsonException)
+            {
+                return new(false, false, null, false, null, "The managed llamacpp provider is not valid JSON.");
+            }
+        }
+
+        string? primaryModel = null;
+        if (primary.Exists)
+        {
+            try
+            {
+                using JsonDocument document = ParseBounded(primary.Json!);
+                if (document.RootElement.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(primaryModel = document.RootElement.GetString()) ||
+                    primaryModel.Length > 512 ||
+                    primaryModel.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)))
+                {
+                    return new(false, false, null, false, null, "The gateway primary model has an invalid shape.");
+                }
+            }
+            catch (JsonException)
+            {
+                return new(false, false, null, false, null, "The gateway primary model is not valid JSON.");
+            }
+        }
+
+        return new(true, provider.Exists, providerJson, primary.Exists, primaryModel, null);
     }
 
-    private static ProviderCapture ParseProvider(string value)
+    private async Task<SettingCapture> CaptureSettingAsync(
+        string path,
+        CancellationToken cancellationToken)
     {
-        try
+        WslCommandResult direct = await RunOpenClawAsync(
+            ["config", "get", path, "--json"], cancellationToken).ConfigureAwait(false);
+        if (direct.Success)
+            return new(true, true, direct.StandardOutput, null);
+        string missing = $"Config path not found: {path}";
+        return direct.StandardError.Contains(missing, StringComparison.Ordinal)
+            ? new(true, false, null, null)
+            : new(false, false, null, $"The app-owned gateway setting '{path}' could not be read.");
+    }
+
+    private async Task<LocalAiEndpointLifecycleResult> SetPrimaryAsync(
+        string model,
+        CancellationToken cancellationToken)
+    {
+        LocalAiGatewayProviderDefinition.ValidateFallbackModel(model);
+        string batch = JsonSerializer.Serialize(new[]
         {
-            using JsonDocument document = ParseBounded(value);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-                return new(false, false, null, "The managed llamacpp provider has an invalid shape.");
-            return new(true, true, document.RootElement.GetRawText(), null);
-        }
-        catch (JsonException)
-        {
-            return new(false, false, null, "The managed llamacpp provider is not valid JSON.");
-        }
+            new { path = LocalAiGatewayProviderDefinition.PrimaryModelPath, value = model },
+        });
+        WslCommandResult result = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        return result.Success
+            ? LocalAiEndpointLifecycleResult.Ok()
+            : Failed("The prior gateway primary model could not be restored before the Local AI endpoint changed.");
+    }
+
+    private async Task<LocalAiEndpointLifecycleResult> UnsetAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        WslCommandResult unset = await RunOpenClawAsync(
+            ["config", "unset", path], cancellationToken).ConfigureAwait(false);
+        return unset.Success
+            ? LocalAiEndpointLifecycleResult.Ok()
+            : Failed($"The managed gateway setting '{path}' could not be disabled before the Local AI endpoint changed.");
+    }
+
+    private Task<WslCommandResult> ApplyBatchAsync(
+        string batch,
+        CancellationToken cancellationToken)
+    {
+        string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(batch));
+        string script =
+            $"set -e\nprintf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin --dry-run\n" +
+            $"printf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin";
+        return _commands.RunInDistroAsync(
+            _distroName,
+            ["/usr/bin/env", $"PATH={FixedPath}", "/bin/sh", "-c", script],
+            cancellationToken);
     }
 
     private static JsonDocument ParseBounded(string value)
@@ -224,5 +300,12 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         return LocalAiEndpointLifecycleResult.Failed(detail);
     }
 
-    private sealed record ProviderCapture(bool Success, bool Exists, string? Json, string? Detail);
+    private sealed record SettingCapture(bool Success, bool Exists, string? Json, string? Detail);
+    private sealed record GatewayCapture(
+        bool Success,
+        bool ProviderExists,
+        string? ProviderJson,
+        bool PrimaryExists,
+        string? PrimaryModel,
+        string? Detail);
 }

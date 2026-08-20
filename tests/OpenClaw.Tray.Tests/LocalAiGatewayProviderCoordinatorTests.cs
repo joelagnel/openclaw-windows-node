@@ -159,8 +159,8 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     private static string RedactApiKey(string value) => value.Replace(
-        "llama-local",
-        LocalAiGatewayProviderDefinition.CliRedactedApiKey,
+        "\"api\":\"openai-completions\",\"apiKey\":\"llama-local\"",
+        $"\"apiKey\":\"{LocalAiGatewayProviderDefinition.CliRedactedApiKey}\",\"api\":\"openai-completions\"",
         StringComparison.Ordinal);
 
     private sealed class FakeWslCommandRunner(string? providerJson) : IWslCommandRunner

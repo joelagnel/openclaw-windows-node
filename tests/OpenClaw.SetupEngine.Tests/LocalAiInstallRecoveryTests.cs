@@ -324,12 +324,9 @@ public sealed class LocalAiInstallRecoveryTests
 
     private static LocalInferencePlan CatalogPlan()
     {
-        SupportedHardwareProfile profile = SupportedHardwareProfiles.Profiles.Single(
-            candidate => candidate.Id == SupportedHardwareProfiles.Rtx5090ProfileId);
-        LlamaRuntimeVariant runtime = LlamaRuntimeCatalog.Variants.Single(
-            candidate => candidate.Id == profile.RuntimeId);
+        LlamaRuntimeVariant runtime = LlamaRuntimeCatalog.Find(
+            System.Runtime.InteropServices.Architecture.X64)!;
         return new LocalInferencePlan(
-            profile,
             runtime,
             LocalModelCatalog.Default,
             LocalInferenceModelSelectionOrigin.Default);
@@ -361,7 +358,6 @@ public sealed class LocalAiInstallRecoveryTests
         {
             EngineVersion = LlamaRuntimeCatalog.ReleaseTag,
             Architecture = "x64",
-            HardwareProfileId = plan.HardwareProfile.Id,
             RuntimeId = plan.Runtime.Id,
             ModelCatalogId = plan.Model.Id,
             SelectedGpuId = gpuId,

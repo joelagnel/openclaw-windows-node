@@ -539,7 +539,6 @@ public sealed class PersistLocalAiManifestStep : SetupStep
                 Architecture.Arm64 => "arm64",
                 _ => throw new InvalidDataException("The selected Local AI runtime architecture is unsupported."),
             },
-            HardwareProfileId = plan.HardwareProfile.Id,
             RuntimeId = plan.Runtime.Id,
             ModelCatalogId = plan.Model.Id,
             SelectedGpuId = gpuId,

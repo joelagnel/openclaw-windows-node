@@ -147,6 +147,11 @@ public sealed record LocalAiInstallManifest
     /// intentionally absent while an automatic-port runtime has not started yet.
     /// </summary>
     public string? Endpoint { get; init; }
+    /// <summary>
+    /// The non-Local-AI primary model that was active before setup selected the
+    /// managed llama.cpp model. Null means no prior primary model was configured.
+    /// </summary>
+    public string? GatewayFallbackModel { get; init; }
     public required int ContextLength { get; init; }
     public DateTimeOffset InstalledAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
@@ -177,6 +182,26 @@ public static class LocalAiPortPolicy
     {
         if (!TryValidate(requestedPort, out string? error))
             throw new InvalidDataException(error);
+    }
+}
+
+/// <summary>Validation for the non-managed gateway route retained in a manifest.</summary>
+public static class LocalAiGatewayModelPolicy
+{
+    public static void ValidateFallbackModel(string? model)
+    {
+        if (model is null)
+            return;
+        int separator = model.IndexOf('/');
+        if (model.Length is 0 or > 512 ||
+            model.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)) ||
+            separator <= 0 || separator == model.Length - 1 ||
+            model.IndexOf('/', separator + 1) >= 0 ||
+            model.StartsWith("llamacpp/", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "The saved gateway fallback model must be a non-Local-AI provider/model identifier.");
+        }
     }
 }
 
@@ -326,6 +351,7 @@ public sealed class LocalAiManifestStore
             throw new InvalidDataException("The managed model path must match its asset receipt filename.");
 
         LocalAiPortPolicy.Validate(manifest.RequestedPort);
+        LocalAiGatewayModelPolicy.ValidateFallbackModel(manifest.GatewayFallbackModel);
 
         Uri? endpoint = null;
         if (manifest.Endpoint is not null)

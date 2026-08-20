@@ -102,7 +102,7 @@ internal static class StartupSetupState
                 StringComparison.OrdinalIgnoreCase)
             && !string.Equals(
                 settings.GatewayUrl,
-                $"ws://127.0.0.1:{AppIdentity.SetupGatewayPort}",
+                $"ws://localhost:{AppIdentity.SetupGatewayPort}",
                 StringComparison.OrdinalIgnoreCase);
     }
 

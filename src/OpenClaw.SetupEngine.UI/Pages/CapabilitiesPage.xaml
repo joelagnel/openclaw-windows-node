@@ -177,7 +177,7 @@
                                                      AutomationProperties.LiveSetting="Assertive"
                                                      IsOpen="True" IsClosable="False" Severity="Warning"
                                                      Title="WSL networking change required" Visibility="Collapsed">
-                                                <StackPanel Spacing="6">
+                                                <StackPanel Spacing="6" Margin="0,0,0,12">
                                                     <TextBlock Text="Local AI needs mirrored WSL networking. Setup will update your global .wslconfig and stop all running WSL distributions once. No distributions are deleted. Save any work in WSL first."
                                                                Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                                                     <CheckBox x:Name="LocalAiNetworkingConsentCheckBox"

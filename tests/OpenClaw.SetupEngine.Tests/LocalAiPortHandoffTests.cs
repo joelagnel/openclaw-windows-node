@@ -57,6 +57,38 @@ public sealed class LocalAiPortHandoffTests
         Assert.Null(saved.Endpoint);
     }
 
+    [Fact]
+    public async Task PersistStep_CarriesDeterministicallySelectedGpuIntoRouterEnvironment()
+    {
+        using var temp = new TempDirectory("local-ai-handoff-");
+        SetupContext context = CreateContext(
+            new LocalAiConfig
+            {
+                Enabled = true,
+                Port = 0,
+                SelectedModelId = LocalModelCatalog.Qwen9BModelId,
+            },
+            temp.Path);
+        context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(
+            CreateMultiGpuHardware(),
+            context.Config.LocalAi.SelectedModelId);
+        context.LocalAiPort = 0;
+        context.LocalAiRuntimeInstall = RuntimeInstall(temp.Path);
+        context.LocalAiModelInstall = ModelInstall(temp.Path, context.LocalAiEligibility.Plan!.Model);
+
+        StepResult result = await new PersistLocalAiManifestStep().ExecuteAsync(
+            context,
+            CancellationToken.None);
+        var paths = new LocalAiPaths(temp.Path);
+        LocalAiResolvedInstall saved = (await new LocalAiManifestStore(paths).LoadAsync())!;
+        LlamaServerRouterLaunchPlan launch = LlamaServerRouterConfiguration.Build(paths, saved);
+
+        Assert.Equal(StepOutcome.Success, result.Outcome);
+        Assert.Equal("GPU-a", context.LocalAiEligibility.SelectedGpu?.StableId);
+        Assert.Equal("GPU-a", saved.Manifest.SelectedGpuId);
+        Assert.Equal("GPU-a", launch.Environment["CUDA_VISIBLE_DEVICES"]);
+    }
+
     private static SetupContext CreateContext(LocalAiConfig localAi, string? localDataDirectory = null)
     {
         var config = new SetupConfig { LocalAi = localAi };
@@ -83,6 +115,30 @@ public sealed class LocalAiPortHandoffTests
                 DriverVersion: "616.00",
                 CudaMajorVersion: 13,
                 StableId: "GPU-SPARK"),
+        ],
+        VulkanAvailable: false);
+
+    private static HostHardwareInfo CreateMultiGpuHardware() => new(
+        Architecture.Arm64,
+        128L * 1024 * 1024 * 1024,
+        100L * 1024 * 1024 * 1024,
+        [
+            new GpuInfo(
+                GpuVendor.Nvidia,
+                "NVIDIA larger but busier GPU",
+                GpuVisibleMemoryBytes: 32L * 1024 * 1024 * 1024,
+                FreeGpuVisibleMemoryBytes: 12L * 1024 * 1024 * 1024,
+                DriverVersion: "616.00",
+                CudaMajorVersion: 13,
+                StableId: "GPU-z"),
+            new GpuInfo(
+                GpuVendor.Nvidia,
+                "NVIDIA selected GPU",
+                GpuVisibleMemoryBytes: 16L * 1024 * 1024 * 1024,
+                FreeGpuVisibleMemoryBytes: 14L * 1024 * 1024 * 1024,
+                DriverVersion: "616.00",
+                CudaMajorVersion: 13,
+                StableId: "GPU-a"),
         ],
         VulkanAvailable: false);
 

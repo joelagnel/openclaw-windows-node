@@ -18,7 +18,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(
             expected,
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
@@ -36,7 +36,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(
             observed,
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
@@ -54,7 +54,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         var commands = new FakeWslCommandRunner(
             drifted,
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
@@ -64,7 +64,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     [Fact]
-    public async Task Publish_UsesVerifiedEndpointAndNoShellVariableExpansion()
+    public async Task Publish_UsesVerifiedEndpointAndNonDefaultManagedDistro()
     {
         LocalAiResolvedInstall install = Install(28_766);
         string expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
@@ -73,7 +73,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             ProviderAfterApply = RedactApiKey(expected),
             PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
         };
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands, "CustomGateway");
 
         LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
 
@@ -84,7 +84,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         string script = apply[^1];
         Assert.Contains("--dry-run", script, StringComparison.Ordinal);
         Assert.DoesNotContain('$', script);
-        Assert.All(commands.Distros, distro => Assert.Equal("OpenClawGateway", distro));
+        Assert.All(commands.Distros, distro => Assert.Equal("CustomGateway", distro));
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
             FailedReadCalls = [2],
         };
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
 
@@ -120,7 +120,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             PrimaryAfterApply = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install),
             FailedReadCalls = [2, 3],
         };
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
 
@@ -136,7 +136,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     {
         LocalAiResolvedInstall install = Install(28_767);
         var commands = new FakeWslCommandRunner(providerJson: null) { FailReads = true };
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
@@ -153,7 +153,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         {
             PrimaryAfterApply = "openai/gpt-5",
         };
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
 
@@ -171,7 +171,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     {
         LocalAiResolvedInstall install = Install(28_771, "openai/gpt-5");
         var commands = new FakeWslCommandRunner(providerJson: null, primaryModel: "anthropic/claude");
-        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+        var coordinator = CreateCoordinator(commands);
 
         LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
 
@@ -180,6 +180,116 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         Assert.Equal("anthropic/claude", commands.PrimaryModel);
         Assert.DoesNotContain(commands.Calls, call => call.Contains("/bin/sh"));
     }
+
+    [Fact]
+    public async Task Publish_MissingManagedGatewayOwner_FailsWithoutWslCommand()
+    {
+        LocalAiResolvedInstall install = Install(28_772);
+        var commands = new FakeWslCommandRunner(providerJson: null);
+        var coordinator = CreateCoordinatorForRegistry(commands, CreateRegistry());
+
+        LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("No explicit setup-managed WSL gateway", result.Detail, StringComparison.Ordinal);
+        Assert.Empty(commands.Calls);
+        Assert.Empty(commands.Distros);
+    }
+
+    [Fact]
+    public async Task Publish_AmbiguousManagedGatewayOwners_FailsWithoutWslCommand()
+    {
+        LocalAiResolvedInstall install = Install(28_773);
+        var commands = new FakeWslCommandRunner(providerJson: null);
+        GatewayRegistry registry = CreateRegistry(
+            ManagedRecord("managed-a", "GatewayA"),
+            ManagedRecord("managed-b", "GatewayB"));
+        var coordinator = CreateCoordinatorForRegistry(commands, registry);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("Multiple explicit setup-managed WSL gateways", result.Detail, StringComparison.Ordinal);
+        Assert.Empty(commands.Calls);
+        Assert.Empty(commands.Distros);
+    }
+
+    [Fact]
+    public async Task Quiesce_RegistryUnavailable_FailsWithoutWslCommand()
+    {
+        LocalAiResolvedInstall install = Install(28_774);
+        var commands = new FakeWslCommandRunner(providerJson: null);
+        var coordinator = CreateCoordinatorForRegistry(commands, registry: null);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("registry is unavailable", result.Detail, StringComparison.Ordinal);
+        Assert.Empty(commands.Calls);
+        Assert.Empty(commands.Distros);
+    }
+
+    [Fact]
+    public async Task Quiesce_OwnerDriftsAfterInspection_BlocksFirstMutation()
+    {
+        LocalAiResolvedInstall install = Install(28_775);
+        GatewayRegistry registry = CreateRegistry(ManagedRecord("managed", "CustomGateway"));
+        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        string primary = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install);
+        var commands = new FakeWslCommandRunner(provider, primary)
+        {
+            CommandObserved = callCount =>
+            {
+                if (callCount == 2)
+                {
+                    registry.Update(
+                        "managed",
+                        record => record with { SetupManagedDistroName = "UnexpectedGateway" });
+                }
+            },
+        };
+        var coordinator = CreateCoordinatorForRegistry(commands, registry);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("owner changed", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(provider, commands.ProviderJson);
+        Assert.Equal(primary, commands.PrimaryModel);
+        Assert.Equal(2, commands.Calls.Count);
+        Assert.DoesNotContain(commands.Calls, call => call.Contains("unset"));
+    }
+
+    private static LocalAiGatewayProviderCoordinator CreateCoordinator(
+        FakeWslCommandRunner commands,
+        string distroName = "OpenClawGateway") =>
+        CreateCoordinatorForRegistry(
+            commands,
+            CreateRegistry(ManagedRecord("managed", distroName)));
+
+    private static LocalAiGatewayProviderCoordinator CreateCoordinatorForRegistry(
+        FakeWslCommandRunner commands,
+        GatewayRegistry? registry) =>
+        new(
+            commands,
+            new LocalAiGatewayDistroResolver(registry),
+            NullLogger.Instance);
+
+    private static GatewayRegistry CreateRegistry(params GatewayRecord[] records)
+    {
+        var registry = new GatewayRegistry(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
+        foreach (GatewayRecord record in records)
+            registry.AddOrUpdate(record);
+        return registry;
+    }
+
+    private static GatewayRecord ManagedRecord(string id, string distroName) => new()
+    {
+        Id = id,
+        Url = "ws://localhost:18789",
+        IsLocal = true,
+        SetupManagedDistroName = distroName,
+    };
 
     private static LocalAiResolvedInstall Install(int port, string? fallbackModel = null)
     {
@@ -225,6 +335,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         public string? PrimaryAfterApply { get; init; }
         public bool FailReads { get; init; }
         public HashSet<int> FailedReadCalls { get; init; } = [];
+        public Action<int>? CommandObserved { get; init; }
         public List<IReadOnlyList<string>> Calls { get; } = [];
         public List<string> Distros { get; } = [];
         private int _readCalls;
@@ -238,6 +349,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             Distros.Add(name);
             Calls.Add(command.ToArray());
+            CommandObserved?.Invoke(Calls.Count);
             bool providerRead = command.Contains("get") &&
                 command.Contains(LocalAiGatewayProviderDefinition.ProviderPath);
             if (providerRead && (FailReads || FailedReadCalls.Contains(++_readCalls)))

@@ -46,7 +46,8 @@ public sealed class LocalAiGpuRestartEndpointTests
                 TotalLayers: 42,
                 TotalGpuVisibleBytes: 48L * 1024 * 1024 * 1024,
                 FreeGpuVisibleBytesBeforeLoad: 40L * 1024 * 1024 * 1024,
-                FreeGpuVisibleBytesAfterLoad: 16L * 1024 * 1024 * 1024)),
+                FreeGpuVisibleBytesAfterLoad: 16L * 1024 * 1024 * 1024,
+                CudaModelBufferBytes: null)),
             (_, _) => Task.FromResult<LocalAiResolvedInstall?>(
                 durableReceiptUsesRestartedEndpoint ? restartedInstall : originalInstall));
 
@@ -120,7 +121,6 @@ public sealed class LocalAiGpuRestartEndpointTests
         {
             EngineVersion = "b10488",
             Architecture = "arm64",
-            HardwareProfileId = "nvidia-spark-arm64",
             RuntimeId = "llama-server-b10488-win-arm64-cuda13",
             ModelCatalogId = model.Id,
             SelectedGpuId = "GPU-SPARK",

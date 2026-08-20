@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using OpenClaw.Connection.LocalAi;
@@ -14,7 +15,8 @@ internal sealed record LocalAiGpuLoadEvidence(
     int TotalLayers,
     long TotalGpuVisibleBytes,
     long FreeGpuVisibleBytesBeforeLoad,
-    long FreeGpuVisibleBytesAfterLoad)
+    long FreeGpuVisibleBytesAfterLoad,
+    long? CudaModelBufferBytes)
 {
     public long UsedGpuVisibleBytesAfterLoad => TotalGpuVisibleBytes - FreeGpuVisibleBytesAfterLoad;
     public long LoadDeltaBytes => FreeGpuVisibleBytesBeforeLoad - FreeGpuVisibleBytesAfterLoad;
@@ -55,7 +57,7 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
         ArgumentNullException.ThrowIfNull(paths);
 
         string cudaModule = FindCudaModule(processId);
-        (int offloaded, int total) = await ReadFullOffloadEvidenceAsync(paths, cancellationToken);
+        LocalAiGpuLogEvidence logEvidence = await ReadGpuLoadEvidenceAsync(paths, cancellationToken);
         HostHardwareInfo current = _hardwareProbe.Probe();
         GpuInfo before = FindGpu(baseline, selectedGpuId);
         GpuInfo after = FindGpu(current, selectedGpuId);
@@ -69,14 +71,21 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
             processId,
             selectedGpuId,
             cudaModule,
-            offloaded,
-            total,
+            logEvidence.OffloadedLayers,
+            logEvidence.TotalLayers,
             after.GpuVisibleMemoryBytes.Value,
             before.FreeGpuVisibleMemoryBytes.Value,
-            after.FreeGpuVisibleMemoryBytes.Value);
+            after.FreeGpuVisibleMemoryBytes.Value,
+            logEvidence.CudaModelBufferBytes);
     }
 
     internal static (int Offloaded, int Total) ParseFullOffloadEvidence(string log)
+    {
+        LocalAiGpuLogEvidence evidence = ParseGpuLoadEvidence(log);
+        return (evidence.OffloadedLayers, evidence.TotalLayers);
+    }
+
+    internal static LocalAiGpuLogEvidence ParseGpuLoadEvidence(string log)
     {
         ArgumentNullException.ThrowIfNull(log);
         MatchCollection matches = FullOffloadPattern().Matches(log);
@@ -86,7 +95,10 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
                 int.TryParse(match.Groups[2].Value, out int total) &&
                 offloaded > 0 && offloaded == total)
             {
-                return (offloaded, total);
+                return new LocalAiGpuLogEvidence(
+                    offloaded,
+                    total,
+                    ParseCudaModelBufferBytes(log));
             }
         }
         throw new InvalidDataException("llama-server did not report full GPU layer offload.");
@@ -114,7 +126,7 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
         throw new InvalidDataException("The managed llama-server process did not load ggml-cuda.dll.");
     }
 
-    private static async Task<(int Offloaded, int Total)> ReadFullOffloadEvidenceAsync(
+    private static async Task<LocalAiGpuLogEvidence> ReadGpuLoadEvidenceAsync(
         LocalAiPaths paths,
         CancellationToken cancellationToken)
     {
@@ -127,7 +139,7 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
                 await ReadLogTailAsync(paths.StandardErrorLogPath, cancellationToken);
             try
             {
-                return ParseFullOffloadEvidence(log);
+                return ParseGpuLoadEvidence(log);
             }
             catch (InvalidDataException ex)
             {
@@ -167,7 +179,33 @@ internal sealed partial class WindowsLocalAiGpuEvidenceProbe : ILocalAiGpuEviden
 
     [GeneratedRegex(@"offloaded\s+(\d+)\s*/\s*(\d+)\s+layers\s+to\s+GPU", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FullOffloadPattern();
+
+    [GeneratedRegex(@"CUDA\d+\s+model buffer size\s*=\s*([0-9]+(?:\.[0-9]+)?)\s+MiB", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CudaModelBufferPattern();
+
+    private static long? ParseCudaModelBufferBytes(string log)
+    {
+        Match? match = CudaModelBufferPattern().Matches(log).Cast<Match>().LastOrDefault();
+        if (match is null ||
+            !double.TryParse(
+                match.Groups[1].Value,
+                NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture,
+                out double mebibytes) ||
+            mebibytes <= 0)
+        {
+            return null;
+        }
+
+        double bytes = mebibytes * 1024 * 1024;
+        return bytes <= long.MaxValue ? (long)bytes : null;
+    }
 }
+
+internal sealed record LocalAiGpuLogEvidence(
+    int OffloadedLayers,
+    int TotalLayers,
+    long? CudaModelBufferBytes);
 
 public sealed class CaptureLocalAiGpuBaselineStep : SetupStep
 {
@@ -253,7 +291,7 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
                     "llama-server loaded CUDA from outside the managed runtime directory.");
             }
             long minimumDelta = Math.Max(512L * 1024 * 1024, plan.Model.Weights.SizeBytes / 2);
-            if (evidence.OffloadedLayers != evidence.TotalLayers || evidence.LoadDeltaBytes < minimumDelta)
+            if (!HasRequiredGpuLoadEvidence(evidence, minimumDelta))
             {
                 throw new InvalidDataException(
                     "The selected model did not produce the required full-offload GPU memory evidence.");
@@ -310,4 +348,19 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
         SetupContext ctx,
         CancellationToken cancellationToken) =>
         new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir)).LoadAsync(cancellationToken);
+
+    internal static bool HasRequiredGpuLoadEvidence(
+        LocalAiGpuLoadEvidence evidence,
+        long minimumDeltaBytes)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        if (minimumDeltaBytes <= 0 || evidence.OffloadedLayers != evidence.TotalLayers)
+            return false;
+
+        if (evidence.LoadDeltaBytes >= minimumDeltaBytes)
+            return true;
+
+        return evidence.CudaModelBufferBytes is { } cudaModelBufferBytes &&
+            cudaModelBufferBytes >= minimumDeltaBytes;
+    }
 }

@@ -1348,6 +1348,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void CapabilitiesPage_FiltersModelsBySelectedGpuCapacityAndShowsMemoryEvidence()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+
+        Assert.Contains("LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes", source);
+        Assert.Contains("eligibility.RequiredTotalMemoryBytes", source);
+        Assert.Contains("eligibility.DetectedTotalMemoryBytes", source);
+        Assert.DoesNotContain("HardwareProfile", source);
+        Assert.DoesNotContain("RTX PRO 6000", source);
+    }
+
+    [Fact]
     public void WizardSecondaryButton_DoesNotSkipEntireWizardInErrorState()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

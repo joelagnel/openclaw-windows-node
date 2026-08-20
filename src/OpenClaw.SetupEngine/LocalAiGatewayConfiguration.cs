@@ -228,18 +228,23 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
     private static Task<CommandResult> CaptureStateAsync(SetupContext ctx, CancellationToken ct)
     {
         string script = $$"""
-            set -u
+            set -eu
             {{ctx.WslPathPrefix}}
             capture_value() {
               key="$1"
               marker="$2"
               temp_file="$(mktemp)"
-              if openclaw config get "$key" --json >"$temp_file" 2>/dev/null; then
+              error_file="$(mktemp)"
+              if openclaw config get "$key" --json >"$temp_file" 2>"$error_file"; then
                 printf '%s%s\n' "$marker" "$(base64 -w0 <"$temp_file")"
-              else
+              elif grep -Fq "Config path not found: $key" "$error_file"; then
                 printf '%s{{MissingValue}}\n' "$marker"
+              else
+                cat "$error_file" >&2
+                rm -f "$temp_file" "$error_file"
+                return 1
               fi
-              rm -f "$temp_file"
+              rm -f "$temp_file" "$error_file"
             }
             capture_value '{{LocalAiGatewayConfigBuilder.ProviderPath}}' '{{ProviderMarker}}'
             capture_value '{{LocalAiGatewayConfigBuilder.PrimaryModelPath}}' '{{PrimaryMarker}}'

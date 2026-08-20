@@ -1345,6 +1345,11 @@ public sealed class AppRefactorContractTests
         Assert.Contains("LocalAiInstallReviewCard.Visibility = Visibility.Visible", ExtractMethod(source, "ShowLocalAiUnavailable"));
         Assert.Contains("LocalAiAvailabilityReasons.Build", source);
         Assert.Contains("One or more Local AI requirements are unavailable.", xaml);
+        Assert.Matches(
+            new Regex(
+                "<InfoBar\\s+x:Name=\"LocalAiUnavailablePanel\"[^>]*>\\s*" +
+                "<StackPanel\\s+Orientation=\"Horizontal\"\\s+Spacing=\"8\"\\s+Margin=\"0,-12,0,12\">"),
+            xaml);
     }
 
     [Fact]

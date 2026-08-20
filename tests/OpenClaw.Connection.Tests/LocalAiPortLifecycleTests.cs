@@ -1,5 +1,6 @@
 using OpenClaw.Connection.LocalAi;
 using OpenClaw.Shared;
+using OpenClaw.Shared.Inference.Catalog;
 using OpenClaw.TestSupport;
 using System.Collections.Immutable;
 using System.Net;
@@ -29,6 +30,48 @@ public sealed class LocalAiPortLifecycleTests
 
         LocalAiResolvedInstall saved = (await store.LoadAsync())!;
         Assert.Equal("openai/gpt-5", saved.Manifest.GatewayFallbackModel);
+    }
+
+    [Fact]
+    public async Task Manifest_AcceptsAndIgnoresLegacyHardwareProfileId()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var paths = new LocalAiPaths(temp.Path);
+        var store = new LocalAiManifestStore(paths);
+        await store.SaveAsync(ValidManifest() with { HardwareProfileId = "retired-profile-id" });
+
+        LocalAiResolvedInstall saved = (await store.LoadAsync())!;
+        LlamaServerRouterLaunchPlan launch = LlamaServerRouterConfiguration.Build(paths, saved);
+
+        Assert.Equal("retired-profile-id", saved.Manifest.HardwareProfileId);
+        Assert.Equal(LocalModelCatalog.Qwen35BModelId, launch.ModelAlias);
+    }
+
+    [Fact]
+    public async Task Manifest_OmitsLegacyHardwareProfileIdFromNewWrites()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var paths = new LocalAiPaths(temp.Path);
+        await new LocalAiManifestStore(paths).SaveAsync(ValidManifest());
+
+        string json = await File.ReadAllTextAsync(paths.ManifestPath);
+
+        Assert.DoesNotContain("hardwareProfileId", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Router_RejectsRuntimeArchitectureMismatchWithoutHardwareProfile()
+    {
+        using var temp = new TempDirectory("local-ai-manifest-");
+        var paths = new LocalAiPaths(temp.Path);
+        var store = new LocalAiManifestStore(paths);
+        await store.SaveAsync(ValidManifest() with { Architecture = "x64" });
+        LocalAiResolvedInstall saved = (await store.LoadAsync())!;
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(
+            () => LlamaServerRouterConfiguration.Build(paths, saved));
+
+        Assert.Contains("architecture and runtime", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -289,7 +332,6 @@ public sealed class LocalAiPortLifecycleTests
     {
         EngineVersion = "b10488",
         Architecture = "arm64",
-        HardwareProfileId = "rtx-spark-n1x",
         RuntimeId = "b10488-cuda13-arm64",
         ModelCatalogId = "qwen3.6-35b-a3b-mtp-q4-k-m",
         SelectedGpuId = "GPU-01234567-89ab-cdef-0123-456789abcdef",

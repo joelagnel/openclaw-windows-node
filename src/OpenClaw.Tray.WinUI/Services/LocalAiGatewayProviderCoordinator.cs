@@ -103,13 +103,70 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
                 cancellationToken)
             .ConfigureAwait(false);
         if (!applied.Success)
-            return Failed("The verified Local AI endpoint could not be published to the app-owned gateway.");
+        {
+            LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
+                    expected,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return PublicationFailed(
+                "The verified Local AI endpoint could not be published to the app-owned gateway.",
+                cleanup);
+        }
 
         ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
         if (!verified.Success || !verified.Exists || !JsonEquals(verified.Json!, expected))
-            return Failed("The app-owned gateway did not retain the verified Local AI endpoint.");
+        {
+            LocalAiEndpointLifecycleResult cleanup = await RemoveExactPublishedProviderAsync(
+                    expected,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return PublicationFailed(
+                "The app-owned gateway did not retain the verified Local AI endpoint.",
+                cleanup);
+        }
         return LocalAiEndpointLifecycleResult.Ok();
     }
+
+    private async Task<LocalAiEndpointLifecycleResult> RemoveExactPublishedProviderAsync(
+        string expected,
+        CancellationToken cancellationToken)
+    {
+        ProviderCapture current = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
+        if (!current.Success)
+        {
+            return LocalAiEndpointLifecycleResult.Failed(
+                "The just-written provider could not be inspected for safe cleanup.");
+        }
+        if (!current.Exists)
+            return LocalAiEndpointLifecycleResult.Ok();
+        if (!JsonEquals(current.Json!, expected))
+        {
+            return LocalAiEndpointLifecycleResult.Failed(
+                "The provider changed during publication, so cleanup preserved the unproven value.");
+        }
+
+        WslCommandResult unset = await RunOpenClawAsync(
+                ["config", "unset", LocalAiGatewayProviderDefinition.ProviderPath],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!unset.Success)
+        {
+            return LocalAiEndpointLifecycleResult.Failed(
+                "The just-written provider could not be removed after publication failed.");
+        }
+
+        ProviderCapture verified = await CaptureProviderAsync(cancellationToken).ConfigureAwait(false);
+        return verified.Success && !verified.Exists
+            ? LocalAiEndpointLifecycleResult.Ok()
+            : LocalAiEndpointLifecycleResult.Failed(
+                "The just-written provider remained configured after cleanup.");
+    }
+
+    private LocalAiEndpointLifecycleResult PublicationFailed(
+        string detail,
+        LocalAiEndpointLifecycleResult cleanup) => cleanup.Success
+            ? Failed($"{detail} The just-written provider was removed.")
+            : Failed($"{detail} Cleanup also failed: {cleanup.Detail}");
 
     private async Task<ProviderCapture> CaptureProviderAsync(CancellationToken cancellationToken)
     {

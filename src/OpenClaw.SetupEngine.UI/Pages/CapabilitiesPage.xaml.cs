@@ -390,20 +390,20 @@ public sealed partial class CapabilitiesPage : Page
     private static string DescribeLocalAiUnavailable(LocalInferenceEligibilityResult eligibility) =>
         eligibility.SelectionFailureCode switch
         {
-            LocalInferenceSelectionFailureCode.UnsupportedArchitecture =>
-                "The detected GPU and Windows architecture do not match a qualified Local AI recipe.",
-            LocalInferenceSelectionFailureCode.UnsupportedGpu =>
-                "No qualified NVIDIA GPU was detected. This release supports RTX PRO 6000 Blackwell, " +
-                "GeForce RTX 5090, and RTX Spark N1X systems with a working NVIDIA driver.",
+            LocalInferenceSelectionFailureCode.RuntimeUnavailable =>
+                "This Local AI release does not include a native llama-server runtime for the detected Windows architecture.",
+            LocalInferenceSelectionFailureCode.NoNvidiaGpu =>
+                "No NVIDIA GPU was reported by the NVIDIA driver. Install or repair the NVIDIA driver, then try setup again.",
             LocalInferenceSelectionFailureCode.UnknownModel =>
                 "The selected model is not available in this Local AI release.",
             _ => eligibility.FailureCode switch
             {
                 LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete =>
-                    "OpenClaw could not read the GPU identity, memory, NVIDIA driver, or CUDA capability.",
+                    "OpenClaw could not read a stable NVIDIA GPU identifier, memory, driver, or CUDA capability.",
                 LocalInferenceEligibilityFailureCode.InsufficientGpuMemory =>
-                    $"The detected GPU has less than {LocalInferenceEligibility.MinimumQualifiedGpuMemoryMiB:N0} MiB " +
-                    "of qualified GPU memory.",
+                    $"{eligibility.Plan?.Model.DisplayName ?? "The selected model"} requires " +
+                    $"{FormatSize(eligibility.RequiredTotalMemoryBytes)} of GPU memory, including the 2 GiB runtime margin. " +
+                    $"OpenClaw detected {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}.",
                 LocalInferenceEligibilityFailureCode.DriverTooOld =>
                     $"NVIDIA driver {eligibility.SelectedGpu?.DriverVersion ?? "unknown"} was detected. " +
                     $"Local AI requires version {LocalInferenceEligibility.MinimumNvidiaDriverVersion} or newer.",

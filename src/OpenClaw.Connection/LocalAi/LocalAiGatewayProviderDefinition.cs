@@ -6,6 +6,7 @@ namespace OpenClaw.Connection.LocalAi;
 /// <summary>Canonical gateway configuration for the companion-owned llama.cpp provider.</summary>
 public static class LocalAiGatewayProviderDefinition
 {
+    private const string ApiType = "openai-completions";
     public const string CliRedactedApiKey = "__OPENCLAW_REDACTED__";
     public const string ProviderPath = "models.providers.llamacpp";
     public const string PrimaryModelPath = "agents.defaults.model.primary";
@@ -95,7 +96,7 @@ public static class LocalAiGatewayProviderDefinition
         var value = new
         {
             baseUrl = endpoint.AbsoluteUri.TrimEnd('/'),
-            api = "openai-completions",
+            api = ApiType,
             apiKey,
             timeoutSeconds = ProviderTimeoutSeconds,
             models = new[]
@@ -111,6 +112,7 @@ public static class LocalAiGatewayProviderDefinition
                     contextTokens = install.Manifest.ContextLength,
                     maxTokens = MaximumOutputTokens,
                     compat = new { supportsTools = true, supportsUsageInStreaming = true },
+                    api = ApiType,
                 },
             },
         };

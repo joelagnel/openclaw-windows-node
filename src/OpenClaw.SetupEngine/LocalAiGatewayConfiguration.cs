@@ -127,10 +127,11 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
             return;
         }
 
-        string expectedProvider = ExtractOperationValue(LocalAiGatewayConfigBuilder.BuildBatchJson(ctx), 0);
         string expectedPrimary = JsonSerializer.Serialize(LocalAiGatewayConfigBuilder.ExpectedPrimaryModel(ctx));
         if (!current.ProviderExisted || !current.PrimaryModelExisted ||
-            !JsonEquals(current.ProviderJson!, expectedProvider) ||
+            !LocalAiGatewayProviderDefinition.MatchesProviderJson(
+                current.ProviderJson!,
+                ctx.LocalAiResolvedInstall!) ||
             !JsonEquals(current.PrimaryModelJson!, expectedPrimary))
         {
             ctx.Logger.Warn("Local AI gateway settings changed after setup; preserving the newer values.");
@@ -191,10 +192,10 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
                 "The Local AI manifest has no verified endpoint, so existing gateway settings cannot be proven app-owned.");
         }
 
-        string expectedProvider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
         string expectedPrimary = JsonSerializer.Serialize(
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
-        if ((current.ProviderExisted && !JsonEquals(current.ProviderJson!, expectedProvider)) ||
+        if ((current.ProviderExisted &&
+                !LocalAiGatewayProviderDefinition.MatchesProviderJson(current.ProviderJson!, install)) ||
             (current.PrimaryModelExisted && !JsonEquals(current.PrimaryModelJson!, expectedPrimary)))
         {
             throw new InvalidDataException(

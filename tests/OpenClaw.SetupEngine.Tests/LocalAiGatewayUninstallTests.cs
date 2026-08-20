@@ -29,14 +29,33 @@ public sealed class LocalAiGatewayUninstallTests
     }
 
     [Fact]
+    public async Task FreshProcessUninstall_AcceptsCliRedactedManagedApiKey()
+    {
+        using var temp = new TempDirectory("local-ai-gateway-uninstall-");
+        LocalAiResolvedInstall install = await SaveManifestAsync(temp.Path);
+        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install)
+            .Replace("llama-local", LocalAiGatewayProviderDefinition.CliRedactedApiKey, StringComparison.Ordinal);
+        string primary = JsonSerializer.Serialize(
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        var commands = new GatewayStateCommandRunner(provider, primary);
+        SetupContext context = CreateContext(temp.Path, commands);
+        context.IsUninstalling = true;
+
+        await new ConfigureLocalAiGatewayStep().RollbackAsync(context, CancellationToken.None);
+
+        Assert.Null(commands.ProviderJson);
+        Assert.Null(commands.PrimaryJson);
+    }
+
+    [Fact]
     public async Task FreshProcessUninstall_PreservesDriftAndFailsClosed()
     {
         using var temp = new TempDirectory("local-ai-gateway-uninstall-");
         LocalAiResolvedInstall install = await SaveManifestAsync(temp.Path);
         string expectedProvider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
         string driftedProvider = expectedProvider.Replace(
-            "llama-local",
-            "user-owned-key",
+            "http://127.0.0.1:28765/v1",
+            "http://127.0.0.1:39876/v1",
             StringComparison.Ordinal);
         string primary = JsonSerializer.Serialize(
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));

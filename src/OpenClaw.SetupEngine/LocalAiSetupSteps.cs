@@ -83,7 +83,6 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
             "Selected qualified Local AI plan",
             new
             {
-                profile = eligibility.Plan.HardwareProfile.Id,
                 runtime = eligibility.Plan.Runtime.Id,
                 model = eligibility.Plan.Model.Id,
                 selection = eligibility.Plan.ModelSelectionOrigin.ToString(),
@@ -92,7 +91,7 @@ public sealed class PreflightLocalAiHardwareStep : SetupStep
             });
 
         return Task.FromResult(StepResult.Ok(
-            $"Selected {eligibility.Plan.Model.DisplayName} for {eligibility.Plan.HardwareProfile.DisplayName}."));
+            $"Selected {eligibility.Plan.Model.DisplayName} for {eligibility.SelectedGpu.Name}."));
     }
 }
 

@@ -32,17 +32,54 @@ public static class LocalAiGatewayProviderDefinition
         {
             using JsonDocument actual = JsonDocument.Parse(providerJson);
             using JsonDocument expected = JsonDocument.Parse(BuildProviderJson(install));
-            if (JsonElement.DeepEquals(actual.RootElement, expected.RootElement))
+            if (JsonEquals(actual.RootElement, expected.RootElement))
                 return true;
 
             using JsonDocument redacted = JsonDocument.Parse(
                 BuildProviderJson(install, CliRedactedApiKey));
-            return JsonElement.DeepEquals(actual.RootElement, redacted.RootElement);
+            return JsonEquals(actual.RootElement, redacted.RootElement);
         }
         catch (JsonException)
         {
             return false;
         }
+    }
+
+    private static bool JsonEquals(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind != right.ValueKind)
+            return false;
+
+        if (left.ValueKind == JsonValueKind.Object)
+        {
+            JsonProperty[] leftProperties = [.. left.EnumerateObject()];
+            JsonProperty[] rightProperties = [.. right.EnumerateObject()];
+            if (leftProperties.Length != rightProperties.Length)
+                return false;
+            foreach (JsonProperty property in leftProperties)
+            {
+                if (!right.TryGetProperty(property.Name, out JsonElement rightValue) ||
+                    !JsonEquals(property.Value, rightValue))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (left.ValueKind == JsonValueKind.Array)
+        {
+            JsonElement.ArrayEnumerator leftItems = left.EnumerateArray();
+            JsonElement.ArrayEnumerator rightItems = right.EnumerateArray();
+            while (leftItems.MoveNext())
+            {
+                if (!rightItems.MoveNext() || !JsonEquals(leftItems.Current, rightItems.Current))
+                    return false;
+            }
+            return !rightItems.MoveNext();
+        }
+
+        return JsonElement.DeepEquals(left, right);
     }
 
     private static string BuildProviderJson(LocalAiResolvedInstall install, string apiKey)

@@ -33,8 +33,10 @@ public sealed class LocalAiGatewayUninstallTests
     {
         using var temp = new TempDirectory("local-ai-gateway-uninstall-");
         LocalAiResolvedInstall install = await SaveManifestAsync(temp.Path);
-        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install)
-            .Replace("llama-local", LocalAiGatewayProviderDefinition.CliRedactedApiKey, StringComparison.Ordinal);
+        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install).Replace(
+            "\"api\":\"openai-completions\",\"apiKey\":\"llama-local\"",
+            $"\"apiKey\":\"{LocalAiGatewayProviderDefinition.CliRedactedApiKey}\",\"api\":\"openai-completions\"",
+            StringComparison.Ordinal);
         string primary = JsonSerializer.Serialize(
             LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
         var commands = new GatewayStateCommandRunner(provider, primary);

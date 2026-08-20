@@ -64,6 +64,46 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     [Fact]
+    public async Task Publish_VerificationFailureRemovesExactJustWrittenProvider()
+    {
+        LocalAiResolvedInstall install = Install(28_768);
+        string expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            ProviderAfterApply = expected,
+            FailedReadCalls = [2],
+        };
+        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("was removed", result.Detail, StringComparison.Ordinal);
+        Assert.Null(commands.ProviderJson);
+        Assert.Contains(commands.Calls, call => call.Contains("unset"));
+    }
+
+    [Fact]
+    public async Task Publish_VerificationFailureSurfacesCleanupFailure()
+    {
+        LocalAiResolvedInstall install = Install(28_769);
+        string expected = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            ProviderAfterApply = expected,
+            FailedReadCalls = [2, 3],
+        };
+        var coordinator = new LocalAiGatewayProviderCoordinator(commands, "OpenClawGateway", NullLogger.Instance);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.PublishAsync(install);
+
+        Assert.False(result.Success);
+        Assert.Contains("Cleanup also failed", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(expected, commands.ProviderJson);
+        Assert.DoesNotContain(commands.Calls, call => call.Contains("unset"));
+    }
+
+    [Fact]
     public async Task Quiesce_DoesNotMistakeWslFailureForMissingProvider()
     {
         LocalAiResolvedInstall install = Install(28_767);
@@ -117,8 +157,10 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         public string? ProviderJson { get; private set; } = providerJson;
         public string? ProviderAfterApply { get; init; }
         public bool FailReads { get; init; }
+        public HashSet<int> FailedReadCalls { get; init; } = [];
         public List<IReadOnlyList<string>> Calls { get; } = [];
         public List<string> Distros { get; } = [];
+        private int _readCalls;
 
         public Task<WslCommandResult> RunInDistroAsync(
             string name,
@@ -129,7 +171,9 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             cancellationToken.ThrowIfCancellationRequested();
             Distros.Add(name);
             Calls.Add(command.ToArray());
-            if (FailReads && command.Contains(LocalAiGatewayProviderDefinition.ProviderPath))
+            bool providerRead = command.Contains("get") &&
+                command.Contains(LocalAiGatewayProviderDefinition.ProviderPath);
+            if (providerRead && (FailReads || FailedReadCalls.Contains(++_readCalls)))
                 return Result(1, string.Empty, "wsl.exe failed");
             if (command.Contains("/bin/sh"))
             {

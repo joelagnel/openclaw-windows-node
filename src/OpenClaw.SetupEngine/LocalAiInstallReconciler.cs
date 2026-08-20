@@ -117,13 +117,12 @@ internal sealed class LocalAiInstallReconciler
         };
         if (!string.Equals(manifest.EngineVersion, LlamaRuntimeCatalog.ReleaseTag, StringComparison.Ordinal) ||
             !string.Equals(manifest.Architecture, expectedArchitecture, StringComparison.Ordinal) ||
-            !string.Equals(manifest.HardwareProfileId, plan.HardwareProfile.Id, StringComparison.Ordinal) ||
             !string.Equals(manifest.RuntimeId, plan.Runtime.Id, StringComparison.Ordinal) ||
             !string.Equals(manifest.ModelCatalogId, plan.Model.Id, StringComparison.Ordinal) ||
             !string.Equals(manifest.SelectedGpuId, selectedGpuId, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                "The existing managed Local AI installation does not match the selected hardware and model recipe.");
+                "The existing managed Local AI installation does not match the selected runtime, GPU, and model recipe.");
         }
 
         // This performs the complete catalog receipt comparison, including

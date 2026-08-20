@@ -165,6 +165,17 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         if (_managedProcess is not null)
             await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
 
+        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+            .QuiesceAsync(install, cancellationToken)
+            .ConfigureAwait(false);
+        if (!quiesced.Success)
+        {
+            return Publish(
+                LocalAiRuntimeState.Failed,
+                LocalAiOwnership.None,
+                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.");
+        }
+
         LlamaServerRouterLaunchPlan launchPlan;
         try
         {
@@ -180,17 +191,6 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         {
             _logger.Error("Could not prepare the managed llama-server router.", ex);
             return Publish(LocalAiRuntimeState.Failed, LocalAiOwnership.None, Sanitize(ex.Message));
-        }
-
-        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
-            .QuiesceAsync(install, cancellationToken)
-            .ConfigureAwait(false);
-        if (!quiesced.Success)
-        {
-            return Publish(
-                LocalAiRuntimeState.Failed,
-                LocalAiOwnership.None,
-                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.");
         }
 
         WindowsTcpListenerSnapshotResult beforeStart = _platform.CaptureListeners();

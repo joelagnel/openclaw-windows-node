@@ -109,6 +109,30 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public async Task PreparationFailure_QuiescesEndpointConsumerBeforeReturning()
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        LocalAiResolvedInstall install = (await new LocalAiManifestStore(paths).LoadAsync())!;
+        File.Delete(install.ExecutablePath);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, events, selectedPort: 28_772);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient(events),
+            new FakeLifecycle(events));
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Equal(["quiesce"], events);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
     public async Task AutomaticPort_RejectsWildcardChildListenerWithoutProbing()
     {
         using var temp = new TempDirectory("local-ai-port-");

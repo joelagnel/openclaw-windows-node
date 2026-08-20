@@ -125,12 +125,35 @@ public static class LocalAiGatewayProviderDefinition
         return $"llamacpp/{install.Manifest.ModelAlias}";
     }
 
+    public static void ValidateFallbackModel(string? model)
+        => LocalAiGatewayModelPolicy.ValidateFallbackModel(model);
+
+    public static bool TryReadPrimaryModelJson(string json, out string? model)
+    {
+        model = null;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.String)
+                return false;
+            model = document.RootElement.GetString();
+            ValidateFallbackModel(model);
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException)
+        {
+            model = null;
+            return false;
+        }
+    }
+
     public static string BuildProviderBatchJson(LocalAiResolvedInstall install)
     {
         using JsonDocument provider = JsonDocument.Parse(BuildProviderJson(install));
         return JsonSerializer.Serialize(new[]
         {
             new { path = ProviderPath, value = (object)provider.RootElement.Clone() },
+            new { path = PrimaryModelPath, value = (object)BuildPrimaryModel(install) },
         });
     }
 }

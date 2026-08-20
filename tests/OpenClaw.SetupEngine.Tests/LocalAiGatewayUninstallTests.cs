@@ -50,6 +50,26 @@ public sealed class LocalAiGatewayUninstallTests
     }
 
     [Fact]
+    public async Task FreshProcessUninstall_RestoresRecordedFallbackPrimary()
+    {
+        using var temp = new TempDirectory("local-ai-gateway-uninstall-");
+        LocalAiResolvedInstall install = await SaveManifestAsync(temp.Path, "openai/gpt-5");
+        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        string primary = JsonSerializer.Serialize(
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        var commands = new GatewayStateCommandRunner(provider, primary);
+        SetupContext context = CreateContext(temp.Path, commands);
+        context.IsUninstalling = true;
+
+        await new ConfigureLocalAiGatewayStep().RollbackAsync(context, CancellationToken.None);
+
+        Assert.Null(commands.ProviderJson);
+        Assert.Equal(JsonSerializer.Serialize("openai/gpt-5"), commands.PrimaryJson);
+        Assert.Contains(commands.WslCalls, command =>
+            command.Contains("LOCAL_AI_PRIMARY_RESTORED", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task FreshProcessUninstall_PreservesDriftAndFailsClosed()
     {
         using var temp = new TempDirectory("local-ai-gateway-uninstall-");
@@ -109,7 +129,9 @@ public sealed class LocalAiGatewayUninstallTests
             localDataDir: localDataDirectory);
     }
 
-    private static async Task<LocalAiResolvedInstall> SaveManifestAsync(string localDataDirectory)
+    private static async Task<LocalAiResolvedInstall> SaveManifestAsync(
+        string localDataDirectory,
+        string? fallbackModel = null)
     {
         var paths = new LocalAiPaths(localDataDirectory);
         const string revision = "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d";
@@ -144,6 +166,7 @@ public sealed class LocalAiGatewayUninstallTests
             },
             RequestedPort = 0,
             Endpoint = "http://127.0.0.1:28765/v1",
+            GatewayFallbackModel = fallbackModel,
             ContextLength = LocalModelCatalog.NativeContextTokens,
         };
         var store = new LocalAiManifestStore(paths);
@@ -184,6 +207,19 @@ public sealed class LocalAiGatewayUninstallTests
         {
             ct.ThrowIfCancellationRequested();
             WslCalls.Add(command);
+            if (command.Contains("LOCAL_AI_PRIMARY_RESTORED", StringComparison.Ordinal))
+            {
+                string encoded = Assert.Single(environment!).Value;
+                string batch = Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+                using JsonDocument document = JsonDocument.Parse(batch);
+                PrimaryJson = document.RootElement[0].GetProperty("value").GetRawText();
+                return Task.FromResult(new CommandResult(
+                    0,
+                    "LOCAL_AI_PRIMARY_RESTORED",
+                    "",
+                    TimeSpan.Zero,
+                    TimedOut: false));
+            }
             if (command.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal))
             {
                 if (command.Contains(LocalAiGatewayProviderDefinition.PrimaryModelPath, StringComparison.Ordinal))

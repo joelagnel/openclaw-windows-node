@@ -35,12 +35,10 @@ internal static class LocalAiGatewayConfigBuilder
     public static string BuildRestoreBatchJson(LocalAiGatewayPriorState prior)
     {
         ArgumentNullException.ThrowIfNull(prior);
-        var operations = new List<object>(2);
-        if (prior.ProviderExisted)
-        {
-            using JsonDocument provider = JsonDocument.Parse(prior.ProviderJson!);
-            operations.Add(new { path = ProviderPath, value = (object)provider.RootElement.Clone() });
-        }
+        var operations = new List<object>(1);
+        // Setup accepts a pre-existing provider only when it already matches the
+        // managed definition. Do not replay its CLI-redacted API key on rollback.
+        // The exact current provider is retained below when it existed beforehand.
         if (prior.PrimaryModelExisted)
         {
             using JsonDocument primary = JsonDocument.Parse(prior.PrimaryModelJson!);
@@ -76,13 +74,68 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
         if (snapshotResult.ExitCode != 0 || snapshotResult.TimedOut)
             return StepResult.Fail("Could not safely snapshot the existing Local AI gateway configuration.");
 
+        LocalAiGatewayPriorState prior;
         try
         {
-            ctx.LocalAiGatewayPriorState = ParseSnapshot(snapshotResult.Stdout);
+            prior = ParseSnapshot(snapshotResult.Stdout);
+            ctx.LocalAiGatewayPriorState = prior;
         }
         catch (Exception ex) when (ex is FormatException or JsonException or InvalidDataException)
         {
             return StepResult.Fail("The existing Local AI gateway configuration could not be validated.", ex);
+        }
+
+        LocalAiResolvedInstall install = ctx.LocalAiResolvedInstall;
+        string expectedPrimary = JsonSerializer.Serialize(
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        string? fallbackModel;
+        if (prior.ProviderExisted)
+        {
+            if (install.Endpoint is null ||
+                !LocalAiGatewayProviderDefinition.MatchesProviderJson(prior.ProviderJson!, install) ||
+                !prior.PrimaryModelExisted ||
+                !JsonEquals(prior.PrimaryModelJson!, expectedPrimary))
+            {
+                return StepResult.Fail(
+                    "The existing llamacpp gateway route is not the exact companion-managed configuration; preserving it.");
+            }
+            fallbackModel = install.Manifest.GatewayFallbackModel;
+        }
+        else if (prior.PrimaryModelExisted)
+        {
+            if (!LocalAiGatewayProviderDefinition.TryReadPrimaryModelJson(
+                    prior.PrimaryModelJson!,
+                    out fallbackModel))
+            {
+                return StepResult.Fail(
+                    "The existing gateway primary model cannot be safely restored after Local AI stops; preserving it.");
+            }
+        }
+        else
+        {
+            fallbackModel = null;
+        }
+
+        if (!string.Equals(
+                install.Manifest.GatewayFallbackModel,
+                fallbackModel,
+                StringComparison.Ordinal))
+        {
+            try
+            {
+                var store = new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir));
+                LocalAiInstallManifest updatedManifest = install.Manifest with
+                {
+                    GatewayFallbackModel = fallbackModel,
+                };
+                await store.SaveAsync(updatedManifest, ct).ConfigureAwait(false);
+                ctx.LocalAiResolvedInstall = store.ResolveAndValidate(updatedManifest);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                return StepResult.Fail(
+                    "The prior gateway model could not be recorded before Local AI was enabled.", ex);
+            }
         }
 
         string batchJson = LocalAiGatewayConfigBuilder.BuildBatchJson(ctx);
@@ -192,37 +245,77 @@ public sealed class ConfigureLocalAiGatewayStep : SetupStep
                 "The Local AI manifest has no verified endpoint, so existing gateway settings cannot be proven app-owned.");
         }
 
-        string expectedPrimary = JsonSerializer.Serialize(
-            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        string managedPrimary = LocalAiGatewayProviderDefinition.BuildPrimaryModel(install);
+        string expectedPrimary = JsonSerializer.Serialize(managedPrimary);
+        string? fallbackModel = install.Manifest.GatewayFallbackModel;
+        string? currentPrimary = null;
+        bool currentPrimaryIsManaged = current.PrimaryModelExisted &&
+            JsonEquals(current.PrimaryModelJson!, expectedPrimary);
+        bool currentPrimaryIsFallback = current.PrimaryModelExisted &&
+            fallbackModel is not null &&
+            JsonEquals(current.PrimaryModelJson!, JsonSerializer.Serialize(fallbackModel));
+        if (current.PrimaryModelExisted &&
+            !currentPrimaryIsManaged &&
+            !currentPrimaryIsFallback &&
+            LocalAiGatewayProviderDefinition.TryReadPrimaryModelJson(current.PrimaryModelJson!, out string? parsed))
+        {
+            currentPrimary = parsed;
+        }
+
         if ((current.ProviderExisted &&
                 !LocalAiGatewayProviderDefinition.MatchesProviderJson(current.ProviderJson!, install)) ||
-            (current.PrimaryModelExisted && !JsonEquals(current.PrimaryModelJson!, expectedPrimary)))
+            (current.PrimaryModelExisted &&
+                !currentPrimaryIsManaged &&
+                !currentPrimaryIsFallback &&
+                currentPrimary is null))
         {
             throw new InvalidDataException(
                 "Local AI gateway settings changed after setup; preserving them instead of removing unproven values.");
         }
 
+        if (currentPrimaryIsManaged && fallbackModel is not null)
+        {
+            string restorePrimary = JsonSerializer.Serialize(new[]
+            {
+                new { path = LocalAiGatewayConfigBuilder.PrimaryModelPath, value = fallbackModel },
+            });
+            CommandResult restored = await ApplyBatchAsync(
+                ctx, restorePrimary, "LOCAL_AI_PRIMARY_RESTORED", ct).ConfigureAwait(false);
+            if (restored.ExitCode != 0 || restored.TimedOut)
+                throw new IOException("Restoring the prior gateway primary model failed during uninstall.");
+        }
+
         var unset = new List<string>(capacity: 2);
-        if (current.PrimaryModelExisted)
+        if (currentPrimaryIsManaged && fallbackModel is null)
             unset.Add($"openclaw config unset {LocalAiGatewayConfigBuilder.PrimaryModelPath}");
         if (current.ProviderExisted)
             unset.Add($"openclaw config unset {LocalAiGatewayConfigBuilder.ProviderPath}");
 
-        string script = $"set -e\n{ctx.WslPathPrefix}\n{string.Join("\n", unset)}\necho LOCAL_AI_GATEWAY_UNSET";
-        CommandResult result = await ctx.Commands.RunInWslAsync(
-            ctx.DistroName!, script, TimeSpan.FromMinutes(2), ct: ct,
-            user: ctx.Config.Wsl.User, inputViaStdin: true);
-        if (result.ExitCode != 0 || result.TimedOut ||
-            !result.Stdout.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal))
+        if (unset.Count > 0)
         {
-            throw new IOException("Removing the managed Local AI gateway settings failed.");
+            string script = $"set -e\n{ctx.WslPathPrefix}\n{string.Join("\n", unset)}\necho LOCAL_AI_GATEWAY_UNSET";
+            CommandResult result = await ctx.Commands.RunInWslAsync(
+                ctx.DistroName!, script, TimeSpan.FromMinutes(2), ct: ct,
+                user: ctx.Config.Wsl.User, inputViaStdin: true);
+            if (result.ExitCode != 0 || result.TimedOut ||
+                !result.Stdout.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal))
+            {
+                throw new IOException("Removing the managed Local AI gateway settings failed.");
+            }
         }
 
         CommandResult verifiedResult = await CaptureStateAsync(ctx, ct).ConfigureAwait(false);
         if (verifiedResult.ExitCode != 0 || verifiedResult.TimedOut)
             throw new IOException("Could not verify Local AI gateway removal during uninstall.");
         LocalAiGatewayPriorState verified = ParseSnapshot(verifiedResult.Stdout);
-        if (verified.ProviderExisted || verified.PrimaryModelExisted)
+        bool primaryIsSafe = fallbackModel is not null
+            ? verified.PrimaryModelExisted &&
+              JsonEquals(verified.PrimaryModelJson!, JsonSerializer.Serialize(fallbackModel))
+            : currentPrimary is not null
+                ? verified.PrimaryModelExisted &&
+                  JsonEquals(verified.PrimaryModelJson!, JsonSerializer.Serialize(currentPrimary))
+                : !verified.PrimaryModelExisted;
+        if (verified.ProviderExisted || !primaryIsSafe)
             throw new IOException("Managed Local AI gateway settings remained after uninstall cleanup.");
     }
 

@@ -172,16 +172,6 @@
                                             <TextBlock x:Name="LocalAiSettingsDetailText"
                                                        Style="{StaticResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                            <TextBlock Text="The recommended model is selected by default. OpenClaw changes it only when you choose another model here."
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
-                                            <TextBlock x:Name="LocalAiNetworkingReadyText"
-                                                       AutomationProperties.AutomationId="LocalAiNetworkingReadyStatus"
-                                                       AutomationProperties.LiveSetting="Polite"
-                                                       Text="Mirrored WSL networking is already enabled. No WSL shutdown is needed."
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                                                       TextWrapping="Wrap" Visibility="Collapsed" />
                                             <InfoBar x:Name="LocalAiNetworkingConsentPanel"
                                                      AutomationProperties.AutomationId="LocalAiNetworkingConsentPanel"
                                                      AutomationProperties.LiveSetting="Assertive"

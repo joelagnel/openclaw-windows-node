@@ -8,7 +8,6 @@ using OpenClaw.Shared.Inference;
 using OpenClaw.Shared.Inference.Catalog;
 using OpenClaw.SetupEngine.UI;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 namespace OpenClaw.SetupEngine.UI.Pages;
 
@@ -491,7 +490,6 @@ public sealed partial class CapabilitiesPage : Page
         config.SkipWizard = enabled || _skipWizardWithoutLocalAi;
         LocalAiDetailsPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
-        LocalAiNetworkingReadyText.Visibility = Visibility.Collapsed;
         _localAiNetworkingConsentRequired = false;
 
         if (!enabled)
@@ -509,9 +507,6 @@ public sealed partial class CapabilitiesPage : Page
             : _localAiNetworkingStatus ?? new(false, false);
         _localAiNetworkingConsentRequired = !status.IsMirrored;
         LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LocalAiNetworkingReadyText.Visibility = status.IsMirrored
             ? Visibility.Visible
             : Visibility.Collapsed;
         SetLocalAiNetworkingConsent(false);
@@ -541,10 +536,10 @@ public sealed partial class CapabilitiesPage : Page
             ? $"Detected {gpu.Name}. Using the {plan.HardwareProfile.DisplayName} recipe."
             : $"Detected {gpu.Name}, but the GPU is currently busy. Close GPU applications and retry setup.";
         LocalAiEngineDetailText.Text =
-            $"llama-server {LlamaRuntimeCatalog.ReleaseTag} for Windows {RuntimeInformation.OSArchitecture}; " +
+            "llama-server for Windows; " +
             $"{FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))} verified download";
         LocalAiModelDetailText.Text =
-            $"{plan.Model.DisplayName}, {FormatSize(plan.Model.Weights.SizeBytes)} from Hugging Face at an immutable revision";
+            $"{plan.Model.DisplayName}, {FormatSize(plan.Model.Weights.SizeBytes)} from Hugging Face";
         LocalAiSettingsDetailText.Text =
             $"{plan.Model.Recipe.ContextTokens / 1024}K context, FP16 KV cache, full CUDA offload, loads on first request";
         UpdatePrimaryButtonState();

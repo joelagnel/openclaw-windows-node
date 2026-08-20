@@ -67,7 +67,7 @@ public sealed partial class ProgressPage : Page
         _config = args?.Config ?? e.Parameter as SetupConfig ?? new SetupConfig();
         _dataDir = args?.DataDir ?? SetupContext.ResolveDataDir();
         _localDataDir = args?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
-        TitleText.Text = _config.LocalAi.Enabled ? "Setting up OpenClaw and Local AI" : "Setting up WSL gateway";
+        TitleText.Text = _config.LocalAi.Enabled ? "Setting up OpenClaw and Local AI" : "Setting up OpenClaw";
         SubtitleText.Text = _config.LocalAi.Enabled
             ? $"Creating {_config.DistroName}, installing llama-server, and preparing the selected model"
             : $"Creating {_config.DistroName} WSL instance";
@@ -101,7 +101,7 @@ public sealed partial class ProgressPage : Page
     private void RenderProgressPreview()
     {
         bool localAiPreview = SetupPreview.RequestedPage == "progress-local-ai";
-        TitleText.Text = localAiPreview ? "Setting up OpenClaw and Local AI" : "Setting up WSL gateway";
+        TitleText.Text = localAiPreview ? "Setting up OpenClaw and Local AI" : "Setting up OpenClaw";
         SubtitleText.Text = localAiPreview
             ? "Downloading the selected Hugging Face model: about 18 minutes left"
             : "Creating OpenClawGateway WSL instance: about 4 minutes left";

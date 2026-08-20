@@ -65,7 +65,7 @@ public static class SetupReviewSummaryBuilder
         string[] localAiCommands = config.LocalAi.Enabled
             ?
             [
-                $"download verified llama-server {LlamaRuntimeCatalog.ReleaseTag} + CUDA runtime for Windows",
+                "download verified llama-server + CUDA runtime for Windows",
                 $"download {localAiModel.Weights.RelativePath} from Hugging Face revision " +
                     ((HuggingFaceRevisionSource)localAiModel.Weights.Source).RevisionSha,
                 $"llama-server router on dynamic 127.0.0.1 port; model loads on first request",
@@ -106,7 +106,7 @@ public static class SetupReviewSummaryBuilder
                 ? $"Local AI verified with {localAiModel.DisplayName}"
                 : null,
             LocalAiDescription = config.LocalAi.Enabled
-                ? $"llama-server {LlamaRuntimeCatalog.ReleaseTag} · Hugging Face immutable revision · " +
+                ? "llama-server · " +
                     $"{localAiModel.Recipe.ContextTokens / 1024}K context · FP16 KV · full CUDA offload · loads on first request"
                 : null,
         };

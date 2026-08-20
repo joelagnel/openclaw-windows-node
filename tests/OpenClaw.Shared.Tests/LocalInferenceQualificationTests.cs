@@ -64,6 +64,24 @@ public class LocalInferenceQualificationTests
     }
 
     [Fact]
+    public void Evaluate_CountsSharedMemoryForAnyNvidiaGpuAndUnknownSharedFreeIsNotBusy()
+    {
+        GpuInfo gpu = Gpu("NVIDIA generic unified memory", "GPU-shared", 8, 8) with
+        {
+            SharedGpuMemoryBytes = 8 * GiB,
+            FreeSharedGpuMemoryBytes = null,
+        };
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
+            Hardware(RuntimeArchitecture.Arm64, gpu));
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
+        Assert.Equal(LocalModelCatalog.Qwen9BModelId, result.Plan?.Model.Id);
+        Assert.Equal(16 * GiB, result.DetectedTotalMemoryBytes);
+        Assert.Null(result.AvailableFreeMemoryBytes);
+    }
+
+    [Fact]
     public void Evaluate_RanksEligibleAdaptersByFreeThenTotalThenUuid()
     {
         GpuInfo moreTotal = Gpu("NVIDIA total", "GPU-z", 48, 12);
@@ -115,6 +133,48 @@ public class LocalInferenceQualificationTests
         Assert.Equal(LocalInferenceSelectionFailureCode.NoNvidiaGpu, result.SelectionFailureCode);
     }
 
+    [Fact]
+    public void Probe_JoinsDxgiByNormalizedExactName()
+    {
+        GpuInfo gpu = ProbeWithDxgi(
+            "NVIDIA   Generic GPU",
+            new Dictionary<string, DxgiGpuMemoryInfo>
+            {
+                ["NVIDIA Generic GPU"] = new(10 * GiB, 9 * GiB),
+            });
+
+        Assert.Equal(10 * GiB, gpu.SharedGpuMemoryBytes);
+    }
+
+    [Theory]
+    [InlineData("NVIDIA Generic GPU (Device 1)", "NVIDIA Generic GPU")]
+    [InlineData("NVIDIA Generic GPU", "NVIDIA Generic GPU (Device 1)")]
+    public void Probe_JoinsDxgiByUniqueBidirectionalContainment(string nvmlName, string dxgiName)
+    {
+        GpuInfo gpu = ProbeWithDxgi(
+            nvmlName,
+            new Dictionary<string, DxgiGpuMemoryInfo>
+            {
+                [dxgiName] = new(10 * GiB, null),
+            });
+
+        Assert.Equal(10 * GiB, gpu.SharedGpuMemoryBytes);
+    }
+
+    [Fact]
+    public void Probe_DoesNotJoinAmbiguousDxgiContainmentMatches()
+    {
+        GpuInfo gpu = ProbeWithDxgi(
+            "NVIDIA Generic GPU (Device 1)",
+            new Dictionary<string, DxgiGpuMemoryInfo>
+            {
+                ["NVIDIA Generic GPU"] = new(10 * GiB, null),
+                ["Generic GPU (Device 1)"] = new(12 * GiB, null),
+            });
+
+        Assert.Null(gpu.SharedGpuMemoryBytes);
+    }
+
     private static HostHardwareInfo Hardware(RuntimeArchitecture architecture, params GpuInfo[] gpus) =>
         new(architecture, 64 * GiB, 48 * GiB, gpus, false);
 
@@ -131,4 +191,20 @@ public class LocalInferenceQualificationTests
             DriverVersion: "616.30",
             CudaMajorVersion: 13,
             StableId: stableId);
+
+    private static GpuInfo ProbeWithDxgi(
+        string nvmlName,
+        IReadOnlyDictionary<string, DxgiGpuMemoryInfo> dxgiMemory)
+    {
+        var probe = new NvmlHostHardwareProbe(
+            () => new NvmlProbeResult(
+                [new NvmlGpuSnapshot(nvmlName, "GPU-probe", 8UL * 1024 * 1024 * 1024, 8UL * 1024 * 1024 * 1024)],
+                "616.30",
+                13),
+            () => null,
+            () => dxgiMemory,
+            RuntimeArchitecture.X64);
+
+        return Assert.Single(probe.Probe().NvidiaGpus);
+    }
 }

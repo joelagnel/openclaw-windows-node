@@ -112,17 +112,28 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
         string nvmlName)
     {
         string normalizedNvmlName = NormalizeGpuName(nvmlName);
-        if (dxgiMemoryByName.TryGetValue(normalizedNvmlName, out DxgiGpuMemoryInfo? exactMatch))
-            return exactMatch;
-
-        const string SparkN1XPrefix = "NVIDIA RTX Spark N1X";
-        if (!normalizedNvmlName.Contains(SparkN1XPrefix, StringComparison.OrdinalIgnoreCase))
+        KeyValuePair<string, DxgiGpuMemoryInfo>[] normalizedEntries = dxgiMemoryByName
+            .Select(entry => new KeyValuePair<string, DxgiGpuMemoryInfo>(
+                NormalizeGpuName(entry.Key),
+                entry.Value))
+            .ToArray();
+        KeyValuePair<string, DxgiGpuMemoryInfo>[] exactMatches = normalizedEntries
+            .Where(entry => string.Equals(
+                entry.Key,
+                normalizedNvmlName,
+                StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (exactMatches.Length == 1)
+            return exactMatches[0].Value;
+        if (exactMatches.Length > 1)
             return null;
 
-        KeyValuePair<string, DxgiGpuMemoryInfo>[] sparkMatches = dxgiMemoryByName
-            .Where(entry => entry.Key.Contains(SparkN1XPrefix, StringComparison.OrdinalIgnoreCase))
+        KeyValuePair<string, DxgiGpuMemoryInfo>[] containmentMatches = normalizedEntries
+            .Where(entry =>
+                entry.Key.Contains(normalizedNvmlName, StringComparison.OrdinalIgnoreCase) ||
+                normalizedNvmlName.Contains(entry.Key, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        return sparkMatches.Length == 1 ? sparkMatches[0].Value : null;
+        return containmentMatches.Length == 1 ? containmentMatches[0].Value : null;
     }
 
     internal static IReadOnlyList<string> GetNvmlLibraryCandidates()

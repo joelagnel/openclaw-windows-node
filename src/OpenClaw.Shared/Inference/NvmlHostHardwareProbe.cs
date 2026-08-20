@@ -74,15 +74,23 @@ public sealed class NvmlHostHardwareProbe : IHostHardwareProbe
             // Shared GPU memory is optional. NVML facts remain usable alone.
         }
 
-        var gpus = nvml.Devices
+        NvmlGpuSnapshot[] devices = nvml.Devices
             .Where(device =>
                 device.TotalMemoryBytes is > 0 and <= long.MaxValue &&
                 device.FreeMemoryBytes <= device.TotalMemoryBytes &&
                 !string.IsNullOrWhiteSpace(device.Name))
+            .ToArray();
+        IReadOnlyDictionary<string, int> nvmlNameCounts = devices
+            .GroupBy(device => NormalizeGpuName(device.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        var gpus = devices
             .Select(device =>
             {
                 string name = device.Name.Trim();
-                DxgiGpuMemoryInfo? dxgiMemory = FindDxgiMemoryByName(dxgiMemoryByName, name);
+                string normalizedName = NormalizeGpuName(name);
+                DxgiGpuMemoryInfo? dxgiMemory = nvmlNameCounts[normalizedName] == 1
+                    ? FindDxgiMemoryByName(dxgiMemoryByName, name)
+                    : null;
                 return new GpuInfo(
                     GpuVendor.Nvidia,
                     name,

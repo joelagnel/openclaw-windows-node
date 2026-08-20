@@ -41,6 +41,7 @@ internal static class DxgiGpuMemoryProbe
             return new Dictionary<string, DxgiGpuMemoryInfo>(StringComparer.OrdinalIgnoreCase);
 
         var results = new Dictionary<string, DxgiGpuMemoryInfo>(StringComparer.OrdinalIgnoreCase);
+        var ambiguousNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var enumerateAdapters = GetDelegate<EnumAdapters1>(factory, 12);
@@ -54,7 +55,7 @@ internal static class DxgiGpuMemoryProbe
 
                 try
                 {
-                    AddNvidiaAdapterMemory(adapter, results);
+                    AddNvidiaAdapterMemory(adapter, results, ambiguousNames);
                 }
                 finally
                 {
@@ -72,7 +73,8 @@ internal static class DxgiGpuMemoryProbe
 
     private static void AddNvidiaAdapterMemory(
         IntPtr adapter,
-        IDictionary<string, DxgiGpuMemoryInfo> results)
+        IDictionary<string, DxgiGpuMemoryInfo> results,
+        ISet<string> ambiguousNames)
     {
         var getDescription = GetDelegate<GetDesc1>(adapter, 10);
         if (getDescription(adapter, out DxgiAdapterDescription description) < 0 ||
@@ -84,9 +86,35 @@ internal static class DxgiGpuMemoryProbe
 
         long? sharedMemoryBytes = ToInt64(description.SharedSystemMemory);
         long? freeSharedMemoryBytes = QueryFreeSharedMemory(adapter);
-        results[NormalizeName(description.Description)] = new DxgiGpuMemoryInfo(
-            sharedMemoryBytes,
-            freeSharedMemoryBytes);
+        AddMemoryByName(
+            results,
+            ambiguousNames,
+            description.Description,
+            new DxgiGpuMemoryInfo(sharedMemoryBytes, freeSharedMemoryBytes));
+    }
+
+    internal static void AddMemoryByName(
+        IDictionary<string, DxgiGpuMemoryInfo> results,
+        ISet<string> ambiguousNames,
+        string adapterName,
+        DxgiGpuMemoryInfo memory)
+    {
+        ArgumentNullException.ThrowIfNull(results);
+        ArgumentNullException.ThrowIfNull(ambiguousNames);
+        ArgumentException.ThrowIfNullOrWhiteSpace(adapterName);
+        ArgumentNullException.ThrowIfNull(memory);
+
+        string normalizedName = NormalizeName(adapterName);
+        if (ambiguousNames.Contains(normalizedName))
+            return;
+        if (results.ContainsKey(normalizedName))
+        {
+            results.Remove(normalizedName);
+            ambiguousNames.Add(normalizedName);
+            return;
+        }
+
+        results.Add(normalizedName, memory);
     }
 
     private static long? QueryFreeSharedMemory(IntPtr adapter)

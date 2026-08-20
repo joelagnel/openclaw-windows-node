@@ -175,6 +175,50 @@ public class LocalInferenceQualificationTests
         Assert.Null(gpu.SharedGpuMemoryBytes);
     }
 
+    [Fact]
+    public void Probe_DoesNotJoinOneDxgiBudgetToDuplicateNvmlNames()
+    {
+        var probe = new NvmlHostHardwareProbe(
+            () => new NvmlProbeResult(
+                [
+                    new NvmlGpuSnapshot("NVIDIA Duplicate GPU", "GPU-a", 8UL * 1024 * 1024 * 1024, 8UL * 1024 * 1024 * 1024),
+                    new NvmlGpuSnapshot("NVIDIA  Duplicate GPU", "GPU-b", 8UL * 1024 * 1024 * 1024, 8UL * 1024 * 1024 * 1024),
+                ],
+                "616.30",
+                13),
+            () => null,
+            () => new Dictionary<string, DxgiGpuMemoryInfo>
+            {
+                ["NVIDIA Duplicate GPU"] = new(10 * GiB, 9 * GiB),
+            },
+            RuntimeArchitecture.X64);
+
+        GpuInfo[] gpus = probe.Probe().NvidiaGpus.ToArray();
+
+        Assert.Equal(2, gpus.Length);
+        Assert.All(gpus, gpu => Assert.Null(gpu.SharedGpuMemoryBytes));
+    }
+
+    [Fact]
+    public void DxgiCapture_OmitsDuplicateNormalizedAdapterNames()
+    {
+        var results = new Dictionary<string, DxgiGpuMemoryInfo>(StringComparer.OrdinalIgnoreCase);
+        var ambiguousNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        DxgiGpuMemoryProbe.AddMemoryByName(
+            results,
+            ambiguousNames,
+            "NVIDIA Duplicate GPU",
+            new DxgiGpuMemoryInfo(10 * GiB, 9 * GiB));
+        DxgiGpuMemoryProbe.AddMemoryByName(
+            results,
+            ambiguousNames,
+            "NVIDIA   Duplicate GPU",
+            new DxgiGpuMemoryInfo(12 * GiB, 11 * GiB));
+
+        Assert.Empty(results);
+        Assert.Contains("NVIDIA Duplicate GPU", ambiguousNames);
+    }
+
     private static HostHardwareInfo Hardware(RuntimeArchitecture architecture, params GpuInfo[] gpus) =>
         new(architecture, 64 * GiB, 48 * GiB, gpus, false);
 

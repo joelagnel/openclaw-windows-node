@@ -197,9 +197,20 @@ public sealed class CaptureLocalAiGpuBaselineStep : SetupStep
 public sealed class VerifyLocalAiGpuLoadStep : SetupStep
 {
     private readonly ILocalAiGpuEvidenceProbe _probe;
-    public VerifyLocalAiGpuLoadStep() : this(new WindowsLocalAiGpuEvidenceProbe()) { }
-    internal VerifyLocalAiGpuLoadStep(ILocalAiGpuEvidenceProbe probe) =>
+    private readonly Func<SetupContext, CancellationToken, Task<LocalAiResolvedInstall?>> _installLoader;
+
+    public VerifyLocalAiGpuLoadStep()
+        : this(new WindowsLocalAiGpuEvidenceProbe())
+    {
+    }
+
+    internal VerifyLocalAiGpuLoadStep(
+        ILocalAiGpuEvidenceProbe probe,
+        Func<SetupContext, CancellationToken, Task<LocalAiResolvedInstall?>>? installLoader = null)
+    {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        _installLoader = installLoader ?? LoadResolvedInstallAsync;
+    }
 
     public override string Id => "verify-local-ai-gpu-load";
     public override string DisplayName => "Verifying Local AI GPU placement";
@@ -269,7 +280,34 @@ public sealed class VerifyLocalAiGpuLoadStep : SetupStep
             return StepResult.Fail("llama-server could not return to on-demand loading after GPU verification.");
         }
 
+        LocalAiResolvedInstall? restartedInstall;
+        try
+        {
+            restartedInstall = await _installLoader(ctx, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return StepResult.Fail(
+                "llama-server restarted without a readable durable endpoint receipt.",
+                ex);
+        }
+        if (restartedInstall?.Endpoint is null || restartedInstall.Endpoint != reset.Endpoint)
+        {
+            return StepResult.Fail(
+                "llama-server restarted without committing its current endpoint receipt.");
+        }
+        ctx.LocalAiResolvedInstall = restartedInstall;
+
         return StepResult.Ok(
             $"Verified {evidence!.OffloadedLayers}/{evidence.TotalLayers} GPU layers and {evidence.LoadDeltaBytes} bytes of load growth; on-demand loading remains enabled.");
     }
+
+    private static Task<LocalAiResolvedInstall?> LoadResolvedInstallAsync(
+        SetupContext ctx,
+        CancellationToken cancellationToken) =>
+        new LocalAiManifestStore(new LocalAiPaths(ctx.LocalDataDir)).LoadAsync(cancellationToken);
 }

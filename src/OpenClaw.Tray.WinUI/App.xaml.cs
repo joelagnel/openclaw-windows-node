@@ -717,18 +717,6 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         _sshTunnelService = new SshTunnelService(new AppLogger());
         _sshTunnelService.TunnelExited += OnSshTunnelExited;
-        var localAiLogger = new AppLogger();
-        var localAiEndpointLifecycle = new LocalAiGatewayProviderCoordinator(
-            new WslExeCommandRunner(localAiLogger),
-            AppIdentity.SetupDistroName,
-            localAiLogger);
-        _localAiRuntime = new LlamaServerRuntimeService(
-            new LlamaServerRuntimeOptions
-            {
-                Paths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory()),
-                EndpointLifecycle = localAiEndpointLifecycle,
-            },
-            localAiLogger);
 
         // Initialize tray icon FIRST (window-less pattern from WinUIEx).
         // The tray is application chrome and must always survive any failure
@@ -738,6 +726,26 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         InitializeTrayIcon();
         ShowSurfaceImprovementsTipIfNeeded();
 
+        // The singleton Local AI installation belongs to exactly one explicit
+        // setup-managed local WSL gateway. Load the registry before composing its
+        // lifecycle so no hardcoded distro can receive provider commands.
+        var appLogger = new AppLogger();
+        _gatewayRegistry = new GatewayRegistry(SettingsManager.SettingsDirectoryPath, logger: appLogger);
+        _gatewayRegistry.Load();
+        var localAiLogger = new AppLogger();
+        var localAiPaths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory());
+        var localAiEndpointLifecycle = new LocalAiGatewayProviderCoordinator(
+            new WslExeCommandRunner(localAiLogger),
+            new LocalAiGatewayDistroResolver(_gatewayRegistry),
+            localAiLogger);
+        _localAiRuntime = new LlamaServerRuntimeService(
+            new LlamaServerRuntimeOptions
+            {
+                Paths = localAiPaths,
+                EndpointLifecycle = localAiEndpointLifecycle,
+            },
+            localAiLogger);
+
         // Build the DI composition root AFTER the tray is up, so additive plumbing
         // can never delay or preempt tray initialization. It only needs the
         // dispatcher + settings (created above) and failures are non-fatal.
@@ -745,11 +753,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         StartLocalAiRouterInBackground();
 
         // Initialize connection manager before setup flow.
-        _gatewayRegistry = new GatewayRegistry(SettingsManager.SettingsDirectoryPath, logger: new AppLogger());
-        _gatewayRegistry.Load();
         var credentialResolver = new CredentialResolver(DeviceIdentityFileReader.Instance);
         var clientFactory = new GatewayClientFactory();
-        var appLogger = new AppLogger();
         var diagnostics = new ConnectionDiagnostics();
         var nodeConnector = new NodeConnector(appLogger, diagnostics);
         // Bridge: whenever NodeConnector creates a fresh WindowsNodeClient (initial

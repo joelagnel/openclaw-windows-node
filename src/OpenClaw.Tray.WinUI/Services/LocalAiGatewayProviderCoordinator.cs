@@ -16,17 +16,16 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
     private const int MaximumConfigBytes = 1024 * 1024;
 
     private readonly IWslCommandRunner _commands;
-    private readonly string _distroName;
+    private readonly ILocalAiGatewayDistroResolver _distroResolver;
     private readonly IOpenClawLogger _logger;
 
     public LocalAiGatewayProviderCoordinator(
         IWslCommandRunner commands,
-        string distroName,
+        ILocalAiGatewayDistroResolver distroResolver,
         IOpenClawLogger logger)
     {
         _commands = commands ?? throw new ArgumentNullException(nameof(commands));
-        ArgumentException.ThrowIfNullOrWhiteSpace(distroName);
-        _distroName = distroName.Trim();
+        _distroResolver = distroResolver ?? throw new ArgumentNullException(nameof(distroResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -135,8 +134,10 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
             return Failed("The gateway primary model changed while Local AI was stopped; preserving it instead of overwriting it.");
         }
 
-        WslCommandResult applied = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
-        if (!applied.Success)
+        RoutedCommandResult applied = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        if (!applied.Routed)
+            return Failed(applied.Detail!);
+        if (!applied.Result!.Success)
         {
             LocalAiEndpointLifecycleResult cleanup = await QuiesceAsync(install, cancellationToken)
                 .ConfigureAwait(false);
@@ -223,8 +224,12 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         string path,
         CancellationToken cancellationToken)
     {
-        WslCommandResult direct = await RunOpenClawAsync(
+        RoutedCommandResult routed = await RunOpenClawAsync(
             ["config", "get", path, "--json"], cancellationToken).ConfigureAwait(false);
+        if (!routed.Routed)
+            return new(false, false, null, routed.Detail);
+
+        WslCommandResult direct = routed.Result!;
         if (direct.Success)
             return new(true, true, direct.StandardOutput, null);
         string missing = $"Config path not found: {path}";
@@ -242,8 +247,10 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         {
             new { path = LocalAiGatewayProviderDefinition.PrimaryModelPath, value = model },
         });
-        WslCommandResult result = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
-        return result.Success
+        RoutedCommandResult routed = await ApplyBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+        if (!routed.Routed)
+            return Failed(routed.Detail!);
+        return routed.Result!.Success
             ? LocalAiEndpointLifecycleResult.Ok()
             : Failed("The prior gateway primary model could not be restored before the Local AI endpoint changed.");
     }
@@ -252,14 +259,16 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         string path,
         CancellationToken cancellationToken)
     {
-        WslCommandResult unset = await RunOpenClawAsync(
+        RoutedCommandResult routed = await RunOpenClawAsync(
             ["config", "unset", path], cancellationToken).ConfigureAwait(false);
-        return unset.Success
+        if (!routed.Routed)
+            return Failed(routed.Detail!);
+        return routed.Result!.Success
             ? LocalAiEndpointLifecycleResult.Ok()
             : Failed($"The managed gateway setting '{path}' could not be disabled before the Local AI endpoint changed.");
     }
 
-    private Task<WslCommandResult> ApplyBatchAsync(
+    private Task<RoutedCommandResult> ApplyBatchAsync(
         string batch,
         CancellationToken cancellationToken)
     {
@@ -267,8 +276,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         string script =
             $"set -e\nprintf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin --dry-run\n" +
             $"printf '%s' '{encoded}' | base64 -d | openclaw config set --batch-file /dev/stdin";
-        return _commands.RunInDistroAsync(
-            _distroName,
+        return RunInManagedDistroAsync(
             ["/usr/bin/env", $"PATH={FixedPath}", "/bin/sh", "-c", script],
             cancellationToken);
     }
@@ -280,7 +288,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         return JsonDocument.Parse(value, new JsonDocumentOptions { MaxDepth = 32 });
     }
 
-    private Task<WslCommandResult> RunOpenClawAsync(
+    private Task<RoutedCommandResult> RunOpenClawAsync(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
@@ -291,7 +299,23 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
             "openclaw",
         };
         command.AddRange(arguments);
-        return _commands.RunInDistroAsync(_distroName, command, cancellationToken);
+        return RunInManagedDistroAsync(command, cancellationToken);
+    }
+
+    private async Task<RoutedCommandResult> RunInManagedDistroAsync(
+        IReadOnlyList<string> command,
+        CancellationToken cancellationToken)
+    {
+        LocalAiGatewayDistroResolution resolution = _distroResolver.Resolve();
+        if (!resolution.Success)
+            return new(null, resolution.Detail);
+
+        WslCommandResult result = await _commands.RunInDistroAsync(
+                resolution.DistroName!,
+                command,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new(result, null);
     }
 
     private LocalAiEndpointLifecycleResult Failed(string detail)
@@ -301,6 +325,10 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
     }
 
     private sealed record SettingCapture(bool Success, bool Exists, string? Json, string? Detail);
+    private sealed record RoutedCommandResult(WslCommandResult? Result, string? Detail)
+    {
+        public bool Routed => Result is not null;
+    }
     private sealed record GatewayCapture(
         bool Success,
         bool ProviderExists,

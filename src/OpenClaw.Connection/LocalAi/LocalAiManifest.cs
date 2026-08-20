@@ -126,7 +126,12 @@ public sealed record LocalAiInstallManifest
     public string Engine { get; init; } = SupportedEngine;
     public required string EngineVersion { get; init; }
     public required string Architecture { get; init; }
-    public required string HardwareProfileId { get; init; }
+    /// <summary>
+    /// Legacy schema-3 metadata. It remains readable for compatibility but is
+    /// not used for qualification and new manifests leave it absent.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HardwareProfileId { get; init; }
     public required string RuntimeId { get; init; }
     public required string ModelCatalogId { get; init; }
     public required string SelectedGpuId { get; init; }
@@ -309,7 +314,6 @@ public sealed class LocalAiManifestStore
             throw new InvalidDataException("The local AI manifest engine version is required.");
         if (manifest.Architecture is not ("x64" or "arm64"))
             throw new InvalidDataException("The local AI manifest architecture must be x64 or arm64.");
-        ValidatePlanIdentifier(manifest.HardwareProfileId, nameof(manifest.HardwareProfileId));
         ValidatePlanIdentifier(manifest.RuntimeId, nameof(manifest.RuntimeId));
         ValidatePlanIdentifier(manifest.ModelCatalogId, nameof(manifest.ModelCatalogId));
         if (string.IsNullOrWhiteSpace(manifest.SelectedGpuId) ||

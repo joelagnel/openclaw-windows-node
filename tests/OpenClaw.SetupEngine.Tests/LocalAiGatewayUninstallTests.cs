@@ -54,6 +54,27 @@ public sealed class LocalAiGatewayUninstallTests
             command.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task FreshProcessUninstall_PreservesStateWhenSnapshotFails()
+    {
+        using var temp = new TempDirectory("local-ai-gateway-uninstall-");
+        LocalAiResolvedInstall install = await SaveManifestAsync(temp.Path);
+        string provider = LocalAiGatewayProviderDefinition.BuildProviderJson(install);
+        string primary = JsonSerializer.Serialize(
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install));
+        var commands = new GatewayStateCommandRunner(provider, primary) { FailCapture = true };
+        SetupContext context = CreateContext(temp.Path, commands);
+        context.IsUninstalling = true;
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            new ConfigureLocalAiGatewayStep().RollbackAsync(context, CancellationToken.None));
+
+        Assert.Equal(provider, commands.ProviderJson);
+        Assert.Equal(primary, commands.PrimaryJson);
+        Assert.DoesNotContain(commands.WslCalls, command =>
+            command.Contains("LOCAL_AI_GATEWAY_UNSET", StringComparison.Ordinal));
+    }
+
     private static SetupContext CreateContext(string localDataDirectory, ICommandRunner commands)
     {
         var config = new SetupConfig();
@@ -118,6 +139,7 @@ public sealed class LocalAiGatewayUninstallTests
 
         public string? ProviderJson { get; private set; } = providerJson;
         public string? PrimaryJson { get; private set; } = primaryJson;
+        public bool FailCapture { get; init; }
         public List<string> WslCalls { get; } = [];
 
         public Task<CommandResult> RunAsync(
@@ -151,6 +173,15 @@ public sealed class LocalAiGatewayUninstallTests
                     0,
                     "LOCAL_AI_GATEWAY_UNSET",
                     "",
+                    TimeSpan.Zero,
+                    TimedOut: false));
+            }
+            if (FailCapture)
+            {
+                return Task.FromResult(new CommandResult(
+                    1,
+                    "",
+                    "openclaw config get failed",
                     TimeSpan.Zero,
                     TimedOut: false));
             }

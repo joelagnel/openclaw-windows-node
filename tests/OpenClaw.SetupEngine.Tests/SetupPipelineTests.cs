@@ -127,6 +127,7 @@ public class SetupPipelineTests
         SetupStep[] localAiSteps =
         [
             steps.Single(step => step is PreflightLocalAiHardwareStep),
+            steps.Single(step => step is ReconcileLocalAiInstallationStep),
             steps.Single(step => step is AcquireLocalAiRuntimeStep),
             steps.Single(step => step is AcquireLocalAiModelStep),
             steps.Single(step => step is PersistLocalAiManifestStep),

@@ -54,6 +54,11 @@
                                            Text="Install a local gateway (WSL)"
                                            Style="{StaticResource BodyStrongTextBlockStyle}"
                                            VerticalAlignment="Center" />
+                                <ProgressRing x:Name="InstallCheckProgress"
+                                              AutomationProperties.AutomationId="WelcomeInstallCheckProgress"
+                                              AutomationProperties.Name="Checking existing WSL setup"
+                                              Width="16" Height="16"
+                                              IsActive="False" Visibility="Collapsed" />
                                 <Border CornerRadius="4" Padding="7,1" VerticalAlignment="Center"
                                         BorderBrush="{ThemeResource AccentTextFillColorPrimaryBrush}" BorderThickness="1">
                                     <TextBlock Text="Recommended"

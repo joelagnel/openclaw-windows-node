@@ -33,6 +33,9 @@ public sealed record LocalModelRunRecipe
         int batchTokens,
         int microBatchTokens,
         int parallelRequests,
+        int fullAttentionLayerCount,
+        int keyValueHeadCount,
+        int keyValueHeadDimension,
         bool flashAttention,
         bool offloadAllLayers,
         SpeculativeDecodingMode speculativeDecoding,
@@ -47,6 +50,12 @@ public sealed record LocalModelRunRecipe
             throw new ArgumentOutOfRangeException(nameof(microBatchTokens));
         if (parallelRequests <= 0)
             throw new ArgumentOutOfRangeException(nameof(parallelRequests));
+        if (fullAttentionLayerCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(fullAttentionLayerCount));
+        if (keyValueHeadCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(keyValueHeadCount));
+        if (keyValueHeadDimension <= 0)
+            throw new ArgumentOutOfRangeException(nameof(keyValueHeadDimension));
         if (speculativeDraftMaxTokens <= 0)
             throw new ArgumentOutOfRangeException(nameof(speculativeDraftMaxTokens));
         ArgumentNullException.ThrowIfNull(sampling);
@@ -57,6 +66,9 @@ public sealed record LocalModelRunRecipe
         BatchTokens = batchTokens;
         MicroBatchTokens = microBatchTokens;
         ParallelRequests = parallelRequests;
+        FullAttentionLayerCount = fullAttentionLayerCount;
+        KeyValueHeadCount = keyValueHeadCount;
+        KeyValueHeadDimension = keyValueHeadDimension;
         FlashAttention = flashAttention;
         OffloadAllLayers = offloadAllLayers;
         SpeculativeDecoding = speculativeDecoding;
@@ -70,6 +82,9 @@ public sealed record LocalModelRunRecipe
     public int BatchTokens { get; }
     public int MicroBatchTokens { get; }
     public int ParallelRequests { get; }
+    public int FullAttentionLayerCount { get; }
+    public int KeyValueHeadCount { get; }
+    public int KeyValueHeadDimension { get; }
     public bool FlashAttention { get; }
     public bool OffloadAllLayers { get; }
     public SpeculativeDecodingMode SpeculativeDecoding { get; }
@@ -124,6 +139,8 @@ public static class LocalModelCatalog
                     22_663_387_424,
                     "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b"),
                 Recipe(
+                    fullAttentionLayerCount: 10,
+                    keyValueHeadCount: 2,
                     temperature: 0.6),
                 IsDefault: true,
                 IsExplicitAlternative: false,
@@ -140,6 +157,8 @@ public static class LocalModelCatalog
                     17_106_773_120,
                     "a7cbd3ecc0e3f9b333edee61ae66bc87ed713c5d49587a8355814722ed329e0f"),
                 Recipe(
+                    fullAttentionLayerCount: 16,
+                    keyValueHeadCount: 4,
                     temperature: 1.0),
                 IsDefault: false,
                 IsExplicitAlternative: true,
@@ -156,6 +175,8 @@ public static class LocalModelCatalog
                     5_868_826_976,
                     "e8dd94817e95d6c0939102049d068418269978377b13616c4726235e232841fe"),
                 Recipe(
+                    fullAttentionLayerCount: 8,
+                    keyValueHeadCount: 4,
                     temperature: 1.0),
                 IsDefault: false,
                 IsExplicitAlternative: true,
@@ -191,7 +212,10 @@ public static class LocalModelCatalog
             new Sha256Digest(sha256),
             LocalInferenceCatalogProvenance.NvidiaCair);
 
-    private static LocalModelRunRecipe Recipe(double temperature) =>
+    private static LocalModelRunRecipe Recipe(
+        int fullAttentionLayerCount,
+        int keyValueHeadCount,
+        double temperature) =>
         new(
             contextTokens: NativeContextTokens,
             keyCachePrecision: KvCachePrecision.F16,
@@ -199,6 +223,9 @@ public static class LocalModelCatalog
             batchTokens: 4_096,
             microBatchTokens: 4_096,
             parallelRequests: 1,
+            fullAttentionLayerCount: fullAttentionLayerCount,
+            keyValueHeadCount: keyValueHeadCount,
+            keyValueHeadDimension: 256,
             flashAttention: true,
             offloadAllLayers: true,
             speculativeDecoding: SpeculativeDecodingMode.DraftMtp,

@@ -290,6 +290,7 @@ public sealed class AcquireLocalAiRuntimeStep : SetupStep
 {
     private static readonly HttpClient s_httpClient = new(new SocketsHttpHandler
     {
+        AllowAutoRedirect = false,
         AutomaticDecompression = System.Net.DecompressionMethods.All,
     })
     {

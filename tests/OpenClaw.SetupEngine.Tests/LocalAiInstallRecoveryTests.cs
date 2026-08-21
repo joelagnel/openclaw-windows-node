@@ -207,6 +207,67 @@ public sealed class LocalAiInstallRecoveryTests
     }
 
     [Fact]
+    public async Task RuntimeInstall_FollowsOnlyApprovedGithubReleaseRedirects()
+    {
+        using var temp = new TempDirectory();
+        byte[] binaryZip = CreateZip(("llama-server.exe", "server"u8.ToArray()));
+        byte[] dependencyZip = CreateZip(("cudart64_13.dll", "cuda"u8.ToArray()));
+        LlamaRuntimeVariant runtime = CreateRuntime(binaryZip, dependencyZip);
+        var observedHosts = new List<string>();
+        using var client = new HttpClient(new DelegateHandler(request =>
+        {
+            observedHosts.Add(request.RequestUri!.Host);
+            if (request.RequestUri.Host == "github.com")
+            {
+                var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+                redirect.Headers.Location = new Uri(
+                    $"https://release-assets.githubusercontent.com{request.RequestUri.AbsolutePath}");
+                return redirect;
+            }
+
+            byte[] bytes = request.RequestUri.AbsolutePath.EndsWith("runtime.zip", StringComparison.Ordinal)
+                ? binaryZip
+                : dependencyZip;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+        }));
+        var installer = new LlamaRuntimeInstaller(
+            new LocalAiArtifactInstaller(client),
+            new ValidRuntimeInspector());
+
+        await installer.InstallAsync(temp.Path, runtime, progress: null, CancellationToken.None);
+
+        Assert.Equal(
+            ["github.com", "release-assets.githubusercontent.com", "github.com", "release-assets.githubusercontent.com"],
+            observedHosts);
+    }
+
+    [Fact]
+    public async Task RuntimeInstall_RejectsRedirectToUntrustedHostBeforeRequest()
+    {
+        using var temp = new TempDirectory();
+        byte[] binaryZip = CreateZip(("llama-server.exe", "server"u8.ToArray()));
+        byte[] dependencyZip = CreateZip(("cudart64_13.dll", "cuda"u8.ToArray()));
+        LlamaRuntimeVariant runtime = CreateRuntime(binaryZip, dependencyZip);
+        var requestCount = 0;
+        using var client = new HttpClient(new DelegateHandler(_ =>
+        {
+            requestCount++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri("https://example.invalid/runtime.zip");
+            return redirect;
+        }));
+        var installer = new LlamaRuntimeInstaller(
+            new LocalAiArtifactInstaller(client),
+            new ValidRuntimeInspector());
+
+        LocalAiArtifactInstallException exception = await Assert.ThrowsAsync<LocalAiArtifactInstallException>(
+            () => installer.InstallAsync(temp.Path, runtime, progress: null, CancellationToken.None));
+
+        Assert.Contains("untrusted host", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(1, requestCount);
+    }
+
+    [Fact]
     public async Task Reconciler_ReusesOnlyMatchingManifestWithoutMutation()
     {
         using var temp = new TempDirectory();
@@ -407,6 +468,9 @@ public sealed class LocalAiInstallRecoveryTests
                 128,
                 128,
                 1,
+                1,
+                1,
+                128,
                 true,
                 true,
                 SpeculativeDecodingMode.DraftMtp,

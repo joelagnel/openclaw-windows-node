@@ -44,8 +44,21 @@ public class LocalInferenceQualificationTests
         Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
         Assert.Equal(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, result.FailureCode);
         Assert.Equal(LocalModelCatalog.Qwen35BModelId, result.Plan?.Model.Id);
-        Assert.Equal(LocalModelCatalog.Default.Weights.SizeBytes + 2 * GiB, result.RequiredTotalMemoryBytes);
+        Assert.Equal(LocalModelCatalog.Default.Weights.SizeBytes + 7 * GiB, result.RequiredTotalMemoryBytes);
         Assert.Equal(16 * GiB, result.DetectedTotalMemoryBytes);
+    }
+
+    [Theory]
+    [InlineData(LocalModelCatalog.Qwen35BModelId, 5)]
+    [InlineData(LocalModelCatalog.Qwen27BModelId, 16)]
+    [InlineData(LocalModelCatalog.Qwen9BModelId, 8)]
+    public void GetRequiredMemoryBytes_IncludesRecipeFp16KvCache(string modelId, long expectedCacheGiB)
+    {
+        LocalModelInfo model = LocalModelCatalog.Find(modelId)!;
+
+        long required = LocalInferenceEligibility.GetRequiredMemoryBytes(model);
+
+        Assert.Equal(model.Weights.SizeBytes + (expectedCacheGiB + 2) * GiB, required);
     }
 
     [Fact]

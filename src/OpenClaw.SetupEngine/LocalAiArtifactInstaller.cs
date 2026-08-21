@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net;
 using System.Security.Cryptography;
 
 namespace OpenClaw.SetupEngine;
@@ -82,6 +83,7 @@ internal sealed class LocalAiArtifactInstaller
 {
     private const int DownloadBufferSize = 128 * 1024;
     private const int DownloadProgressIntervalBytes = 4 * 1024 * 1024;
+    private const int MaximumRedirects = 5;
     private const int UnixFileTypeMask = 0xF000;
     private const int UnixRegularFile = 0x8000;
     private const int UnixDirectory = 0x4000;
@@ -248,11 +250,10 @@ internal sealed class LocalAiArtifactInstaller
         IProgress<LocalAiArtifactInstallProgress>? progress,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, archive.DownloadUri);
-        using var response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
+        using var response = await SendWithValidatedRedirectsAsync(
+                archive.DownloadUri,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -356,6 +357,82 @@ internal sealed class LocalAiArtifactInstaller
 
         return Convert.ToHexStringLower(actualHashBytes);
     }
+
+    private async Task<HttpResponseMessage> SendWithValidatedRedirectsAsync(
+        Uri initialUri,
+        CancellationToken cancellationToken)
+    {
+        ValidateDownloadUri(initialUri, initialRequest: true);
+        Uri current = initialUri;
+        for (int redirect = 0; redirect <= MaximumRedirects; redirect++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            HttpResponseMessage response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            Uri observed = response.RequestMessage?.RequestUri ?? current;
+            try
+            {
+                ValidateDownloadUri(observed, initialRequest: false);
+                if (!IsRedirect(response.StatusCode))
+                    return response;
+
+                if (redirect == MaximumRedirects || response.Headers.Location is null)
+                {
+                    throw new LocalAiArtifactInstallException(
+                        "The Local AI runtime download exceeded the redirect limit.");
+                }
+
+                Uri next = response.Headers.Location.IsAbsoluteUri
+                    ? response.Headers.Location
+                    : new Uri(observed, response.Headers.Location);
+                ValidateDownloadUri(next, initialRequest: false);
+                current = next;
+            }
+            catch
+            {
+                response.Dispose();
+                throw;
+            }
+
+            response.Dispose();
+        }
+
+        throw new LocalAiArtifactInstallException(
+            "The Local AI runtime download exceeded the redirect limit.");
+    }
+
+    private static void ValidateDownloadUri(Uri uri, bool initialRequest)
+    {
+        if (!uri.IsAbsoluteUri ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+        {
+            throw new LocalAiArtifactInstallException(
+                "The Local AI runtime download URI must be credential-free HTTPS.");
+        }
+
+        bool allowed = string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) ||
+            (!initialRequest &&
+             (string.Equals(uri.Host, "release-assets.githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+              string.Equals(uri.Host, "objects.githubusercontent.com", StringComparison.OrdinalIgnoreCase)));
+        if (!allowed)
+        {
+            throw new LocalAiArtifactInstallException(
+                "The Local AI runtime download redirected to an untrusted host.");
+        }
+    }
+
+    private static bool IsRedirect(HttpStatusCode statusCode) => statusCode is
+        HttpStatusCode.MovedPermanently or
+        HttpStatusCode.Redirect or
+        HttpStatusCode.RedirectMethod or
+        HttpStatusCode.TemporaryRedirect or
+        HttpStatusCode.PermanentRedirect;
 
     private async Task ExtractArchiveAsync(
         LocalAiPinnedArchive pinnedArchive,

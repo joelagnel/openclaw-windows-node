@@ -126,7 +126,21 @@ internal static class LocalInferenceQualificationPolicy
     public static long GetRequiredMemoryBytes(LocalModelInfo model)
     {
         ArgumentNullException.ThrowIfNull(model);
-        return SaturatingAdd(model.Weights.SizeBytes, CapacityMarginBytes);
+        return SaturatingAdd(
+            SaturatingAdd(model.Weights.SizeBytes, GetKvCacheMemoryBytes(model.Recipe)),
+            CapacityMarginBytes);
+    }
+
+    internal static long GetKvCacheMemoryBytes(LocalModelRunRecipe recipe)
+    {
+        ArgumentNullException.ThrowIfNull(recipe);
+        long keyBytes = BytesPerElement(recipe.KeyCachePrecision);
+        long valueBytes = BytesPerElement(recipe.ValueCachePrecision);
+        long bytesPerToken = SaturatingMultiply(
+            SaturatingMultiply(recipe.FullAttentionLayerCount, recipe.KeyValueHeadCount),
+            recipe.KeyValueHeadDimension);
+        bytesPerToken = SaturatingMultiply(bytesPerToken, SaturatingAdd(keyBytes, valueBytes));
+        return SaturatingMultiply(bytesPerToken, recipe.ContextTokens);
     }
 
     public static long GetEffectiveTotalMemoryBytes(GpuInfo gpu) =>
@@ -154,6 +168,19 @@ internal static class LocalInferenceQualificationPolicy
     private static bool IsStableGpuId(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&
         !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character));
+
+    private static long BytesPerElement(KvCachePrecision precision) => precision switch
+    {
+        KvCachePrecision.F16 => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(precision)),
+    };
+
+    private static long SaturatingMultiply(long left, long right) =>
+        left == 0 || right == 0
+            ? 0
+            : left > long.MaxValue / right
+                ? long.MaxValue
+                : left * right;
 
     public static long SaturatingAdd(long left, long right) =>
         right > long.MaxValue - left ? long.MaxValue : left + right;

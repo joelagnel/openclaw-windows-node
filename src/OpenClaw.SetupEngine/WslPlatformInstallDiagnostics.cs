@@ -38,7 +38,28 @@ internal static class WslPlatformInstallDiagnostics
 {
     private const string RateLimitUrl = "https://api.github.com/rate_limit";
 
+    /// <summary>The Microsoft Store product id for Windows Subsystem for Linux.</summary>
+    private const string WslStoreProductId = "9P9TQF7MRM4R";
+
     private static readonly TimeSpan s_probeTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Hands the user a way to install WSL that does not depend on OpenClaw
+    /// succeeding. The Store route is listed first because it does not touch the
+    /// GitHub API at all, so it works while the quota is still spent.
+    /// </summary>
+    /// <remarks>
+    /// The failure surface renders this in a wrapping monospace card and turns the
+    /// first URL into a clickable link, so the line breaks and the bare commands
+    /// survive to the user.
+    /// </remarks>
+    public static string SelfInstallInstructions =>
+        "Install WSL yourself, then run setup again:" + Environment.NewLine +
+        $"  1. Microsoft Store (works even while the GitHub quota is spent): {WslInstallSupport.UpdateUrl}" +
+        Environment.NewLine +
+        $"     or run: winget install --id {WslStoreProductId} --source msstore" + Environment.NewLine +
+        "  2. Or, in an elevated PowerShell: wsl --install --no-distribution" + Environment.NewLine +
+        "Reboot if Windows asks for one.";
 
     /// <summary>
     /// Builds the operator-facing explanation for a failed platform install.
@@ -50,12 +71,11 @@ internal static class WslPlatformInstallDiagnostics
             ? "wsl --install downloads WSL from GitHub, and this machine has already used its full " +
               $"unauthenticated GitHub API quota ({quota.Used}/{quota.Limit}), which resets at " +
               $"{quota.ResetsAt.ToLocalTime():HH:mm} local time. Shared networks reach that cap without " +
-              "any help from OpenClaw. Wait for the reset and retry, or install WSL from the Microsoft " +
-              $"Store ({WslInstallSupport.UpdateUrl})."
-            : "wsl --install downloads WSL from GitHub; if that download is blocked on this network, " +
-              $"install WSL from the Microsoft Store ({WslInstallSupport.UpdateUrl}) and run setup again.";
+              "any help from OpenClaw."
+            : "wsl --install downloads WSL from GitHub, and that download did not complete.";
 
-        return $"WSL platform install failed with exit code {exitCode}. {reason}";
+        return $"WSL platform install failed with exit code {exitCode}. {reason}" +
+            Environment.NewLine + Environment.NewLine + SelfInstallInstructions;
     }
 
     /// <summary>
@@ -63,10 +83,11 @@ internal static class WslPlatformInstallDiagnostics
     /// install would only fail after prompting for administrator approval.
     /// </summary>
     public static string DescribeUnavailableDownload(GitHubApiQuota quota) =>
-        "WSL cannot be installed right now: wsl --install downloads WSL from GitHub, and this machine " +
-        $"has already used its full unauthenticated GitHub API quota ({quota.Used}/{quota.Limit}), which " +
-        $"resets at {quota.ResetsAt.ToLocalTime():HH:mm} local time. Wait for the reset and retry, or " +
-        $"install WSL from the Microsoft Store ({WslInstallSupport.UpdateUrl}).";
+        "WSL is not installed, and OpenClaw cannot install it right now: wsl --install downloads WSL " +
+        $"from GitHub, and this machine has already used its full unauthenticated GitHub API quota " +
+        $"({quota.Used}/{quota.Limit}), which resets at {quota.ResetsAt.ToLocalTime():HH:mm} local time. " +
+        "Shared networks reach that cap without any help from OpenClaw." +
+        Environment.NewLine + Environment.NewLine + SelfInstallInstructions;
 
     /// <summary>
     /// Reads the caller's GitHub API quota. Returns null when the quota cannot be

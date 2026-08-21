@@ -41,7 +41,7 @@ public class WslPlatformInstallDiagnosticsTests
         var message = WslPlatformInstallDiagnostics.DescribeFailure(1, quota: null);
 
         Assert.Contains("exit code 1", message);
-        Assert.DoesNotContain("quota", message);
+        Assert.DoesNotContain("already used its full", message);
         Assert.Contains(WslInstallSupport.UpdateUrl, message);
     }
 
@@ -53,6 +53,34 @@ public class WslPlatformInstallDiagnosticsTests
         Assert.Contains("60/60", message);
         Assert.Contains("GitHub", message);
         Assert.Contains(WslInstallSupport.UpdateUrl, message);
+    }
+
+    [Fact]
+    public void SelfInstallInstructions_GiveARouteThatAvoidsTheGitHubApi()
+    {
+        var instructions = WslPlatformInstallDiagnostics.SelfInstallInstructions;
+
+        // The Store route has to be reachable while the quota is still spent,
+        // so it must be present and must not be the wsl --install path.
+        Assert.Contains(WslInstallSupport.UpdateUrl, instructions);
+        Assert.Contains("winget install --id 9P9TQF7MRM4R --source msstore", instructions);
+        Assert.Contains("wsl --install --no-distribution", instructions);
+        Assert.Contains("elevated", instructions);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EveryFailureMessage_TellsTheUserHowToInstallWslThemselves(bool quotaExhausted)
+    {
+        GitHubApiQuota quota = quotaExhausted ? Exhausted() : Available();
+
+        Assert.Contains(WslPlatformInstallDiagnostics.SelfInstallInstructions,
+            WslPlatformInstallDiagnostics.DescribeFailure(1, quota));
+        Assert.Contains(WslPlatformInstallDiagnostics.SelfInstallInstructions,
+            WslPlatformInstallDiagnostics.DescribeFailure(1, quota: null));
+        Assert.Contains(WslPlatformInstallDiagnostics.SelfInstallInstructions,
+            WslPlatformInstallDiagnostics.DescribeUnavailableDownload(Exhausted()));
     }
 
     [Theory]

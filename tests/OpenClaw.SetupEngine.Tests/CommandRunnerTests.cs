@@ -80,8 +80,36 @@ public class CommandRunnerTests
             stdinStream: input));
     }
 
+    [Fact]
+    public async Task RunAsync_ReturnsWhenChildExitsEvenWhileAHelperHoldsThePipes()
+    {
+        // Regression: Process.WaitForExitAsync also waits for the redirected streams to
+        // reach EOF, which needs every handle on the write end closed. wsl.exe hands its
+        // handles to a service helper that outlives it, so EOF never arrived and each
+        // WSL command burned its whole timeout and reported a spurious TimedOut.
+        var runner = CreateRunner();
+        var (executable, arguments) = ExitsLeavingPipeHolderCommand();
+        var stopwatch = Stopwatch.StartNew();
+
+        var result = await runner.RunAsync(executable, arguments, TimeSpan.FromSeconds(30));
+
+        stopwatch.Stop();
+        Assert.False(result.TimedOut);
+        Assert.Equal(0, result.ExitCode);
+        Assert.InRange(stopwatch.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+    }
+
     private static CommandRunner CreateRunner()
         => new(new SetupLogger(filePath: null, LogLevel.Trace));
+
+    /// <summary>
+    /// A command that exits immediately but leaves a background descendant holding the
+    /// inherited stdout/stderr write handles for far longer than the assertion window.
+    /// </summary>
+    private static (string Executable, string[] Arguments) ExitsLeavingPipeHolderCommand()
+        => OperatingSystem.IsWindows()
+            ? ("cmd.exe", ["/d", "/s", "/c", "start /b ping 127.0.0.1 -n 20"])
+            : ("/bin/sh", ["-c", "sleep 20 & exit 0"]);
 
     private static (string Executable, string[] Arguments) SleepingCommand()
         => OperatingSystem.IsWindows()

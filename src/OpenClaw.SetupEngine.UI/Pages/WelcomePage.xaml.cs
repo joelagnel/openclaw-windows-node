@@ -147,6 +147,9 @@ public sealed partial class WelcomePage : Page
 
         NextButton.IsEnabled = false;
         InstallTitle.Text = CheckingButtonText;
+        // Detection shells out to wsl.exe, which routinely takes seconds on a cold
+        // WSL service. Without a spinner the disabled button reads as a frozen app.
+        SetInstallCheckBusy(true);
         var navigating = false;
         try
         {
@@ -154,6 +157,9 @@ public sealed partial class WelcomePage : Page
             var xamlRoot = XamlRoot;
             if (setupWindow is null or { IsClosed: true } || xamlRoot is null)
                 return;
+
+            SetInstallCheckBusy(false);
+            InstallTitle.Text = InstallButtonText;
 
             var summary = ExistingConfigDetector.BuildReplacementSummary(existing);
 
@@ -180,9 +186,16 @@ public sealed partial class WelcomePage : Page
         {
             if (!navigating && setupWindow is { IsClosed: false })
             {
+                SetInstallCheckBusy(false);
                 InstallTitle.Text = InstallButtonText;
                 NextButton.IsEnabled = true;
             }
         }
+    }
+
+    private void SetInstallCheckBusy(bool busy)
+    {
+        InstallCheckProgress.IsActive = busy;
+        InstallCheckProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
     }
 }

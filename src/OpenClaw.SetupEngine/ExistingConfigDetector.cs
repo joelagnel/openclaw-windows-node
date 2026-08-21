@@ -7,6 +7,12 @@ namespace OpenClaw.SetupEngine;
 /// </summary>
 public sealed class ExistingConfigDetector
 {
+    /// <summary>How long the WSL distro probe may run before it is abandoned.</summary>
+    private const int WslProbeTimeoutMs = 5000;
+
+    /// <summary>Grace period for the stdout pipe to drain once wsl.exe has exited.</summary>
+    private const int WslProbeDrainTimeoutMs = 1000;
+
     public sealed record ExistingConfig(
         bool HasLocalGateway,
         string? LocalGatewayId,
@@ -35,6 +41,7 @@ public sealed class ExistingConfigDetector
             var psi = new System.Diagnostics.ProcessStartInfo("wsl.exe", "--list --quiet")
             {
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
@@ -42,9 +49,30 @@ public sealed class ExistingConfigDetector
             using var proc = System.Diagnostics.Process.Start(psi);
             if (proc != null)
             {
-                var output = proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit(5000);
-                hasDistro = WslInstallSupport.ContainsDistro(output, targetDistroName);
+                // Drain both pipes asynchronously so every wait here is bounded.
+                // Reading stdout to end synchronously blocks until the last handle on
+                // the write end closes, which can outlive wsl.exe when it leaves a
+                // helper process behind, and that read accepts no timeout. The
+                // WaitForExit budget below never applied to it, so a wedged WSL stack
+                // froze setup indefinitely instead of falling back to "no distro".
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                ObserveFailure(proc.StandardError.ReadToEndAsync());
+
+                var exited = proc.WaitForExit(WslProbeTimeoutMs);
+                if (!exited)
+                    TryKillProcessTree(proc);
+
+                if (exited && stdoutTask.Wait(WslProbeDrainTimeoutMs))
+                {
+                    hasDistro = WslInstallSupport.ContainsDistro(stdoutTask.Result, targetDistroName);
+                }
+                else
+                {
+                    ObserveFailure(stdoutTask);
+                    System.Diagnostics.Debug.WriteLine(
+                        $"WSL distro detection did not finish within {WslProbeTimeoutMs} ms; " +
+                        $"assuming distro '{targetDistroName}' is absent.");
+                }
             }
         }
         catch (Exception ex)
@@ -69,6 +97,33 @@ public sealed class ExistingConfigDetector
             PreservedGatewayCount: preserved.Count,
             PreservedGatewayNames: preserved.Select(r => r.FriendlyName ?? r.Url).ToList());
     }
+
+    /// <summary>
+    /// Stop an unresponsive probe so it cannot keep holding the redirected pipes.
+    /// </summary>
+    private static void TryKillProcessTree(System.Diagnostics.Process proc)
+    {
+        try
+        {
+            if (!proc.HasExited)
+                proc.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Stopping the WSL detection process failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Keep an abandoned pipe read from surfacing later as an unobserved task fault.
+    /// </summary>
+    private static void ObserveFailure(Task task) =>
+        _ = task.ContinueWith(
+            static completed => System.Diagnostics.Debug.WriteLine(
+                $"WSL distro detection stream read failed: {completed.Exception?.GetBaseException().Message}"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     /// <summary>
     /// Build a human-readable summary of what will happen during setup.

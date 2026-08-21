@@ -70,7 +70,7 @@ public interface ICommandRunner
 public sealed class CommandRunner : ICommandRunner
 {
     private readonly SetupLogger _logger;
-    private const int DrainTimeoutMs = 5000; // bounded drain for orphan WSL processes
+    private const int DrainGraceMs = 250; // bounded drain for orphan WSL processes
     private const int MaxCapturedStreamChars = 1_048_576;
 
     public CommandRunner(SetupLogger logger) => _logger = logger;
@@ -167,7 +167,7 @@ public sealed class CommandRunner : ICommandRunner
                 }
             }
 
-            await process.WaitForExitAsync(timeoutCts.Token);
+            await WaitForProcessExitAsync(process, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -182,10 +182,23 @@ public sealed class CommandRunner : ICommandRunner
             throw;
         }
 
-        // Flush async output handlers. WaitForExitAsync observes process exit, but the
-        // OutputDataReceived/ErrorDataReceived callbacks can still be draining.
+        // Give the output callbacks a brief, bounded chance to hand over anything still
+        // in flight. WaitForExit(int) does not drain them - only the parameterless
+        // overload does - and the EOF wait can outlive the child for as long as a
+        // surviving helper holds the pipe, so keep this well under the command timeout.
         if (!timedOut)
-            process.WaitForExit(DrainTimeoutMs);
+        {
+            using var drainCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            drainCts.CancelAfter(DrainGraceMs);
+            try
+            {
+                await process.WaitForExitAsync(drainCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // A helper process still holds the write end; keep what was captured.
+            }
+        }
 
         sw.Stop();
         var result = new CommandResult(
@@ -277,6 +290,38 @@ public sealed class CommandRunner : ICommandRunner
             return RunAsync("wsl.exe", args.ToArray(), timeout, env, stdinInput: command, ct: ct);
 
         return RunAsync("wsl.exe", args.ToArray(), timeout, env, ct: ct);
+    }
+
+    /// <summary>
+    /// Wait for the child process to exit, and only for that.
+    /// <see cref="Process.WaitForExitAsync"/> additionally waits for the redirected
+    /// stdout/stderr readers to reach EOF. EOF requires every handle on the write end
+    /// of those pipes to be closed, and wsl.exe passes its handles to a service helper
+    /// that outlives it, so EOF never arrives. That charged every WSL command the full
+    /// timeout and reported a spurious <c>timed_out</c> even though wsl.exe had already
+    /// exited in milliseconds with its output fully captured.
+    /// </summary>
+    private static async Task WaitForProcessExitAsync(Process process, CancellationToken ct)
+    {
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnExited(object? sender, EventArgs e) => exited.TrySetResult();
+
+        process.EnableRaisingEvents = true;
+        process.Exited += OnExited;
+        try
+        {
+            // Re-check after subscribing: the process may have exited while we wired up.
+            if (process.HasExited)
+                return;
+
+            using (ct.Register(static state => ((TaskCompletionSource)state!).TrySetCanceled(), exited))
+                await exited.Task;
+        }
+        finally
+        {
+            process.Exited -= OnExited;
+        }
     }
 
     private static void TryKill(Process process)

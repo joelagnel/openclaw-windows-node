@@ -221,7 +221,10 @@ public sealed class PreflightWslStep : SetupStep
                 return StepResult.Terminal("WSL platform install requires a restart. Reboot Windows, then run setup again.");
 
             if (process.ExitCode != 0)
-                return StepResult.Fail($"WSL platform install failed with exit code {process.ExitCode}.");
+            {
+                GitHubApiQuota? quota = await WslPlatformInstallDiagnostics.QueryGitHubQuotaAsync(ct);
+                return StepResult.Fail(WslPlatformInstallDiagnostics.DescribeFailure(process.ExitCode, quota));
+            }
 
             var probe = await ctx.Commands.RunAsync(
                 WslConstants.WslExePath,
@@ -239,6 +242,10 @@ public sealed class PreflightWslStep : SetupStep
         catch (System.ComponentModel.Win32Exception ex) when ((uint)ex.NativeErrorCode == 1223)
         {
             return StepResult.Fail("WSL platform install was cancelled at the elevation prompt.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -266,7 +273,7 @@ public sealed class EnsureWslPlatformStep : SetupStep
 
     public override string Id => "ensure-wsl-platform";
     public override string DisplayName => "Prepare WSL platform";
-    public override bool CanRetry => false;
+    public override bool CanRetry => true;
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {

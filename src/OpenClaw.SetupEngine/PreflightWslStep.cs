@@ -63,7 +63,7 @@ internal static class WslViabilityInspector
                 return new(
                     WslViabilityKind.Installable,
                     "WSL is not installed yet.",
-                    "Setup can request administrator approval to install it after Local AI is verified.");
+                    "Setup can request administrator approval to install and verify it before downloading Local AI.");
             }
 
             if (LooksTooOldForVersionCommand(versionResult))
@@ -254,7 +254,10 @@ public sealed class PreflightWslStep : SetupStep
     }
 }
 
-/// <summary>Performs the first WSL mutation, after native Local AI verification.</summary>
+/// <summary>
+/// Performs the first WSL mutation after read-only hardware and WSL inspection,
+/// before Local AI downloads begin.
+/// </summary>
 public sealed class EnsureWslPlatformStep : SetupStep
 {
     private readonly Func<SetupContext, CancellationToken, Task<StepResult>> _installer;

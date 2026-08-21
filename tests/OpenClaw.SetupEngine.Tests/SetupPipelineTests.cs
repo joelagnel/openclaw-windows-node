@@ -85,15 +85,15 @@ public class SetupPipelineTests
         Assert.IsType<PreflightLocalAiHardwareStep>(steps[2]);
         Assert.IsType<PreflightWslStep>(steps[3]);
         Assert.IsType<PreflightWindowsTailscaleStep>(steps[4]);
-        Assert.IsType<ReconcileLocalAiInstallationStep>(steps[5]);
-        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[6]);
-        Assert.IsType<AcquireLocalAiModelStep>(steps[7]);
-        Assert.IsType<PersistLocalAiManifestStep>(steps[8]);
-        Assert.IsType<StartLocalAiRuntimeStep>(steps[9]);
-        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[10]);
-        Assert.IsType<VerifyLocalAiInferenceStep>(steps[11]);
-        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[12]);
-        Assert.IsType<EnsureWslPlatformStep>(steps[13]);
+        Assert.IsType<EnsureWslPlatformStep>(steps[5]);
+        Assert.IsType<ReconcileLocalAiInstallationStep>(steps[6]);
+        Assert.IsType<AcquireLocalAiRuntimeStep>(steps[7]);
+        Assert.IsType<AcquireLocalAiModelStep>(steps[8]);
+        Assert.IsType<PersistLocalAiManifestStep>(steps[9]);
+        Assert.IsType<StartLocalAiRuntimeStep>(steps[10]);
+        Assert.IsType<CaptureLocalAiGpuBaselineStep>(steps[11]);
+        Assert.IsType<VerifyLocalAiInferenceStep>(steps[12]);
+        Assert.IsType<VerifyLocalAiGpuLoadStep>(steps[13]);
         Assert.IsType<ConfigureLocalAiWslNetworkingStep>(steps[14]);
         Assert.IsType<CleanupStaleDistroStep>(steps[15]);
         Assert.IsType<CleanupStaleGatewayStep>(steps[16]);
@@ -114,6 +114,12 @@ public class SetupPipelineTests
         var wizardIndex = steps.FindIndex(s => s is RunGatewayWizardStep);
         Assert.IsType<WindowsNodeBootstrapContextStep>(steps[wizardIndex + 1]);
         Assert.IsType<StartKeepaliveStep>(steps[^1]);
+
+        var ensureWslIndex = steps.FindIndex(step => step is EnsureWslPlatformStep);
+        var runtimeDownloadIndex = steps.FindIndex(step => step is AcquireLocalAiRuntimeStep);
+        var modelDownloadIndex = steps.FindIndex(step => step is AcquireLocalAiModelStep);
+        Assert.True(ensureWslIndex < runtimeDownloadIndex);
+        Assert.True(ensureWslIndex < modelDownloadIndex);
     }
 
     [Fact]

@@ -1238,7 +1238,7 @@ public class SetupStepsTests : IDisposable
 
         Assert.Equal(StepOutcome.Success, result.Outcome);
         Assert.Equal(WslViabilityKind.Installable, ctx.WslViability?.Kind);
-        Assert.Contains("after Local AI is verified", result.Message);
+        Assert.Contains("before downloading Local AI", result.Message);
         Assert.DoesNotContain(commands.Calls, call => call.Arguments.Contains("--install"));
         Assert.Single(commands.Calls);
     }

@@ -1165,6 +1165,23 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void SetupProgress_PreparesWslBeforeLocalAiDownloads()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var code = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+
+        AssertInOrder(
+            code,
+            "(\"wsl-platform\", \"Prepare and verify WSL platform\", [\"ensure-wsl-platform\"])",
+            "(\"local-ai-engine\", \"Install verified llama-server\"",
+            "(\"local-ai-model\", \"Download verified model from Hugging Face\"");
+        Assert.Contains(
+            "(\"wsl-networking\", \"Configure WSL access to Local AI\", [\"configure-local-ai-wsl-networking\"])",
+            code);
+        Assert.DoesNotContain("Verify Local AI before WSL setup", code);
+    }
+
+    [Fact]
     public void SetupCompletion_PersistsStartupChoiceBeforeRestart()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

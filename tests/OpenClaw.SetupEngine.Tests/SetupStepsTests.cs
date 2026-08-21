@@ -2952,6 +2952,36 @@ public class SetupStepsTests : IDisposable
         Assert.Contains("No existing configuration will be affected", summary);
     }
 
+    [Theory]
+    [InlineData("OpenClawGateway\nUbuntu-24.04\n", true)]
+    [InlineData("Ubuntu-24.04\n", false)]
+    public void ExistingConfigDetector_InterpretsSuccessfulDistroList(string stdout, bool expected)
+    {
+        var result = new CommandResult(0, stdout, "", TimeSpan.Zero, TimedOut: false);
+
+        Assert.Equal(expected, ExistingConfigDetector.InterpretDistroList(result, "OpenClawGateway"));
+    }
+
+    [Fact]
+    public void ExistingConfigDetector_TreatsUnavailableWslAsNoDistro()
+    {
+        var result = new CommandResult(1, "", "WSL is not installed. See https://aka.ms/wslinstall", TimeSpan.Zero, false);
+
+        Assert.False(ExistingConfigDetector.InterpretDistroList(result, "OpenClawGateway"));
+    }
+
+    [Theory]
+    [InlineData(true, 1, "")]
+    [InlineData(false, 1, "unexpected failure")]
+    public void ExistingConfigDetector_FailsClosedWhenDistroStateIsUnknown(bool timedOut, int exitCode, string stderr)
+    {
+        var result = new CommandResult(exitCode, "", stderr, TimeSpan.Zero, timedOut);
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            ExistingConfigDetector.InterpretDistroList(result, "OpenClawGateway"));
+        Assert.Contains("could not safely inspect", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void BuildReplacementSummary_LocalGatewayAndDistro_MentionsReplacement()
     {

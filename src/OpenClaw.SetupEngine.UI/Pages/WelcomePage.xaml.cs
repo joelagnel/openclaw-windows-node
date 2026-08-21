@@ -147,14 +147,39 @@ public sealed partial class WelcomePage : Page
 
         NextButton.IsEnabled = false;
         InstallTitle.Text = CheckingButtonText;
+        InstallCheckProgress.IsActive = true;
+        InstallCheckProgress.Visibility = Visibility.Visible;
         var navigating = false;
         try
         {
-            var existing = await Task.Run(() => ExistingConfigDetector.Detect(dataDir, config.DistroName));
+            ExistingConfigDetector.ExistingConfig existing;
+            try
+            {
+                existing = await Task.Run(() => ExistingConfigDetector.Detect(dataDir, config.DistroName));
+            }
+            catch (InvalidOperationException ex)
+            {
+                var errorRoot = XamlRoot;
+                if (setupWindow is not null and { IsClosed: false } && errorRoot is not null)
+                {
+                    await new ContentDialog
+                    {
+                        Title = "Could not inspect WSL",
+                        Content = ex.Message,
+                        CloseButtonText = "Close",
+                        XamlRoot = errorRoot,
+                    }.ShowAsync();
+                }
+                return;
+            }
+
             var xamlRoot = XamlRoot;
             if (setupWindow is null or { IsClosed: true } || xamlRoot is null)
                 return;
 
+            InstallTitle.Text = InstallButtonText;
+            InstallCheckProgress.IsActive = false;
+            InstallCheckProgress.Visibility = Visibility.Collapsed;
             var summary = ExistingConfigDetector.BuildReplacementSummary(existing);
 
             var dialog = new ContentDialog
@@ -181,6 +206,8 @@ public sealed partial class WelcomePage : Page
             if (!navigating && setupWindow is { IsClosed: false })
             {
                 InstallTitle.Text = InstallButtonText;
+                InstallCheckProgress.IsActive = false;
+                InstallCheckProgress.Visibility = Visibility.Collapsed;
                 NextButton.IsEnabled = true;
             }
         }

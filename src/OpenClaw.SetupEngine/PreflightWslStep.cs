@@ -195,8 +195,28 @@ public sealed class PreflightWslStep : SetupStep
         return message;
     }
 
-    internal static async Task<StepResult> InstallWslPlatformAsync(SetupContext ctx, CancellationToken ct)
+    internal static Task<StepResult> InstallWslPlatformAsync(SetupContext ctx, CancellationToken ct)
+        => InstallWslPlatformAsync(ctx, WslPlatformInstallDiagnostics.QueryGitHubQuotaAsync, ct);
+
+    internal static async Task<StepResult> InstallWslPlatformAsync(
+        SetupContext ctx,
+        Func<CancellationToken, Task<GitHubApiQuota?>> quotaProbe,
+        CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(quotaProbe);
+
+        // wsl --install resolves its download through the GitHub API. When that
+        // quota is already spent the install cannot succeed, so fail before
+        // raising an administrator prompt the user would approve for nothing.
+        GitHubApiQuota? quota = await quotaProbe(ct);
+        if (quota is { IsExhausted: true })
+        {
+            ctx.Logger.Warn(
+                $"GitHub API quota exhausted ({quota.Used}/{quota.Limit}, resets {quota.ResetsAt.ToLocalTime():HH:mm}); " +
+                "skipping the elevated WSL platform install because its download would be refused");
+            return StepResult.Fail(WslPlatformInstallDiagnostics.DescribeUnavailableDownload(quota));
+        }
+
         ctx.Logger.Warn("WSL platform appears to be missing; launching elevated WSL platform install");
         try
         {
@@ -221,7 +241,19 @@ public sealed class PreflightWslStep : SetupStep
                 return StepResult.Terminal("WSL platform install requires a restart. Reboot Windows, then run setup again.");
 
             if (process.ExitCode != 0)
-                return StepResult.Fail($"WSL platform install failed with exit code {process.ExitCode}.");
+            {
+                // The installer runs elevated through ShellExecute, which cannot
+                // redirect its output, so wsl.exe's own error text is unreachable
+                // here. Re-read the quota to name the most common cause instead.
+                GitHubApiQuota? postFailureQuota = await quotaProbe(ct);
+                ctx.Logger.Warn(
+                    $"Elevated WSL platform install exited with code {process.ExitCode}; " +
+                    (postFailureQuota is null
+                        ? "GitHub API quota could not be read"
+                        : $"GitHub API quota {postFailureQuota.Used}/{postFailureQuota.Limit}"));
+                return StepResult.Fail(
+                    WslPlatformInstallDiagnostics.DescribeFailure(process.ExitCode, postFailureQuota));
+            }
 
             var probe = await ctx.Commands.RunAsync(
                 WslConstants.WslExePath,
@@ -263,7 +295,10 @@ public sealed class EnsureWslPlatformStep : SetupStep
 
     public override string Id => "ensure-wsl-platform";
     public override string DisplayName => "Prepare WSL platform";
-    public override bool CanRetry => false;
+
+    // Inspection and wsl --install are both idempotent, and the common failures
+    // here (exhausted GitHub quota, a declined elevation prompt) are transient.
+    public override bool CanRetry => true;
 
     public override async Task<StepResult> ExecuteAsync(SetupContext ctx, CancellationToken ct)
     {

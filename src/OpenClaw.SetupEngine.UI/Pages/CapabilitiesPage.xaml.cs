@@ -19,6 +19,7 @@ public sealed partial class CapabilitiesPage : Page
     private readonly Dictionary<string, bool> _permGranted = new();
     private SetupWindow? _setupWindow;
     private Task? _permissionsTask;
+    private Task? _localAiReviewTask;
     private bool _suppressProfile;
     private bool _suppressLocalAiToggle;
     private bool _suppressLocalAiSelection;
@@ -103,9 +104,11 @@ public sealed partial class CapabilitiesPage : Page
         var localAiReviewPreview = previewPage is "capabilities-review" or "capabilities-review-consent";
         if (localAiReviewPreview)
             _config.LocalAi.Enabled = true;
+        Task localAiReviewTask = InitializeLocalAiReviewAsync(
+            forceNetworkingConsent: previewPage == "capabilities-review-consent");
+        _localAiReviewTask = localAiReviewTask;
         AsyncEventHandlerGuard.Run(
-            () => InitializeLocalAiReviewAsync(
-                forceNetworkingConsent: previewPage == "capabilities-review-consent"),
+            () => localAiReviewTask,
             NullLogger.Instance,
             nameof(InitializeLocalAiReviewAsync));
         ApplySetupReviewSummary(_config);
@@ -176,6 +179,17 @@ public sealed partial class CapabilitiesPage : Page
 
     private async Task PrimaryClickAsync()
     {
+        // The Local AI review probes the GPU and WSL asynchronously. Do not let a
+        // fast click-through persist the toggle's temporary XAML default before
+        // the review has applied the configured default and eligibility result.
+        if (_localAiReviewTask is { } localAiReviewTask &&
+            !localAiReviewTask.IsCompletedSuccessfully)
+        {
+            PrimaryButton.IsEnabled = false;
+            try { await localAiReviewTask; }
+            finally { UpdatePrimaryButtonState(); }
+        }
+
         // The Windows-permission checks run on entry as a background task. They are fast
         // local reads (registry / device enumeration), but make sure they have finished
         // before any step that reads their results — step 2's rows and step 3's summary —

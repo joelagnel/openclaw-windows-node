@@ -1296,6 +1296,21 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void CapabilitiesPage_DelayedLocalAiReviewBlocksFastNavigationBeforeConfigWrite()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var click = ExtractMethod(source, "PrimaryClickAsync");
+
+        Assert.Contains("_localAiReviewTask = localAiReviewTask", source);
+        AssertInOrder(
+            click,
+            "await localAiReviewTask",
+            "switch (_step)",
+            "WriteCapabilities()");
+    }
+
+    [Fact]
     public void CapabilitiesPage_RefreshesPermissionStateWhenSetupIsReactivated()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

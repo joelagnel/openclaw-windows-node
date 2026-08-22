@@ -443,7 +443,7 @@ public sealed class LocalAiPortLifecycleTests
     {
         public List<int> ProbedPorts { get; } = [];
 
-        public Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+        public Task<LlamaServerManagedModelProbeResult> ProbeManagedModelAsync(
             Uri endpoint,
             string modelAlias,
             string expectedModelPath,
@@ -452,7 +452,7 @@ public sealed class LocalAiPortLifecycleTests
             cancellationToken.ThrowIfCancellationRequested();
             ProbedPorts.Add(endpoint.Port);
             events.Add($"probe:{endpoint.Port}");
-            return Task.FromResult(new LlamaServerRouterProbeResult(
+            return Task.FromResult(new LlamaServerManagedModelProbeResult(
                 true,
                 LocalAiModelAvailabilityState.Verified,
                 expectedModelPath,

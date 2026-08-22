@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace OpenClaw.Connection.LocalAi;
 
-public sealed record LlamaServerRouterProbeResult(
+public sealed record LlamaServerManagedModelProbeResult(
     bool IsHealthy,
     LocalAiModelAvailabilityState ModelState,
     string? ReportedModelPath,
@@ -134,7 +134,7 @@ public static class LlamaServerModelStatusParser
 
 internal interface ILlamaServerClient : IDisposable
 {
-    Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+    Task<LlamaServerManagedModelProbeResult> ProbeManagedModelAsync(
         Uri endpoint,
         string modelAlias,
         string expectedModelPath,
@@ -164,7 +164,7 @@ public sealed class LlamaServerClient : ILlamaServerClient
         };
     }
 
-    public async Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+    public async Task<LlamaServerManagedModelProbeResult> ProbeManagedModelAsync(
         Uri endpoint,
         string modelAlias,
         string expectedModelPath,
@@ -228,7 +228,7 @@ public sealed class LlamaServerClient : ILlamaServerClient
         }
     }
 
-    private async Task<LlamaServerRouterProbeResult> ProbeModelAsync(
+    private async Task<LlamaServerManagedModelProbeResult> ProbeModelAsync(
         Uri endpoint,
         string modelAlias,
         string expectedModelPath,

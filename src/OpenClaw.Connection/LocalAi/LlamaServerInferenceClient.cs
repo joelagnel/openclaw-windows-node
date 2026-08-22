@@ -45,6 +45,10 @@ public sealed class LlamaServerInferenceClient : ILlamaServerInferenceClient
         };
     }
 
+    /// <summary>
+    /// Sends one bounded, non-streaming inference request to load the managed model and
+    /// verifies that the response identifies that model and contains output, usage, and timing evidence.
+    /// </summary>
     public async Task<LlamaServerInferenceVerification> VerifyAsync(
         Uri endpoint,
         string modelAlias,

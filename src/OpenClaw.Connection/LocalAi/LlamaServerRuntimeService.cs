@@ -240,7 +240,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 }
                 if (ownership.Endpoint is not null)
                 {
-                    LlamaServerRouterProbeResult probe = await _client.ProbeRouterAsync(
+                    LlamaServerManagedModelProbeResult probe = await _client.ProbeManagedModelAsync(
                             ownership.Endpoint,
                             install.Manifest.ModelAlias,
                             install.ModelPath,
@@ -340,7 +340,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         if (ownership.Endpoint is null)
             return Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "The local AI router has not opened its endpoint yet.", _managedProcess.ProcessId, _managedProcess.StartedAtUtc);
 
-        LlamaServerRouterProbeResult probe = await _client.ProbeRouterAsync(
+        LlamaServerManagedModelProbeResult probe = await _client.ProbeManagedModelAsync(
                 ownership.Endpoint,
                 install.Manifest.ModelAlias,
                 install.ModelPath,
@@ -642,7 +642,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
     private static Uri BuildEndpoint(int port) =>
         new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri;
 
-    private LocalAiRuntimeSnapshot PublishHealthy(LlamaServerRouterProbeResult probe) =>
+    private LocalAiRuntimeSnapshot PublishHealthy(LlamaServerManagedModelProbeResult probe) =>
         Publish(
             LocalAiRuntimeState.Healthy,
             LocalAiOwnership.CompanionManaged,

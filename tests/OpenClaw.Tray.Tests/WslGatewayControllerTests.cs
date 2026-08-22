@@ -5,6 +5,14 @@ namespace OpenClaw.Tray.Tests;
 
 public class WslGatewayControllerTests
 {
+    [Fact]
+    public void DefaultRunnerTimeout_AllowsColdNestedWslGatewayStartup()
+    {
+        Assert.True(
+            WslExeCommandRunner.DefaultCommandTimeout >= TimeSpan.FromSeconds(60),
+            $"Cold WSL gateway startup needs at least 60 seconds; actual timeout was {WslExeCommandRunner.DefaultCommandTimeout}.");
+    }
+
     [Theory]
     [InlineData(WslGatewayControlAction.Start, "start")]
     [InlineData(WslGatewayControlAction.Stop, "stop")]

@@ -37,6 +37,8 @@ public interface IWslCommandRunner
 /// </summary>
 public sealed class WslExeCommandRunner : IWslCommandRunner
 {
+    internal static TimeSpan DefaultCommandTimeout { get; } = TimeSpan.FromSeconds(90);
+
     private readonly IOpenClawLogger _logger;
     private readonly TimeSpan _defaultTimeout;
 
@@ -45,7 +47,7 @@ public sealed class WslExeCommandRunner : IWslCommandRunner
         TimeSpan? defaultTimeout = null)
     {
         _logger = logger ?? NullLogger.Instance;
-        _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(30);
+        _defaultTimeout = defaultTimeout ?? DefaultCommandTimeout;
     }
 
     public async Task<IReadOnlyList<WslDistroInfo>> ListDistrosAsync(CancellationToken cancellationToken = default)

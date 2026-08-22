@@ -92,6 +92,7 @@ public sealed class VerifyEndToEndStep : SetupStep
 
         var pathPrefix = ctx.WslPathPrefix;
         var env = new Dictionary<string, string> { ["OPENCLAW_GATEWAY_TOKEN"] = token };
+        TimeSpan commandTimeout = ApprovalDrainCommandTimeout(ctx);
         const int maxDrainIterations = 10;
 
         for (var i = 0; i < maxDrainIterations; i++)
@@ -99,7 +100,7 @@ public sealed class VerifyEndToEndStep : SetupStep
             var preview = await ctx.Commands.RunInWslAsync(
                 distro,
                 $"""{pathPrefix} && openclaw devices approve --latest --json""",
-                TimeSpan.FromSeconds(15), env, ct);
+                commandTimeout, env, ct);
 
             if (preview.Stdout.Contains("No pending", StringComparison.OrdinalIgnoreCase) ||
                 preview.Stderr.Contains("No pending", StringComparison.OrdinalIgnoreCase))
@@ -115,7 +116,7 @@ public sealed class VerifyEndToEndStep : SetupStep
                 var approve = await ctx.Commands.RunInWslAsync(
                     distro,
                     $"""{pathPrefix} && {ApprovalRequestHelper.ApprovalCommand(ApprovalRequestKind.Device)}""",
-                    TimeSpan.FromSeconds(15), approvalEnv, ct);
+                    commandTimeout, approvalEnv, ct);
 
                 if (approve.ExitCode != 0)
                     return StepResult.Fail($"Device approval drain failed for {parsed.RequestId} (exit {approve.ExitCode}): {approve.Stdout.Trim()} {approve.Stderr.Trim()}".Trim());
@@ -158,6 +159,7 @@ public sealed class VerifyEndToEndStep : SetupStep
 
         var pathPrefix = ctx.WslPathPrefix;
         var env = new Dictionary<string, string> { ["OPENCLAW_GATEWAY_TOKEN"] = token };
+        TimeSpan commandTimeout = ApprovalDrainCommandTimeout(ctx);
         const int maxDrainIterations = 10;
 
         for (var i = 0; i < maxDrainIterations; i++)
@@ -165,7 +167,7 @@ public sealed class VerifyEndToEndStep : SetupStep
             var nodeList = await ctx.Commands.RunInWslAsync(
                 distro,
                 $"""{pathPrefix} && openclaw nodes list --json""",
-                TimeSpan.FromSeconds(15), env, ct);
+                commandTimeout, env, ct);
 
             var parsed = ApprovalRequestHelper.TryReadPendingRequestIds(nodeList.Stdout.Trim());
             if (!parsed.Success)
@@ -186,7 +188,7 @@ public sealed class VerifyEndToEndStep : SetupStep
                 var approve = await ctx.Commands.RunInWslAsync(
                     distro,
                     $"""{pathPrefix} && {ApprovalRequestHelper.ApprovalCommand(ApprovalRequestKind.Node)}""",
-                    TimeSpan.FromSeconds(15), approvalEnv, ct);
+                    commandTimeout, approvalEnv, ct);
 
                 if (approve.ExitCode != 0)
                     return StepResult.Fail($"Node approval drain failed for {requestId} (exit {approve.ExitCode}): {approve.Stdout.Trim()} {approve.Stderr.Trim()}".Trim());
@@ -198,6 +200,9 @@ public sealed class VerifyEndToEndStep : SetupStep
 
         return StepResult.Ok("Pending approvals drained");
     }
+
+    internal static TimeSpan ApprovalDrainCommandTimeout(SetupContext ctx) =>
+        TimeSpan.FromSeconds(Math.Max(30, ctx.Config.Pairing.TimeoutSeconds));
 
     internal static void WriteSettingsJson(SetupContext ctx)
     {

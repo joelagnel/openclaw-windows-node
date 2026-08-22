@@ -3152,6 +3152,26 @@ public class SetupStepsTests : IDisposable
         Assert.DoesNotContain(ApprovalRequestHelper.PluginNotFoundMessage, result.Message);
     }
 
+    [Fact]
+    public async Task ApprovalDrain_UsesConfiguredPairingTimeoutForColdCliCommands()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Ok(),
+            (_, _, _) => Ok(stdout: "No pending device approvals"));
+        var ctx = CreateContext(commands: commands);
+        ctx.DistroName = "test-distro";
+        ctx.SharedGatewayToken = "shared-token";
+        ctx.Config.Pairing.TimeoutSeconds = 60;
+
+        StepResult result = await VerifyEndToEndStep.DrainPendingDeviceApprovalsAsync(
+            ctx,
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Single(commands.WslCalls);
+        Assert.Equal(TimeSpan.FromSeconds(60), commands.WslCalls[0].Timeout);
+    }
+
     // ─── Bind validation ───
 
     [Fact]

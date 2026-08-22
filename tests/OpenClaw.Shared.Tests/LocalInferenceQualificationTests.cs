@@ -75,9 +75,18 @@ public class LocalInferenceQualificationTests
     }
 
     [Fact]
+    public void Qwen9BRecipe_BoundsCudaMicroBatchForDiscreteGpuColdStart()
+    {
+        LocalModelInfo model = LocalModelCatalog.Find(LocalModelCatalog.Qwen9BModelId)!;
+
+        Assert.Equal(512, model.Recipe.MicroBatchTokens);
+        Assert.Equal(LocalModelCatalog.NativeContextTokens, model.Recipe.ContextTokens);
+    }
+
+    [Fact]
     public void Evaluate_RanksEligibleBeforeBusyAndUnsupportedAdapters()
     {
-        GpuInfo unsupported = Gpu("NVIDIA old", "GPU-old", 48, 48) with { DriverVersion = "614.99" };
+        GpuInfo unsupported = Gpu("NVIDIA old", "GPU-old", 48, 48) with { DriverVersion = "590.99" };
         GpuInfo busy = Gpu("NVIDIA busy", "GPU-busy", 32, 1);
         GpuInfo eligible = Gpu("NVIDIA ready", "GPU-ready", 24, 24);
 
@@ -123,7 +132,7 @@ public class LocalInferenceQualificationTests
 
     [Theory]
     [InlineData(null, "616.30", 13, LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete)]
-    [InlineData("GPU-old", "614.99", 13, LocalInferenceEligibilityFailureCode.DriverTooOld)]
+    [InlineData("GPU-old", "590.99", 13, LocalInferenceEligibilityFailureCode.DriverTooOld)]
     [InlineData("GPU-cuda", "616.30", 12, LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow)]
     public void Evaluate_RequiresStableUuidDriverAndCuda(
         string? stableId,
@@ -142,6 +151,23 @@ public class LocalInferenceQualificationTests
 
         Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
         Assert.Equal(expectedFailure, result.FailureCode);
+    }
+
+    [Fact]
+    public void Evaluate_AcceptsQualifiedCuda13DriverOnRtx3090Ti()
+    {
+        GpuInfo gpu = Gpu("NVIDIA GeForce RTX 3090 Ti", "GPU-3090-ti", 24, 24) with
+        {
+            DriverVersion = "591.86",
+            CudaMajorVersion = 13,
+        };
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
+            Hardware(RuntimeArchitecture.X64, gpu),
+            LocalModelCatalog.Qwen9BModelId);
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.None, result.FailureCode);
     }
 
     [Fact]

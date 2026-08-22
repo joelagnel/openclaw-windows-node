@@ -41,7 +41,7 @@ public sealed record LocalInferenceEligibilityResult(
 public static class LocalInferenceEligibility
 {
     public const long RuntimeWorkspaceReserveBytes = LocalModelCatalog.RuntimeWorkspaceReserveBytes;
-    public static Version MinimumNvidiaDriverVersion { get; } = new(615, 0);
+    public static Version MinimumNvidiaDriverVersion { get; } = new(591, 0);
 
     public static long GetRequiredMemoryBytes(LocalModelInfo model) =>
         LocalInferenceQualificationPolicy.GetRequiredMemoryBytes(model);

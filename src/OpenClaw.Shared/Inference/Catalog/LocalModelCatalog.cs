@@ -186,7 +186,8 @@ public static class LocalModelCatalog
                 Recipe(
                     fullAttentionLayerCount: 8,
                     keyValueHeadCount: 4,
-                    temperature: 1.0),
+                    temperature: 1.0,
+                    microBatchTokens: 512),
                 IsDefault: false,
                 IsExplicitAlternative: true,
                 SupportsVision: false),
@@ -224,13 +225,14 @@ public static class LocalModelCatalog
     private static LocalModelRunRecipe Recipe(
         int fullAttentionLayerCount,
         int keyValueHeadCount,
-        double temperature) =>
+        double temperature,
+        int microBatchTokens = 4_096) =>
         new(
             contextTokens: NativeContextTokens,
             keyCachePrecision: KvCachePrecision.F16,
             valueCachePrecision: KvCachePrecision.F16,
             batchTokens: 4_096,
-            microBatchTokens: 4_096,
+            microBatchTokens: microBatchTokens,
             parallelRequests: 1,
             fullAttentionLayerCount: fullAttentionLayerCount,
             keyValueHeadCount: keyValueHeadCount,

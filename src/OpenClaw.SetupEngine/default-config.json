@@ -102,7 +102,7 @@
 
   // Native Windows llama-server and immutable Hugging Face model acquisition.
   "LocalAi": {
-    "Enabled": false,
+    "Enabled": true,
     // null selects the qualified default. Alternatives are chosen explicitly in onboarding.
     "SelectedModelId": null,
     // 0 allocates one free IPv4 loopback port and persists it for later restarts.

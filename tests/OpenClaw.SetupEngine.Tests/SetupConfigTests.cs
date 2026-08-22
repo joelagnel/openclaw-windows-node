@@ -47,7 +47,7 @@ public class SetupConfigTests : IDisposable
     }
 
     [Fact]
-    public void BundledConfig_RequiresExplicitLocalAiOptIn()
+    public void BundledConfig_PrefersLocalAiWhenHardwareIsEligible()
     {
         var config = SetupConfig.LoadFromFile(Path.Combine(
             RepositoryRoot(),
@@ -55,7 +55,7 @@ public class SetupConfigTests : IDisposable
             "OpenClaw.SetupEngine",
             "default-config.json"));
 
-        Assert.False(config.LocalAi.Enabled);
+        Assert.True(config.LocalAi.Enabled);
     }
 
     [Fact]

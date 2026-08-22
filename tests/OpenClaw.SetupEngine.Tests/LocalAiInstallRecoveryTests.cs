@@ -12,6 +12,14 @@ namespace OpenClaw.SetupEngine.Tests;
 public sealed class LocalAiInstallRecoveryTests
 {
     [Fact]
+    public void RuntimeInspection_AllowsColdCudaDllInitialization()
+    {
+        Assert.True(
+            WindowsLlamaRuntimeInspector.VersionProbeTimeout >= TimeSpan.FromSeconds(60),
+            $"Cold CUDA runtime validation needs at least 60 seconds; configured: {WindowsLlamaRuntimeInspector.VersionProbeTimeout}.");
+    }
+
+    [Fact]
     public async Task ModelInstall_ResumesExactPartialWithValidatedRange()
     {
         using var temp = new TempDirectory();

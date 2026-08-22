@@ -210,6 +210,8 @@ internal sealed class LlamaRuntimeInstaller : ILlamaRuntimeAcquirer
 
 internal sealed class WindowsLlamaRuntimeInspector : ILlamaRuntimeInspector
 {
+    internal static TimeSpan VersionProbeTimeout { get; } = TimeSpan.FromSeconds(90);
+
     private static readonly string[] RequiredFiles =
     [
         LlamaRuntimeCatalog.ServerExecutableName,
@@ -250,7 +252,7 @@ internal sealed class WindowsLlamaRuntimeInspector : ILlamaRuntimeInspector
 
             Task<string> stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
             Task<string> stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var timeout = new CancellationTokenSource(VersionProbeTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
             await process.WaitForExitAsync(linked.Token).ConfigureAwait(false);
             string output = (await stdout.ConfigureAwait(false)) + Environment.NewLine +

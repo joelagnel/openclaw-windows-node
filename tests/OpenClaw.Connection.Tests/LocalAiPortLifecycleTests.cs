@@ -443,7 +443,7 @@ public sealed class LocalAiPortLifecycleTests
     {
         public List<int> ProbedPorts { get; } = [];
 
-        public Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+        public Task<LlamaServerRouterProbeResult> ProbeManagedModelAsync(
             Uri endpoint,
             string modelAlias,
             string expectedModelPath,

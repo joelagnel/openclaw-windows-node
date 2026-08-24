@@ -134,7 +134,7 @@ public static class LlamaServerModelStatusParser
 
 internal interface ILlamaServerClient : IDisposable
 {
-    Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+    Task<LlamaServerRouterProbeResult> ProbeManagedModelAsync(
         Uri endpoint,
         string modelAlias,
         string expectedModelPath,
@@ -164,7 +164,7 @@ public sealed class LlamaServerClient : ILlamaServerClient
         };
     }
 
-    public async Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+    public async Task<LlamaServerRouterProbeResult> ProbeManagedModelAsync(
         Uri endpoint,
         string modelAlias,
         string expectedModelPath,

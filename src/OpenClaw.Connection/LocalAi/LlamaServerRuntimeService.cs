@@ -246,7 +246,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                             install.ModelPath,
                             cancellationToken)
                         .ConfigureAwait(false);
-                    if (probe.IsHealthy)
+                    if (probe.IsReadyForManagedModel(install.ModelPath))
                     {
                         LocalAiInstallManifest verifiedManifest = install.Manifest with
                         {
@@ -346,14 +346,46 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                 install.ModelPath,
                 cancellationToken)
             .ConfigureAwait(false);
-        return probe.IsHealthy
-            ? PublishHealthy(probe)
-            : Publish(
-                LocalAiRuntimeState.Starting,
+        if (probe.IsReadyForManagedModel(install.ModelPath))
+        {
+            if (_snapshot.State != LocalAiRuntimeState.Healthy)
+            {
+                LocalAiEndpointLifecycleResult published = await _options.EndpointLifecycle
+                    .PublishAsync(install, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!published.Success)
+                {
+                    return Publish(
+                        LocalAiRuntimeState.Failed,
+                        LocalAiOwnership.CompanionManaged,
+                        published.Detail ?? "The verified Local AI endpoint could not be republished.",
+                        _managedProcess.ProcessId,
+                        _managedProcess.StartedAtUtc);
+                }
+            }
+
+            return PublishHealthy(probe);
+        }
+
+        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
+            .QuiesceAsync(install, cancellationToken)
+            .ConfigureAwait(false);
+        if (!quiesced.Success)
+        {
+            return Publish(
+                LocalAiRuntimeState.Failed,
                 LocalAiOwnership.CompanionManaged,
-                "The local AI router is not healthy yet.",
+                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.",
                 _managedProcess.ProcessId,
                 _managedProcess.StartedAtUtc);
+        }
+
+        return Publish(
+            LocalAiRuntimeState.Starting,
+            LocalAiOwnership.CompanionManaged,
+            probe.Detail ?? "The local AI router has not verified the managed model yet.",
+            _managedProcess.ProcessId,
+            _managedProcess.StartedAtUtc);
     }
 
     private async Task<bool> TryLoadInstallAsync(CancellationToken cancellationToken)

@@ -112,6 +112,83 @@ public sealed class LocalAiPortLifecycleTests
         Assert.Equal(28_765, saved.Endpoint!.Port);
     }
 
+    [Theory]
+    [InlineData(LocalAiModelAvailabilityState.Unknown, true)]
+    [InlineData(LocalAiModelAvailabilityState.Loaded, false)]
+    public async Task AutomaticPort_DoesNotPersistOrPublishWithoutReadyModelEvidence(
+        LocalAiModelAvailabilityState modelState,
+        bool pathMatches)
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, events, selectedPort: 28_774);
+        var client = new FakeClient(events, (expectedModelPath, _) => new(
+            true,
+            modelState,
+            pathMatches ? expectedModelPath : expectedModelPath + ".other",
+            "The managed model is not ready."));
+        var lifecycle = new FakeLifecycle(events);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            client,
+            lifecycle,
+            startupTimeout: TimeSpan.FromMilliseconds(2));
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.DoesNotContain(events, value => value.StartsWith("publish:", StringComparison.Ordinal));
+        Assert.True(host.Process!.StopCount > 0);
+        LocalAiResolvedInstall? saved = await new LocalAiManifestStore(paths).LoadAsync();
+        Assert.Null(saved!.Endpoint);
+    }
+
+    [Fact]
+    public async Task Refresh_UpdatesPublicationWhenManagedModelReadinessChanges()
+    {
+        using var temp = new TempDirectory("local-ai-port-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, events, selectedPort: 28_773);
+        var client = new FakeClient(events, (expectedModelPath, probeNumber) => probeNumber == 2
+            ? new(
+                true,
+                LocalAiModelAvailabilityState.Loaded,
+                expectedModelPath + ".other",
+                "The managed model path changed.")
+            : new(
+                true,
+                LocalAiModelAvailabilityState.Verified,
+                expectedModelPath,
+                "The managed model is ready."));
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            client,
+            new FakeLifecycle(events));
+        LocalAiRuntimeSnapshot started = await runtime.EnsureStartedAsync();
+        Assert.Equal(LocalAiRuntimeState.Healthy, started.State);
+        events.Clear();
+
+        LocalAiRuntimeSnapshot refreshed = await runtime.RefreshAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Starting, refreshed.State);
+        Assert.Equal(LocalAiModelAvailabilityState.Unknown, refreshed.ModelEvidence.State);
+        Assert.Equal(["probe:28773", "quiesce"], events);
+        events.Clear();
+
+        LocalAiRuntimeSnapshot recovered = await runtime.RefreshAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, recovered.State);
+        Assert.Equal(["probe:28773", "publish:28773"], events);
+    }
+
     [Fact]
     public async Task AutomaticPort_NeverProbesListenerWithoutMatchingProcessStartTime()
     {
@@ -292,13 +369,14 @@ public sealed class LocalAiPortLifecycleTests
         FakeProcessHost host,
         FakePlatform platform,
         FakeClient client,
-        ILocalAiEndpointLifecycle lifecycle) => new(
+        ILocalAiEndpointLifecycle lifecycle,
+        TimeSpan? startupTimeout = null) => new(
             new LlamaServerRuntimeOptions
             {
                 Paths = paths,
                 EndpointLifecycle = lifecycle,
                 HealthPollInterval = TimeSpan.FromMilliseconds(1),
-                StartupTimeout = TimeSpan.FromSeconds(1),
+                StartupTimeout = startupTimeout ?? TimeSpan.FromSeconds(1),
                 RestartDelay = TimeSpan.Zero,
             },
             NullLogger.Instance,
@@ -439,8 +517,12 @@ public sealed class LocalAiPortLifecycleTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class FakeClient(List<string> events) : ILlamaServerClient
+    private sealed class FakeClient(
+        List<string> events,
+        Func<string, int, LlamaServerRouterProbeResult>? probeFactory = null) : ILlamaServerClient
     {
+        private int _probeCount;
+
         public List<int> ProbedPorts { get; } = [];
 
         public Task<LlamaServerRouterProbeResult> ProbeManagedModelAsync(
@@ -452,7 +534,8 @@ public sealed class LocalAiPortLifecycleTests
             cancellationToken.ThrowIfCancellationRequested();
             ProbedPorts.Add(endpoint.Port);
             events.Add($"probe:{endpoint.Port}");
-            return Task.FromResult(new LlamaServerRouterProbeResult(
+            int probeNumber = ++_probeCount;
+            return Task.FromResult(probeFactory?.Invoke(expectedModelPath, probeNumber) ?? new LlamaServerRouterProbeResult(
                 true,
                 LocalAiModelAvailabilityState.Verified,
                 expectedModelPath,

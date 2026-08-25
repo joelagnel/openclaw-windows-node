@@ -21,6 +21,18 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public void LegacyRouterProbe_RemainsSourceCompatible()
+    {
+        using var client = new LlamaServerClient();
+#pragma warning disable CS0618
+        Func<Uri, string, string, CancellationToken, Task<LlamaServerRouterProbeResult>> legacyProbe =
+            client.ProbeRouterAsync;
+#pragma warning restore CS0618
+
+        Assert.NotNull(legacyProbe);
+    }
+
+    [Fact]
     public async Task Manifest_RoundTripsValidatedGatewayFallbackModel()
     {
         using var temp = new TempDirectory("local-ai-manifest-");

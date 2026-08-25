@@ -199,6 +199,14 @@ public sealed class LlamaServerClient : ILlamaServerClient
         }
     }
 
+    [Obsolete("Use ProbeManagedModelAsync instead.")]
+    public Task<LlamaServerRouterProbeResult> ProbeRouterAsync(
+        Uri endpoint,
+        string modelAlias,
+        string expectedModelPath,
+        CancellationToken cancellationToken = default) =>
+        ProbeManagedModelAsync(endpoint, modelAlias, expectedModelPath, cancellationToken);
+
     private async Task<bool> ProbeHealthAsync(Uri endpoint, CancellationToken cancellationToken)
     {
         try

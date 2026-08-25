@@ -65,6 +65,44 @@ public sealed class WslGlobalConfigManagerTests : IDisposable
         Assert.False(manager.ApplyMirroredNetworking().Changed);
     }
 
+    [Theory]
+    [InlineData(false, "\r\n")]
+    [InlineData(true, "\n")]
+    public void ApplyMirroredNetworking_PreservesUtf16EncodingAndRollback(
+        bool bigEndian,
+        string newLine)
+    {
+        Directory.CreateDirectory(_root);
+        var configPath = Path.Combine(_root, "wslconfig");
+        var encoding = new UnicodeEncoding(bigEndian, byteOrderMark: true, throwOnInvalidBytes: true);
+        var original = Encode($"[wsl2]{newLine}memory=8GB{newLine}", encoding);
+        File.WriteAllBytes(configPath, original);
+        var manager = new WslGlobalConfigManager(configPath, Path.Combine(_root, "backup"));
+
+        Assert.True(manager.ApplyMirroredNetworking().Changed);
+        var updated = File.ReadAllBytes(configPath);
+        Assert.True(updated.AsSpan().StartsWith(encoding.Preamble));
+        Assert.Contains($"memory=8GB{newLine}networkingMode=mirrored", encoding.GetString(updated[encoding.Preamble.Length..]));
+        Assert.Equal(WslGlobalConfigRestoreResult.Restored, manager.RestoreIfUnchanged());
+        Assert.Equal(original, File.ReadAllBytes(configPath));
+    }
+
+    [Fact]
+    public void ApplyMirroredNetworking_InvalidEncodingDoesNotModifyFiles()
+    {
+        Directory.CreateDirectory(_root);
+        var configPath = Path.Combine(_root, "wslconfig");
+        var backupPath = Path.Combine(_root, "backup");
+        byte[] original = [.. Encoding.UTF8.GetBytes("[wsl2]\nmemory=8GB\n"), 0xFF];
+        File.WriteAllBytes(configPath, original);
+
+        var manager = new WslGlobalConfigManager(configPath, backupPath);
+
+        Assert.Throws<InvalidDataException>(() => manager.ApplyMirroredNetworking());
+        Assert.Equal(original, File.ReadAllBytes(configPath));
+        Assert.False(Directory.Exists(backupPath));
+    }
+
     [Fact]
     public void RestoreIfUnchanged_PreservesAConcurrentUserEdit()
     {
@@ -97,6 +135,9 @@ public sealed class WslGlobalConfigManagerTests : IDisposable
         var payload = Encoding.UTF8.GetBytes(text);
         return includeBom ? [.. Encoding.UTF8.Preamble, .. payload] : payload;
     }
+
+    private static byte[] Encode(string text, Encoding encoding) =>
+        [.. encoding.Preamble, .. encoding.GetBytes(text)];
 
     private static string Decode(byte[] bytes)
     {

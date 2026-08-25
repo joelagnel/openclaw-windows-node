@@ -96,6 +96,7 @@ public interface ISettingsEditor
     bool CameraRecordingConsentGiven { set; }
     bool VoiceTtsEnabled { set; }
     bool ShowChatToolCalls { set; }
+    string? CustomLlamaServerExecutablePath { set; }
 }
 
 /// <summary>
@@ -144,4 +145,5 @@ public sealed record SettingsSnapshot
     public bool CameraRecordingConsentGiven { get; init; }
 
     public bool ShowChatToolCalls { get; init; }
+    public string? CustomLlamaServerExecutablePath { get; init; }
 }

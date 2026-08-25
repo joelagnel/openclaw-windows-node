@@ -171,6 +171,7 @@ internal sealed class SettingsStore : ISettingsStore
         ScreenRecordingConsentGiven = _settings.ScreenRecordingConsentGiven,
         CameraRecordingConsentGiven = _settings.CameraRecordingConsentGiven,
         ShowChatToolCalls = _settings.ShowChatToolCalls,
+        CustomLlamaServerExecutablePath = _settings.CustomLlamaServerExecutablePath,
     };
 
     private void ThrowIfDisposed()
@@ -213,5 +214,6 @@ internal sealed class SettingsStore : ISettingsStore
         public bool CameraRecordingConsentGiven { set => _settings.CameraRecordingConsentGiven = value; }
         public bool VoiceTtsEnabled { set => _settings.VoiceTtsEnabled = value; }
         public bool ShowChatToolCalls { set => _settings.ShowChatToolCalls = value; }
+        public string? CustomLlamaServerExecutablePath { set => _settings.CustomLlamaServerExecutablePath = value; }
     }
 }

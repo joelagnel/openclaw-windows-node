@@ -47,6 +47,23 @@
                     <TextBlock x:Name="EngineDetailText" TextWrapping="Wrap"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Grid x:Name="ExecutablePathPanel" ColumnDefinitions="*,Auto" ColumnSpacing="12"
+                          Visibility="Collapsed">
+                        <StackPanel Spacing="2">
+                            <TextBlock x:Uid="LocalAiPage_ExecutablePathLabel" Text="Executable path"
+                                       Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                            <TextBlock x:Name="ExecutablePathText" TextTrimming="CharacterEllipsis"
+                                       AutomationProperties.AutomationId="LocalAiExecutablePath"/>
+                            <TextBlock x:Uid="LocalAiPage_ExecutablePathDescription"
+                                       Text="Changing this file restarts Local AI and reconnects OpenClaw."
+                                       TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        </StackPanel>
+                        <Button x:Name="ChooseExecutableButton" Grid.Column="1" VerticalAlignment="Center"
+                                x:Uid="LocalAiPage_ChooseExecutableButton" Content="Choose file"
+                                Click="OnChooseExecutable"
+                                AutomationProperties.AutomationId="LocalAiChooseExecutable"/>
+                    </Grid>
                     <TextBlock x:Name="ActionErrorText" Visibility="Collapsed" TextWrapping="Wrap"
                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                AutomationProperties.AutomationId="LocalAiActionError"

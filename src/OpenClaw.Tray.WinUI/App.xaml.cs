@@ -743,6 +743,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
             {
                 Paths = localAiPaths,
                 EndpointLifecycle = localAiEndpointLifecycle,
+                ExecutablePathOverrideProvider = () => _settings?.CustomLlamaServerExecutablePath,
             },
             localAiLogger);
 

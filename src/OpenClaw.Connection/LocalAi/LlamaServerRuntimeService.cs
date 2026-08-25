@@ -9,6 +9,7 @@ public sealed record LlamaServerRuntimeOptions
     public required LocalAiPaths Paths { get; init; }
     public Uri InitialEndpoint { get; init; } = new("http://127.0.0.1:18803/v1");
     public ILocalAiEndpointLifecycle EndpointLifecycle { get; init; } = NullLocalAiEndpointLifecycle.Instance;
+    public Func<string?> ExecutablePathOverrideProvider { get; init; } = static () => null;
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan HealthPollInterval { get; init; } = TimeSpan.FromMilliseconds(250);
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(10);
@@ -17,6 +18,36 @@ public sealed record LlamaServerRuntimeOptions
     public long MaxLogBytes { get; init; } = 8 * 1024 * 1024;
     public int LogBackupCount { get; init; } = 2;
     public int MaxLogLineCharacters { get; init; } = 16 * 1024;
+}
+
+public static class LocalAiExecutablePathPolicy
+{
+    public static string? NormalizeCustomPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        string trimmedPath = path.Trim();
+        if (!Path.IsPathFullyQualified(trimmedPath))
+            throw new InvalidDataException("The selected llama-server.exe path must be absolute.");
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(trimmedPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new InvalidDataException("The selected llama-server.exe path is invalid.", ex);
+        }
+
+        if (!string.Equals(Path.GetFileName(fullPath), "llama-server.exe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Choose a file named llama-server.exe.");
+        if (!File.Exists(fullPath))
+            throw new InvalidDataException("The selected llama-server.exe does not exist.");
+
+        return fullPath;
+    }
 }
 
 internal interface ILlamaServerRuntimePlatform
@@ -177,9 +208,11 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         }
 
         LlamaServerRouterLaunchPlan launchPlan;
+        string executablePath;
         try
         {
-            ValidateInstalledFiles(install);
+            executablePath = ResolveExecutablePath(install);
+            ValidateInstalledFiles(install, executablePath);
             LocalAiPortPolicy.Validate(install.Manifest.RequestedPort);
             launchPlan = LlamaServerRouterConfiguration.Build(
                 _options.Paths,
@@ -205,8 +238,8 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         long generation = ++_generation;
         Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "Starting the local AI router.");
         var spec = new LocalAiProcessStartSpec(
-            install.ExecutablePath,
-            Path.GetDirectoryName(install.ExecutablePath)!,
+            executablePath,
+            Path.GetDirectoryName(executablePath)!,
             launchPlan.Arguments,
             launchPlan.Environment,
             _options.Paths.StandardOutputLogPath,
@@ -301,7 +334,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
 
         try
         {
-            ValidateInstalledFiles(_install!);
+            ValidateInstalledFiles(_install!, ResolveExecutablePath(_install!));
         }
         catch (InvalidDataException ex)
         {
@@ -375,10 +408,14 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         return false;
     }
 
-    private static void ValidateInstalledFiles(LocalAiResolvedInstall install)
+    private string ResolveExecutablePath(LocalAiResolvedInstall install) =>
+        LocalAiExecutablePathPolicy.NormalizeCustomPath(_options.ExecutablePathOverrideProvider()) ??
+        install.ExecutablePath;
+
+    private static void ValidateInstalledFiles(LocalAiResolvedInstall install, string executablePath)
     {
-        if (!File.Exists(install.ExecutablePath))
-            throw new InvalidDataException("The managed llama-server executable is missing.");
+        if (!File.Exists(executablePath))
+            throw new InvalidDataException("The llama-server executable is missing.");
         var model = new FileInfo(install.ModelPath);
         if (!model.Exists || model.Length != install.Manifest.ModelAsset.SizeBytes)
             throw new InvalidDataException("The managed GGUF model is missing or has an unexpected size.");
@@ -775,6 +812,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Paths);
         ArgumentNullException.ThrowIfNull(options.EndpointLifecycle);
+        ArgumentNullException.ThrowIfNull(options.ExecutablePathOverrideProvider);
         if (!options.InitialEndpoint.IsAbsoluteUri ||
             options.InitialEndpoint.Scheme != Uri.UriSchemeHttp ||
             !string.Equals(options.InitialEndpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||

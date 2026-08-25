@@ -254,6 +254,40 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public async Task CustomExecutablePath_RestartUsesSelectionAndRepublishesEndpoint()
+    {
+        using var temp = new TempDirectory("local-ai-executable-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        var events = new List<string>();
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, events, selectedPort: 28_773);
+        string? executableOverride = null;
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient(events),
+            new FakeLifecycle(events),
+            () => executableOverride);
+        await runtime.EnsureStartedAsync();
+
+        string customDirectory = Path.Combine(temp.Path, "custom");
+        Directory.CreateDirectory(customDirectory);
+        executableOverride = Path.Combine(customDirectory, "llama-server.exe");
+        await File.WriteAllTextAsync(executableOverride, "custom test executable");
+        events.Clear();
+
+        LocalAiRuntimeSnapshot restarted = await runtime.RestartAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, restarted.State);
+        Assert.Equal(executableOverride, host.LastSpec!.ExecutablePath);
+        Assert.Equal(customDirectory, host.LastSpec.WorkingDirectory);
+        Assert.Equal(
+            ["quiesce", "stop", "quiesce", "start", "probe:28773", "publish:28773"],
+            events);
+    }
+
+    [Fact]
     public async Task PublishFailure_StopsChildAndLeavesEndpointConsumerQuiesced()
     {
         using var temp = new TempDirectory("local-ai-port-");
@@ -292,11 +326,13 @@ public sealed class LocalAiPortLifecycleTests
         FakeProcessHost host,
         FakePlatform platform,
         FakeClient client,
-        ILocalAiEndpointLifecycle lifecycle) => new(
+        ILocalAiEndpointLifecycle lifecycle,
+        Func<string?>? executablePathOverrideProvider = null) => new(
             new LlamaServerRuntimeOptions
             {
                 Paths = paths,
                 EndpointLifecycle = lifecycle,
+                ExecutablePathOverrideProvider = executablePathOverrideProvider ?? (static () => null),
                 HealthPollInterval = TimeSpan.FromMilliseconds(1),
                 StartupTimeout = TimeSpan.FromSeconds(1),
                 RestartDelay = TimeSpan.Zero,

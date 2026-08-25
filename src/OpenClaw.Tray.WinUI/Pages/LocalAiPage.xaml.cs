@@ -10,6 +10,7 @@ namespace OpenClawTray.Pages;
 
 public sealed partial class LocalAiPage : Page
 {
+    private static App CurrentApp => (App)Application.Current!;
     private LocalAiPageViewModel? _viewModel;
 
     public LocalAiPage()
@@ -91,6 +92,11 @@ public sealed partial class LocalAiPage : Page
         StopButton.IsEnabled = _viewModel.CanStop;
         RestartButton.IsEnabled = _viewModel.CanRestart;
         OpenLogsButton.IsEnabled = _viewModel.CanOpenLogs;
+        ExecutablePathPanel.Visibility = _viewModel.ShowExecutablePicker ? Visibility.Visible : Visibility.Collapsed;
+        ExecutablePathText.Text = _viewModel.CustomExecutablePath ??
+            LocalizationHelper.GetString("LocalAiPage_ManagedExecutablePath");
+        ToolTipService.SetToolTip(ExecutablePathText, ExecutablePathText.Text);
+        ChooseExecutableButton.IsEnabled = _viewModel.CanChooseExecutable;
         RetrySetupButton.IsEnabled = _viewModel.CanRetrySetup;
         RetrySetupButton.Visibility = _viewModel.CanRetrySetup ? Visibility.Visible : Visibility.Collapsed;
         RepairConnectionButton.IsEnabled = _viewModel.CanRepairConnection;
@@ -101,9 +107,23 @@ public sealed partial class LocalAiPage : Page
     private void OnStop(object sender, RoutedEventArgs e) => RunAction(() => _viewModel?.StopAsync() ?? Task.FromResult(false), nameof(OnStop));
     private void OnRestart(object sender, RoutedEventArgs e) => RunAction(() => _viewModel?.RestartAsync() ?? Task.FromResult(false), nameof(OnRestart));
     private void OnOpenLogs(object sender, RoutedEventArgs e) => _viewModel?.OpenLogs();
+    private void OnChooseExecutable(object sender, RoutedEventArgs e) =>
+        RunAction(ChooseExecutableAsync, nameof(OnChooseExecutable));
     private void OnRetrySetup(object sender, RoutedEventArgs e) => _viewModel?.RetrySetup();
     private void OnRepairConnection(object sender, RoutedEventArgs e) => _viewModel?.RepairConnection();
     private void OnOpenChat(object sender, RoutedEventArgs e) => _viewModel?.OpenChat();
+
+    private async Task<bool> ChooseExecutableAsync()
+    {
+        if (_viewModel is null)
+            return false;
+
+        string? path = await Win32FilePickerHelper.PickSingleFileAsync(
+            CurrentApp.GetHubWindowHandle(),
+            LocalizationHelper.GetString("LocalAiPage_ChooseExecutablePickerTitle"));
+        return path is null || await _viewModel.ChangeExecutablePathAsync(path);
+    }
+
     private static void RunAction(Func<Task<bool>> action, string source) =>
         AsyncEventHandlerGuard.Run(action, new AppLogger(), source);
     private static Brush ResolveBrush(string key) => (Brush)Application.Current.Resources[key];

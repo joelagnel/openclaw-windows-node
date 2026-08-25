@@ -18,6 +18,8 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     private readonly IPermissionsPageRuntimeSource _gatewaySource;
     private readonly IAppCommands _appCommands;
     private readonly IUiDispatcher _dispatcher;
+    private readonly ISettingsStore _settingsStore;
+    private readonly SettingsWriteOrigin _settingsOrigin;
     private LocalAiRuntimeSnapshot _runtimeSnapshot;
     private GatewayConnectionSnapshot _gatewaySnapshot;
     private CancellationTokenSource? _refreshCancellation;
@@ -25,17 +27,22 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     private bool _disposed;
     private bool _isBusy;
     private string? _actionError;
+    private string? _customExecutablePath;
 
     public LocalAiPageViewModel(
         ILocalAiRuntime runtime,
         IPermissionsPageRuntimeSource gatewaySource,
         IAppCommands appCommands,
-        IUiDispatcher dispatcher)
+        IUiDispatcher dispatcher,
+        ISettingsStore settingsStore)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _gatewaySource = gatewaySource ?? throw new ArgumentNullException(nameof(gatewaySource));
         _appCommands = appCommands ?? throw new ArgumentNullException(nameof(appCommands));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
+        _settingsOrigin = settingsStore.CreateOrigin();
+        _customExecutablePath = settingsStore.Current.CustomLlamaServerExecutablePath;
         _runtimeSnapshot = runtime.Snapshot;
         _gatewaySnapshot = gatewaySource.Current.ConnectionSnapshot;
     }
@@ -67,6 +74,7 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public string Endpoint => _runtimeSnapshot.Endpoint.ToString();
     public string? ProcessId => _runtimeSnapshot.ProcessId?.ToString();
     public string? EngineDetail => _runtimeSnapshot.Detail;
+    public string? CustomExecutablePath => _customExecutablePath;
     public string? ModelName => LocalModelCatalog.Find(_runtimeSnapshot.ModelId)?.DisplayName ??
         _runtimeSnapshot.ModelId;
     public const string ContextLengthText = "256K";
@@ -117,6 +125,8 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public bool CanRestart => !IsBusy && _runtimeSnapshot.Ownership == LocalAiOwnership.CompanionManaged &&
         _runtimeSnapshot.State == LocalAiRuntimeState.Healthy;
     public bool CanOpenLogs => !IsBusy && HasManagedInstall;
+    public bool ShowExecutablePicker => HasManagedInstall;
+    public bool CanChooseExecutable => !IsBusy && HasManagedInstall;
     public bool CanRetrySetup => !IsBusy && ModelState is
         LocalAiModelPresentationState.NotInstalled or LocalAiModelPresentationState.Unknown;
     public bool CanRepairConnection => !IsBusy && GatewayState is not
@@ -129,7 +139,9 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     private bool HasManagedInstall =>
         _runtimeSnapshot.ModelEvidence.State is LocalAiModelAvailabilityState.Verified or LocalAiModelAvailabilityState.Loaded ||
         (_runtimeSnapshot.Ownership == LocalAiOwnership.CompanionManaged &&
-         _runtimeSnapshot.State != LocalAiRuntimeState.NotInstalled);
+         _runtimeSnapshot.State != LocalAiRuntimeState.NotInstalled) ||
+        (_runtimeSnapshot.State != LocalAiRuntimeState.NotInstalled &&
+         !string.IsNullOrWhiteSpace(_runtimeSnapshot.EngineVersion));
 
     public void Activate(object? parameter)
     {
@@ -161,6 +173,19 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public Task<bool> StartAsync() => RunRuntimeActionAsync(CanStart, _runtime.EnsureStartedAsync);
     public Task<bool> StopAsync() => RunRuntimeActionAsync(CanStop, _runtime.StopAsync);
     public Task<bool> RestartAsync() => RunRuntimeActionAsync(CanRestart, _runtime.RestartAsync);
+    public Task<bool> ChangeExecutablePathAsync(string path) => RunRuntimeActionAsync(
+        CanChooseExecutable,
+        async cancellationToken =>
+        {
+            string normalizedPath = LocalAiExecutablePathPolicy.NormalizeCustomPath(path) ??
+                throw new InvalidDataException("Choose a llama-server.exe file.");
+            _settingsStore.Update(
+                _settingsOrigin,
+                editor => editor.CustomLlamaServerExecutablePath = normalizedPath);
+            _customExecutablePath = normalizedPath;
+            OnPropertyChanged(null);
+            return await _runtime.RestartAsync(cancellationToken).ConfigureAwait(false);
+        });
     public bool OpenLogs() => RunCommand(CanOpenLogs, _appCommands.OpenLocalAiLogs);
     public bool RetrySetup() => RunCommand(CanRetrySetup, _appCommands.ShowOnboarding);
     public bool RepairConnection() => RunCommand(CanRepairConnection, _appCommands.Reconnect);

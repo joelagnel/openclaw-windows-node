@@ -154,6 +154,11 @@ public record class SettingsData
     /// OTLP transport protocol for the configured OpenTelemetry endpoint.
     /// </summary>
     public string OpenTelemetryProtocol { get; set; } = "grpc";
+    /// <summary>
+    /// Optional user-selected llama-server.exe used in place of the downloaded
+    /// Local AI engine. The managed model, launch arguments, and lifecycle stay unchanged.
+    /// </summary>
+    public string? CustomLlamaServerExecutablePath { get; set; }
     public List<UserNotificationRule>? UserRules { get; set; }
 
     // ── MXC sandbox ─────────────────────────────────────────────────────

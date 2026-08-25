@@ -233,7 +233,8 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         if (direct.Success)
             return new(true, true, direct.StandardOutput, null);
         string missing = $"Config path not found: {path}";
-        return direct.StandardError.Contains(missing, StringComparison.Ordinal)
+        return direct.StandardError.Contains(missing, StringComparison.Ordinal) ||
+               direct.StandardOutput.Contains(missing, StringComparison.Ordinal)
             ? new(true, false, null, null)
             : new(false, false, null, $"The app-owned gateway setting '{path}' could not be read.");
     }

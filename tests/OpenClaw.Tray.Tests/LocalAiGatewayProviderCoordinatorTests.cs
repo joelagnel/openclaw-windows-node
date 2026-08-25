@@ -144,6 +144,21 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     [Fact]
+    public async Task Quiesce_AcceptsMissingPathsReportedAsJsonOnStandardOutput()
+    {
+        LocalAiResolvedInstall install = Install(28_768);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            MissingPathsOnStandardOutput = true,
+        };
+        var coordinator = CreateCoordinator(commands);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task Quiesce_RestoresFallbackBeforeRemovingProvider()
     {
         LocalAiResolvedInstall install = Install(28_770, "openai/gpt-5");
@@ -334,6 +349,7 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         public string? ProviderAfterApply { get; init; }
         public string? PrimaryAfterApply { get; init; }
         public bool FailReads { get; init; }
+        public bool MissingPathsOnStandardOutput { get; init; }
         public HashSet<int> FailedReadCalls { get; init; } = [];
         public Action<int>? CommandObserved { get; init; }
         public List<IReadOnlyList<string>> Calls { get; } = [];
@@ -371,20 +387,18 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             }
             if (command.Contains(LocalAiGatewayProviderDefinition.ProviderPath))
                 return ProviderJson is null
-                    ? Result(
-                        1,
-                        string.Empty,
-                        $"Config path not found: {LocalAiGatewayProviderDefinition.ProviderPath}")
+                    ? MissingPathResult(LocalAiGatewayProviderDefinition.ProviderPath)
                     : Result(0, ProviderJson);
             if (command.Contains(LocalAiGatewayProviderDefinition.PrimaryModelPath))
                 return PrimaryModel is null
-                    ? Result(
-                        1,
-                        string.Empty,
-                        $"Config path not found: {LocalAiGatewayProviderDefinition.PrimaryModelPath}")
+                    ? MissingPathResult(LocalAiGatewayProviderDefinition.PrimaryModelPath)
                     : Result(0, JsonSerializer.Serialize(PrimaryModel));
             return Result(1, string.Empty);
         }
+
+        private Task<WslCommandResult> MissingPathResult(string path) => MissingPathsOnStandardOutput
+            ? Result(1, JsonSerializer.Serialize(new { error = $"Config path not found: {path}" }))
+            : Result(1, string.Empty, $"Config path not found: {path}");
 
         public Task<WslCommandResult> RunAsync(
             IReadOnlyList<string> arguments,

@@ -27,6 +27,8 @@ internal sealed class WslGlobalConfigManager : IWslGlobalConfigManager
     private static readonly byte[] s_utf8Bom = [.. Encoding.UTF8.Preamble];
     private static readonly byte[] s_utf16LeBom = [0xFF, 0xFE];
     private static readonly byte[] s_utf16BeBom = [0xFE, 0xFF];
+    private static readonly byte[] s_utf32LeBom = [0xFF, 0xFE, 0x00, 0x00];
+    private static readonly byte[] s_utf32BeBom = [0x00, 0x00, 0xFE, 0xFF];
 
     private readonly string _configPath;
     private readonly string _backupPath;
@@ -136,7 +138,12 @@ internal sealed class WslGlobalConfigManager : IWslGlobalConfigManager
     {
         Encoding encoding = s_utf8;
         byte[] preamble = [];
-        if (bytes.AsSpan().StartsWith(s_utf8Bom))
+        if (bytes.AsSpan().StartsWith(s_utf32LeBom) ||
+            bytes.AsSpan().StartsWith(s_utf32BeBom))
+        {
+            throw new InvalidDataException("The .wslconfig encoding is invalid or unsupported.");
+        }
+        else if (bytes.AsSpan().StartsWith(s_utf8Bom))
             preamble = s_utf8Bom;
         else if (bytes.AsSpan().StartsWith(s_utf16LeBom))
         {
@@ -159,8 +166,8 @@ internal sealed class WslGlobalConfigManager : IWslGlobalConfigManager
             throw new InvalidDataException("The .wslconfig encoding is invalid or unsupported.", ex);
         }
 
-        if (text.Any(c => char.IsControl(c) && c is not '\r' and not '\n' and not '\t'))
-            throw new InvalidDataException("The .wslconfig contains unsupported control characters.");
+        if (text.Contains('\0'))
+            throw new InvalidDataException("The .wslconfig encoding is invalid or unsupported.");
 
         var newLine = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         return new(text, encoding, preamble, newLine);

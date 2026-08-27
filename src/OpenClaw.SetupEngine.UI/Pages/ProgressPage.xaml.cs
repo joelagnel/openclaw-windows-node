@@ -361,8 +361,12 @@ public sealed partial class ProgressPage : Page
         InstallHeader.Visibility = Visibility.Collapsed;
         InstallContent.Visibility = Visibility.Collapsed;
         MilestonePanel.Visibility = Visibility.Visible;
+        MilestoneBackButton.Visibility = Visibility.Visible;
         OnboardButton.Visibility = Visibility.Visible;
     }
+
+    private void MilestoneBack_Click(object sender, RoutedEventArgs e) =>
+        SetupWindow.Active?.NavigateToCapabilities(back: true);
 
     private void Onboard_Click(object sender, RoutedEventArgs e)
     {

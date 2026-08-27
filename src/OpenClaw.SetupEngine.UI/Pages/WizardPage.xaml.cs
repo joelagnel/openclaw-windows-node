@@ -118,6 +118,7 @@ public sealed partial class WizardPage : Page
             // already running" when recovering from a previous error.
             await CancelCurrentSessionAsync();
             ClearConsoleBanner();
+            _stepHistory.Clear();
             _sessionId = "";
             _wizardStepCount = 0;
             _progressPolls = 0;
@@ -125,7 +126,13 @@ public sealed partial class WizardPage : Page
             _lastProgressStepId = "";
             _stepVisits.Clear();
             SetBusy("Connecting to gateway...");
-            _client = await ConnectClientAsync();
+            var client = await ConnectClientAsync();
+            if (generation != _operationGeneration)
+            {
+                await DisconnectClientAsync(client);
+                return;
+            }
+            _client = client;
             _client.StatusChanged += OnWizardClientStatusChanged;
             SetBusy("Starting wizard...");
             StartConsoleTail();
@@ -388,6 +395,7 @@ public sealed partial class WizardPage : Page
             BusyRing.IsActive = false;
             ShowRecoveryActions();
             WizardBackButton.Visibility = Visibility.Visible;
+            WizardBackButton.IsEnabled = true;
             StatusText.Text = "A few quick questions to connect your agent";
             PrimaryButton.IsEnabled = !WizardSelection.RequiresAnswer(_stepType);
             SecondaryButton.IsEnabled = true;
@@ -766,18 +774,27 @@ public sealed partial class WizardPage : Page
         }
     }
 
-    private void WizardBack_Click(object sender, RoutedEventArgs e)
+    private void WizardBack_Click(object sender, RoutedEventArgs e) =>
+        AsyncEventHandlerGuard.Run(
+            WizardBackAsync,
+            NullLogger.Instance,
+            nameof(WizardBack_Click));
+
+    private async Task WizardBackAsync()
     {
         // Pop the current step (that's showing now), then re-render the previous one
         if (_stepHistory.Count > 1)
         {
             _stepHistory.Pop(); // discard current
             var previousPayload = _stepHistory.Pop(); // will be re-pushed by ApplyPayloadAsync
-            _ = ApplyPayloadAsync(previousPayload);
+            await ApplyPayloadAsync(previousPayload);
         }
         else
         {
-            SetupWindow.Active?.NavigateToWelcome(back: true);
+            AdvanceOperationGeneration();
+            SetBusy("Returning to setup review...");
+            await CancelCurrentSessionAsync();
+            SetupWindow.Active?.NavigateToGatewayInstalledMilestone(back: true);
         }
     }
 
@@ -1369,6 +1386,7 @@ public sealed partial class WizardPage : Page
         BusyRing.IsActive = true;
         PrimaryButton.IsEnabled = false;
         SecondaryButton.IsEnabled = false;
+        WizardBackButton.IsEnabled = false;
         HideGatewayRecovery();
     }
 
@@ -1385,6 +1403,7 @@ public sealed partial class WizardPage : Page
         PrimaryButton.IsEnabled = true;
         SecondaryButton.IsEnabled = false;
         SecondaryButton.Visibility = Visibility.Collapsed;
+        WizardBackButton.IsEnabled = true;
         ShowRecoveryActions();
         MaybeShowGatewayRecovery();
     }
@@ -1580,6 +1599,11 @@ public sealed partial class WizardPage : Page
         if (client == null) return;
         _client = null;
         client.StatusChanged -= OnWizardClientStatusChanged;
+        await DisconnectClientAsync(client);
+    }
+
+    private static async Task DisconnectClientAsync(OpenClawGatewayClient client)
+    {
         // slopwatch-ignore: SW003 Cleanup is best-effort; failure cannot improve caller state and the original outcome is preserved.
         try { await client.DisconnectAsync(); } catch { }
         client.Dispose();

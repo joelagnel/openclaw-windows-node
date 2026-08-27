@@ -1165,6 +1165,46 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void GatewayInstalledMilestone_AllowsReversibleOnboardingNavigation()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml"));
+        var progressPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+        var wizardPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "WizardPage.xaml.cs"));
+        var setupWindow = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+
+        Assert.Contains("x:Name=\"MilestoneBackButton\"", xaml);
+        Assert.Contains("Click=\"MilestoneBack_Click\"", xaml);
+        Assert.Contains("NavigateToCapabilities(back: true)", ExtractMethod(progressPage, "MilestoneBack_Click"));
+        var wizardBack = ExtractMethod(wizardPage, "WizardBackAsync");
+        var startWizard = ExtractMethod(wizardPage, "StartWizardAsync");
+
+        Assert.Contains("AsyncEventHandlerGuard.Run", ExtractMethod(wizardPage, "WizardBack_Click"));
+        AssertInOrder(
+            wizardBack,
+            "AdvanceOperationGeneration()",
+            "SetBusy(\"Returning to setup review...\")",
+            "await CancelCurrentSessionAsync()",
+            "NavigateToGatewayInstalledMilestone(back: true)");
+        AssertInOrder(
+            startWizard,
+            "await CancelCurrentSessionAsync()",
+            "_stepHistory.Clear()",
+            "_sessionId = \"\"",
+            "var client = await ConnectClientAsync()",
+            "if (generation != _operationGeneration)",
+            "await DisconnectClientAsync(client)",
+            "_client = client");
+        AssertInOrder(
+            startWizard,
+            "var client = await ConnectClientAsync()",
+            "if (generation != _operationGeneration)",
+            "await DisconnectClientAsync(client)",
+            "_client = client");
+        Assert.Contains("NavigateTo(typeof(CapabilitiesPage), _config, back)", setupWindow);
+    }
+
+    [Fact]
     public void SetupProgress_PreparesWslBeforeLocalAiDownloads()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

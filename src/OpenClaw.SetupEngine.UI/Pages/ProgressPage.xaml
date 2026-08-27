@@ -122,6 +122,9 @@
                 <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center" Background="{ThemeResource SetupInactiveDotBrush}" />
                 <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center" Background="{ThemeResource SetupInactiveDotBrush}" />
             </StackPanel>
+            <Button x:Name="MilestoneBackButton" Grid.Column="0" Content="Back"
+                    Visibility="Collapsed" MinWidth="80" HorizontalAlignment="Left"
+                    Margin="48,0" Click="MilestoneBack_Click" />
             <Button x:Name="OnboardButton" Grid.Column="1" Content="Start OpenClaw onboard"
                     Visibility="Collapsed" MinWidth="100" HorizontalAlignment="Right"
                     Margin="48,0" Style="{StaticResource AccentButtonStyle}"

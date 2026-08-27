@@ -334,11 +334,40 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         LocalAiResolvedInstall install = _install!;
         EndpointOwnershipObservation ownership = DiscoverOwnedEndpoint(install, _managedProcess);
         if (!ownership.IsComplete)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, "TCP listener ownership could not be determined.");
+        {
+            LocalAiRuntimeSnapshot? failure = await QuiesceOrStopAsync(
+                    install,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return failure ?? Publish(
+                LocalAiRuntimeState.Conflict,
+                LocalAiOwnership.None,
+                "TCP listener ownership could not be determined.");
+        }
         if (ownership.ConflictDetail is not null)
-            return Publish(LocalAiRuntimeState.Conflict, LocalAiOwnership.None, ownership.ConflictDetail);
+        {
+            LocalAiRuntimeSnapshot? failure = await QuiesceOrStopAsync(
+                    install,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return failure ?? Publish(
+                LocalAiRuntimeState.Conflict,
+                LocalAiOwnership.None,
+                ownership.ConflictDetail);
+        }
         if (ownership.Endpoint is null)
-            return Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "The local AI router has not opened its endpoint yet.", _managedProcess.ProcessId, _managedProcess.StartedAtUtc);
+        {
+            LocalAiRuntimeSnapshot? failure = await QuiesceOrStopAsync(
+                    install,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return failure ?? Publish(
+                LocalAiRuntimeState.Starting,
+                LocalAiOwnership.CompanionManaged,
+                "The local AI router has not opened its endpoint yet.",
+                _managedProcess.ProcessId,
+                _managedProcess.StartedAtUtc);
+        }
 
         LlamaServerRouterProbeResult probe = await _client.ProbeManagedModelAsync(
                 ownership.Endpoint,
@@ -348,8 +377,24 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             .ConfigureAwait(false);
         if (probe.IsReadyForManagedModel(install.ModelPath))
         {
-            if (_snapshot.State != LocalAiRuntimeState.Healthy)
+            bool endpointChanged = install.Endpoint != ownership.Endpoint;
+            if (_snapshot.State != LocalAiRuntimeState.Healthy || endpointChanged)
             {
+                if (endpointChanged && _snapshot.State == LocalAiRuntimeState.Healthy)
+                {
+                    LocalAiRuntimeSnapshot? failure = await QuiesceOrStopAsync(
+                            install,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (failure is not null)
+                        return failure;
+                }
+
+                install = await BindVerifiedEndpointAsync(
+                        install,
+                        ownership.Endpoint,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 LocalAiEndpointLifecycleResult published = await _options.EndpointLifecycle
                     .PublishAsync(install, cancellationToken)
                     .ConfigureAwait(false);
@@ -367,18 +412,12 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             return PublishHealthy(probe);
         }
 
-        LocalAiEndpointLifecycleResult quiesced = await _options.EndpointLifecycle
-            .QuiesceAsync(install, cancellationToken)
+        LocalAiRuntimeSnapshot? quiesceFailure = await QuiesceOrStopAsync(
+                install,
+                cancellationToken)
             .ConfigureAwait(false);
-        if (!quiesced.Success)
-        {
-            return Publish(
-                LocalAiRuntimeState.Failed,
-                LocalAiOwnership.CompanionManaged,
-                quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.",
-                _managedProcess.ProcessId,
-                _managedProcess.StartedAtUtc);
-        }
+        if (quiesceFailure is not null)
+            return quiesceFailure;
 
         return Publish(
             LocalAiRuntimeState.Starting,
@@ -386,6 +425,57 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             probe.Detail ?? "The local AI router has not verified the managed model yet.",
             _managedProcess.ProcessId,
             _managedProcess.StartedAtUtc);
+    }
+
+    private async Task<LocalAiRuntimeSnapshot?> QuiesceOrStopAsync(
+        LocalAiResolvedInstall install,
+        CancellationToken cancellationToken)
+    {
+        LocalAiEndpointLifecycleResult? quiesced = null;
+        try
+        {
+            quiesced = await _options.EndpointLifecycle
+                .QuiesceAsync(install, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            if (quiesced is null)
+            {
+                ++_generation;
+                await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
+                Publish(
+                    LocalAiRuntimeState.Failed,
+                    LocalAiOwnership.None,
+                    "The Local AI gateway provider withdrawal did not complete.");
+            }
+        }
+        if (quiesced.Success)
+            return null;
+
+        ++_generation;
+        await DisposeManagedProcessAsync(CancellationToken.None).ConfigureAwait(false);
+        return Publish(
+            LocalAiRuntimeState.Failed,
+            LocalAiOwnership.None,
+            quiesced.Detail ?? "The Local AI gateway provider could not be safely disabled.");
+    }
+
+    private async Task<LocalAiResolvedInstall> BindVerifiedEndpointAsync(
+        LocalAiResolvedInstall install,
+        Uri endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (install.Endpoint == endpoint)
+            return install;
+
+        LocalAiInstallManifest verifiedManifest = install.Manifest with
+        {
+            Endpoint = endpoint.AbsoluteUri,
+        };
+        await _manifestStore.SaveAsync(verifiedManifest, cancellationToken).ConfigureAwait(false);
+        _install = _manifestStore.ResolveAndValidate(verifiedManifest);
+        return _install;
     }
 
     private async Task<bool> TryLoadInstallAsync(CancellationToken cancellationToken)

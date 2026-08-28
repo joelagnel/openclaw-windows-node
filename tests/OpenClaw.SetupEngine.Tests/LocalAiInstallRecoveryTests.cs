@@ -491,6 +491,36 @@ public sealed class LocalAiInstallRecoveryTests
     }
 
     [Fact]
+    public async Task Reconciler_MigratesLegacyCudaPrefixedUuidSelector()
+    {
+        using var temp = new TempDirectory();
+        LocalInferencePlan plan = CatalogPlan();
+        const string gpuUuid = "GPU-cc66bca6-b5ff-dd70-995c-d81a07add980";
+        var paths = new LocalAiPaths(temp.Path);
+        var store = new LocalAiManifestStore(paths);
+        await store.SaveAsync(CreateManifest(temp.Path, plan, $"cuda:{gpuUuid}"));
+        var reconciler = new LocalAiInstallReconciler(
+            new ValidRuntimeInspector(),
+            new AcceptingModelVerifier());
+
+        LocalAiReconcileResult result = await reconciler.ReconcileAsync(
+            temp.Path,
+            plan,
+            gpuUuid,
+            CancellationToken.None);
+
+        LocalAiResolvedInstall migrated = Assert.IsType<LocalAiResolvedInstall>(
+            await store.LoadAsync());
+        Assert.True(result.Reused);
+        Assert.Equal(gpuUuid, result.ResolvedInstall?.Manifest.SelectedGpuId);
+        Assert.Equal(gpuUuid, migrated.Manifest.SelectedGpuId);
+        Assert.Equal(
+            gpuUuid,
+            LlamaServerRouterConfiguration.Build(paths, migrated)
+                .Environment["CUDA_VISIBLE_DEVICES"]);
+    }
+
+    [Fact]
     public async Task Reconciler_RejectsDifferentGpuWithoutDeletingManifest()
     {
         using var temp = new TempDirectory();

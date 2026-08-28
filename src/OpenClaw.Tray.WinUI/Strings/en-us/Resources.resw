@@ -7069,6 +7069,9 @@ Make sure the gateway is running.</value>
   <data name="HubWindow_NavigationViewItem_LocalAi.Content" xml:space="preserve"><value>Local AI</value></data>
   <data name="LocalAiPage_Title.Text" xml:space="preserve"><value>Local AI</value></data>
   <data name="LocalAiPage_Intro.Text" xml:space="preserve"><value>Run the verified native llama-server privately on this computer. Models load only when requested.</value></data>
+  <data name="LocalAiPage_UnavailableInfoBar.Title" xml:space="preserve"><value>Local AI is not available</value></data>
+  <data name="LocalAiPage_UnavailableDetailsButton.Content" xml:space="preserve"><value>See why</value></data>
+  <data name="LocalAiPage_UnavailableDetailsTip.Title" xml:space="preserve"><value>Why Local AI is unavailable</value></data>
   <data name="LocalAiPage_EngineHeading.Text" xml:space="preserve"><value>llama-server</value></data>
   <data name="LocalAiPage_VersionLabel.Text" xml:space="preserve"><value>Version</value></data>
   <data name="LocalAiPage_EndpointLabel.Text" xml:space="preserve"><value>Endpoint</value></data>

@@ -7005,6 +7005,9 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   <data name="HubWindow_NavigationViewItem_LocalAi.Content" xml:space="preserve"><value>IA locale</value></data>
   <data name="LocalAiPage_Title.Text" xml:space="preserve"><value>IA locale</value></data>
   <data name="LocalAiPage_Intro.Text" xml:space="preserve"><value>Exécutez le llama-server natif vérifié en privé sur cet ordinateur. Les modèles ne sont chargés qu'à la demande.</value></data>
+  <data name="LocalAiPage_UnavailableInfoBar.Title" xml:space="preserve"><value>L'IA locale n'est pas disponible</value></data>
+  <data name="LocalAiPage_UnavailableDetailsButton.Content" xml:space="preserve"><value>Voir pourquoi</value></data>
+  <data name="LocalAiPage_UnavailableDetailsTip.Title" xml:space="preserve"><value>Pourquoi l'IA locale n'est pas disponible</value></data>
   <data name="LocalAiPage_EngineHeading.Text" xml:space="preserve"><value>llama-server</value></data>
   <data name="LocalAiPage_VersionLabel.Text" xml:space="preserve"><value>Version du moteur</value></data>
   <data name="LocalAiPage_EndpointLabel.Text" xml:space="preserve"><value>Point de terminaison</value></data>

@@ -1,5 +1,6 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
@@ -325,6 +326,7 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiInstallReviewCard.Visibility = Visibility.Visible;
         LocalAiUnavailablePanel.Visibility = Visibility.Collapsed;
         LocalAiToggle.Visibility = Visibility.Visible;
+        SetLocalAiOptionAvailability(isAvailable: true);
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
         _config!.LocalAi.SelectedModelId ??= eligibility.Plan!.Model.Id;
         PopulateLocalAiModels();
@@ -351,38 +353,31 @@ public sealed partial class CapabilitiesPage : Page
         _suppressLocalAiToggle = true;
         LocalAiToggle.IsOn = false;
         _suppressLocalAiToggle = false;
-        LocalAiToggle.Visibility = Visibility.Collapsed;
+        LocalAiToggle.Visibility = Visibility.Visible;
         LocalAiDetailsPanel.Visibility = Visibility.Collapsed;
         _localAiUnavailableReason = reason;
         LocalAiUnavailablePanel.Visibility = Visibility.Visible;
         LocalAiInstallReviewCard.Visibility = Visibility.Visible;
+        SetLocalAiOptionAvailability(isAvailable: false);
         _config!.LocalAi.Enabled = false;
         _config.SkipWizard = _skipWizardWithoutLocalAi;
         ApplySetupReviewSummary(_config);
     }
 
     private static string DescribeLocalAiUnavailable(LocalInferenceEligibilityResult eligibility) =>
-        eligibility.SelectionFailureCode switch
-        {
-            LocalInferenceSelectionFailureCode.RuntimeUnavailable =>
-                "This Local AI release does not include a native llama-server runtime for the detected Windows architecture.",
-            LocalInferenceSelectionFailureCode.NoNvidiaGpu =>
-                "No NVIDIA GPU was reported by the CUDA driver. Install or repair the NVIDIA driver, then try setup again.",
-            LocalInferenceSelectionFailureCode.UnknownModel =>
-                "The selected model is not available in this Local AI release.",
-            _ => eligibility.FailureCode switch
-            {
-                LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete =>
-                    "OpenClaw could not read a stable CUDA GPU identifier, memory, or CUDA capability.",
-                LocalInferenceEligibilityFailureCode.InsufficientGpuMemory =>
-                    $"{eligibility.Plan?.Model.DisplayName ?? "The selected model"} requires " +
-                    $"{FormatSize(eligibility.RequiredTotalMemoryBytes)} of GPU memory for model weights, KV cache, and runtime workspace. " +
-                    $"OpenClaw detected {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}.",
-                LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow =>
-                    "The NVIDIA driver does not provide CUDA 13 support. A separate CUDA Toolkit is not required.",
-                _ => "OpenClaw could not verify the Local AI requirements on this system.",
-            },
-        };
+        LocalInferenceEligibilityDiagnostics.DescribeUnavailable(eligibility);
+
+    private void SetLocalAiOptionAvailability(bool isAvailable)
+    {
+        LocalAiOptionContent.IsHitTestVisible = isAvailable;
+        LocalAiOptionContent.Opacity = isAvailable ? 1 : 0.55;
+        LocalAiToggle.IsEnabled = isAvailable;
+        LocalAiModelSelector.IsEnabled = isAvailable;
+        LocalAiNetworkingConsentCheckBox.IsEnabled = isAvailable;
+        AutomationProperties.SetHelpText(
+            LocalAiOptionContent,
+            isAvailable ? string.Empty : "Unavailable because this PC does not meet the Local AI requirements.");
+    }
 
     private void LocalAiUnavailableDetails_Click(object sender, RoutedEventArgs e) =>
         AsyncEventHandlerGuard.Run(

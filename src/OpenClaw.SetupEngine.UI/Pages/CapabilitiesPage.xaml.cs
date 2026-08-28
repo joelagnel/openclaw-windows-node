@@ -402,6 +402,10 @@ public sealed partial class CapabilitiesPage : Page
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
         _config!.LocalAi.SelectedModelId ??= eligibility.Plan!.Model.Id;
         PopulateLocalAiModels();
+        _config.LocalAi.Enabled = TraySettingsConfig.ResolveLocalAiOnboardingEnabled(
+            _config.UsesBundledDefaultConfig,
+            _config.LocalAi.Enabled,
+            _localAiSelectionEligible);
         _suppressLocalAiToggle = true;
         LocalAiToggle.IsOn = _config!.LocalAi.Enabled;
         _suppressLocalAiToggle = false;

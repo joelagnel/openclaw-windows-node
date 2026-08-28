@@ -163,8 +163,8 @@ public sealed class LocalAiPageViewModelTests
     }
 
     /// <summary>
-    /// Incomplete hardware facts (a partial/transient NVML read, e.g. a GPU present without a
-    /// stable ID or driver version) are inconclusive, not a definitive "unsupported device", so
+    /// Incomplete hardware facts (a partial/transient CUDA read, e.g. a GPU present without a
+    /// stable ID or CUDA version) are inconclusive, not a definitive "unsupported device", so
     /// the page must classify this the same as a thrown probe failure: an error state that keeps
     /// recheck available, instead of a permanent IsLocalAiAvailable=false.
     /// </summary>
@@ -178,7 +178,7 @@ public sealed class LocalAiPageViewModelTests
         HostHardwareInfo qualified = CreateQualifiedHardware();
         HostHardwareInfo incomplete = qualified with
         {
-            Gpus = [qualified.Gpus[0] with { DriverVersion = null }],
+            Gpus = [qualified.Gpus[0] with { CudaMajorVersion = null }],
         };
         using var viewModel = new LocalAiPageViewModel(
             runtime,

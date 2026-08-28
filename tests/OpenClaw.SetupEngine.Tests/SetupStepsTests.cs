@@ -1568,6 +1568,41 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanupStaleGateway_RemovesAllManagedRecordsBehindUnmarkedRecord()
+    {
+        var ctx = CreateContext();
+        var registry = new GatewayRegistry(_tempDir);
+        registry.Load();
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "legacy-gw",
+            Url = ctx.GatewayUrl!,
+            IsLocal = true,
+        });
+        foreach (var id in new[] { "managed-gw-1", "managed-gw-2" })
+        {
+            registry.AddOrUpdate(new GatewayRecord
+            {
+                Id = id,
+                Url = ctx.GatewayUrl!,
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+            });
+            Directory.CreateDirectory(registry.GetIdentityDirectory(id));
+        }
+        registry.Save();
+
+        var result = await new CleanupStaleGatewayStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var remaining = new GatewayRegistry(_tempDir);
+        remaining.Load();
+        Assert.Equal("legacy-gw", Assert.Single(remaining.FindAllByUrl(ctx.GatewayUrl!)).Id);
+        Assert.False(Directory.Exists(registry.GetIdentityDirectory("managed-gw-1")));
+        Assert.False(Directory.Exists(registry.GetIdentityDirectory("managed-gw-2")));
+    }
+
+    [Fact]
     public async Task CleanupStaleGateway_PreservesSshTunneledRecord()
     {
         var ctx = CreateContext();

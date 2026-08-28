@@ -59,7 +59,10 @@ public static class SetupReviewSummaryBuilder
             ? ""
             : $" --node-version {GatewayReleasePolicy.NodeVersion}";
         var installCommand =
-            $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {release.Version}{runtimeArgument}";
+            $"set -euo pipefail; installer=\"$(mktemp)\"; trap 'rm -f \"$installer\"' EXIT; " +
+            $"curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 90 --connect-timeout 15 " +
+            $"--proto '=https' --tlsv1.2 --output \"$installer\" <install-url>; " +
+            $"bash -s -- --version {release.Version}{runtimeArgument} < \"$installer\"";
         LocalModelInfo localAiModel =
             LocalModelCatalog.Find(config.LocalAi.SelectedModelId) ?? LocalModelCatalog.Default;
         string[] localAiCommands = config.LocalAi.Enabled

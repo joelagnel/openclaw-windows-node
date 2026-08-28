@@ -372,6 +372,22 @@ public sealed class LocalAiSetupUxContractTests
     }
 
     [Fact]
+    public void EligibleBundledSetup_PreselectsLocalAiWithoutChangingCustomConfig()
+    {
+        string root = TestRepositoryPaths.GetRepositoryRoot();
+        string source = File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+
+        Assert.Contains("ResolveLocalAiOnboardingEnabled", source);
+        Assert.Contains("_localAiSelectionEligible", source);
+        AssertInOrder(
+            source,
+            "PopulateLocalAiModels()",
+            "ResolveLocalAiOnboardingEnabled",
+            "LocalAiToggle.IsOn");
+    }
+
+    [Fact]
     public void LocalAiPage_InfoBarPrecedesAndDoesNotDisableReasonAction()
     {
         string root = TestRepositoryPaths.GetRepositoryRoot();

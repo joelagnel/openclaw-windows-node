@@ -334,6 +334,12 @@ public sealed class TraySettingsConfig
         AtomicFile.WriteAllText(settingsPath, json);
     }
 
+    public static bool ResolveLocalAiOnboardingEnabled(
+        bool usesBundledDefaultConfig,
+        bool configuredEnabled,
+        bool isEligible) =>
+        usesBundledDefaultConfig ? isEligible : configuredEnabled;
+
     public void ApplyCapabilities(CapabilitiesConfig capabilities)
     {
         // Device info has no independent runtime setting; it is always registered

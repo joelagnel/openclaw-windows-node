@@ -498,6 +498,25 @@ public class SetupConfigTests : IDisposable
         Assert.False(result.RootElement.GetProperty("NodeSystemRunEnabled").GetBoolean());
     }
 
+    [Theory]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, true, false, true)]
+    [InlineData(false, false, true, false)]
+    public void TraySettingsConfig_ResolveLocalAiOnboardingEnabled_OnlyDefaultsBundledConfig(
+        bool usesBundledDefaultConfig,
+        bool configuredEnabled,
+        bool isEligible,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TraySettingsConfig.ResolveLocalAiOnboardingEnabled(
+                usesBundledDefaultConfig,
+                configuredEnabled,
+                isEligible));
+    }
+
     [Fact]
     public void TraySettingsConfig_CorruptExistingFile_BacksUpAndThrows()
     {

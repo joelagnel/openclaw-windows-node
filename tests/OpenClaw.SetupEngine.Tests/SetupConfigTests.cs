@@ -425,6 +425,8 @@ public class SetupConfigTests : IDisposable
             Assert.Contains("Unverified custom installer", summary.InstallerDescription);
             Assert.Contains("CustomClaw", summary.ExactCommands);
             Assert.Contains("19999", summary.ExactCommands);
+            Assert.Contains("--retry-all-errors", summary.ExactCommands);
+            Assert.DoesNotContain("| bash", summary.ExactCommands);
             Assert.Equal("CustomClaw · LAN:19999", summary.CompletionGatewaySummary);
             Assert.Equal("Qwen 3.6 35B-A3B installed", summary.LocalAiTitle);
             Assert.Equal("Local AI is ready to use", summary.LocalAiDescription);

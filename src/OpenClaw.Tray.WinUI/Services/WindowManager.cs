@@ -28,6 +28,7 @@ internal sealed record WindowManagerCallbacks(
     EventHandler SettingsSaved,
     EventHandler AdvancedSetupRequested,
     EventHandler<SetupCompletedEventArgs> SetupCompleted,
+    Func<Task> PrepareForSetup,
     Action<Window?> ApplyTheme);
 
 internal sealed class WindowManager : IWindowManager
@@ -413,6 +414,7 @@ internal sealed class WindowManager : IWindowManager
                 localDataDir: AppIdentity.ResolveSetupLocalDataDirectory(),
                 distroNameOverride: AppIdentity.SetupDistroName,
                 gatewayPortOverride: AppIdentity.SetupGatewayPort,
+                prepareForSetup: _callbacks.PrepareForSetup,
                 commandLineArgs: SetupWindowArgumentProjection.Project(
                     _callbacks.GetStartupArgs(),
                     _callbacks.IsDeepLinkArg,

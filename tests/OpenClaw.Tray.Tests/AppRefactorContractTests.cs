@@ -1232,6 +1232,38 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void SetupRerun_QuiescesLiveAppBeforeStartingPipeline()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var app = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+        var capabilities = File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
+        var setupWindow = File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+        var windowManager = ReadWindowManagerSource();
+
+        AssertInOrder(
+            ExtractMethod(app, "PrepareForSetupAsync"),
+            "ResetChatForCredentialChange()",
+            "await _localAiRuntime.StopAsync()",
+            "await _connectionManager.DisconnectAsync()");
+        AssertInOrder(
+            ExtractMethod(capabilities, "PrimaryClickAsync"),
+            "if (_isStartingSetup || SetupWindow.Active is not { } setupWindow)",
+            "_isStartingSetup = true",
+            "PrimaryButton.Content = \"Preparing...\"",
+            "PrimaryButton.IsEnabled = false",
+            "BackButton.IsEnabled = false",
+            "await setupWindow.NavigateToProgressAsync()");
+        Assert.Contains("!_isStartingSetup &&", ExtractMethod(capabilities, "UpdatePrimaryButtonState"));
+        AssertInOrder(
+            ExtractMethod(setupWindow, "NavigateToProgressAsync"),
+            "await _prepareForSetup()",
+            "NavigateToProgress()");
+        Assert.Contains("prepareForSetup: _callbacks.PrepareForSetup", windowManager);
+    }
+
+    [Fact]
     public void SetupProgress_HidesEveryLocalAiOnlyGroupAndKeepsNonLocalPreviewActive()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

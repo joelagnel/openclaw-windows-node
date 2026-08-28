@@ -631,6 +631,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                 SettingsSaved: OnSettingsSaved,
                 AdvancedSetupRequested: OnSetupAdvancedSetupRequested,
                 SetupCompleted: OnSetupCompleted,
+                PrepareForSetup: PrepareForSetupAsync,
                 ApplyTheme: ApplyThemePreference));
         _updateCoordinator = new UpdateCoordinator(
             AppUpdater,
@@ -3689,6 +3690,15 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         {
             await _windowManager.ShowOnboardingAsync();
         }
+    }
+
+    private async Task PrepareForSetupAsync()
+    {
+        _windowManager?.ResetChatForCredentialChange();
+        if (_localAiRuntime is not null)
+            await _localAiRuntime.StopAsync();
+        if (_connectionManager is not null)
+            await _connectionManager.DisconnectAsync();
     }
 
     private async Task ShowGatewayWizardAsync()

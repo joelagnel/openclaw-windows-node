@@ -26,6 +26,7 @@ public sealed partial class SetupWindow : Window
     private bool _showStartupPreferenceOnComplete = true;
     private readonly string _dataDir;
     private readonly string _localDataDir;
+    private readonly Func<Task>? _prepareForSetup;
     private readonly object _localAiHardwareProbeLock = new();
     private Task<HostHardwareInfo>? _localAiHardwareProbeTask;
     private readonly WslViabilityProbe _wslViabilityProbe = new(InspectWslViabilityAsync);
@@ -58,10 +59,12 @@ public sealed partial class SetupWindow : Window
         string? localDataDir = null,
         string? distroNameOverride = null,
         int? gatewayPortOverride = null,
+        Func<Task>? prepareForSetup = null,
         string[]? commandLineArgs = null)
     {
         _dataDir = dataDir ?? SetupContext.ResolveDataDir();
         _localDataDir = localDataDir ?? SetupContext.ResolveLocalDataDir();
+        _prepareForSetup = prepareForSetup;
         InitializeComponent();
         Active = this;
 
@@ -222,6 +225,12 @@ public sealed partial class SetupWindow : Window
     public void NavigateToAdvancedSetup() => NavigateTo(typeof(AdvancedSetupPage), _config);
     public void NavigateToCapabilities(bool back = false) => NavigateTo(typeof(CapabilitiesPage), _config, back);
     public void NavigateToProgress() => NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: false));
+    public async Task NavigateToProgressAsync()
+    {
+        if (_prepareForSetup is not null)
+            await _prepareForSetup();
+        NavigateToProgress();
+    }
     public void NavigateToGatewayInstalledMilestone(bool back = false) =>
         NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: true), back);
 

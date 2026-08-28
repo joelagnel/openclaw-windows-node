@@ -26,6 +26,7 @@ public sealed partial class CapabilitiesPage : Page
     private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
     private bool _skipWizardWithoutLocalAi;
+    private bool _isStartingSetup;
     private bool _localAiSelectionEligible;
     private bool _localAiNetworkingConsentRequired;
     private HostHardwareInfo? _localAiHardware;
@@ -199,14 +200,35 @@ public sealed partial class CapabilitiesPage : Page
                 GoToStep(3);
                 break;
             default:
-                WriteCapabilities();
-                SetupWindow.Active?.NavigateToProgress();
+                if (_isStartingSetup || SetupWindow.Active is not { } setupWindow)
+                    break;
+
+                _isStartingSetup = true;
+                PrimaryButton.Content = "Preparing...";
+                PrimaryButton.IsEnabled = false;
+                BackButton.IsEnabled = false;
+                try
+                {
+                    WriteCapabilities();
+                    await setupWindow.NavigateToProgressAsync();
+                }
+                catch
+                {
+                    _isStartingSetup = false;
+                    PrimaryButton.Content = "Install & set up";
+                    BackButton.IsEnabled = true;
+                    UpdatePrimaryButtonState();
+                    throw;
+                }
                 break;
         }
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)
     {
+        if (_isStartingSetup)
+            return;
+
         if (_step <= 1)
         {
             // First capability step — step back to the Welcome screen.
@@ -560,10 +582,11 @@ public sealed partial class CapabilitiesPage : Page
     private void UpdatePrimaryButtonState()
     {
         PrimaryButton.IsEnabled =
-            _step != 3 ||
-            LocalAiToggle.IsOn != true ||
-            (_localAiSelectionEligible &&
-             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
+            !_isStartingSetup &&
+            (_step != 3 ||
+             LocalAiToggle.IsOn != true ||
+             (_localAiSelectionEligible &&
+              (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true)));
     }
 
     private static string FormatSize(long bytes) =>

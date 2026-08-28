@@ -145,6 +145,9 @@
                                                     <TextBlock Text="OpenClaw installs a verified native llama-server and downloads a pinned GGUF model from Hugging Face."
                                                                TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="Downloads begin only after you choose Install &amp; set up and may take several minutes. Download and disk sizes are shown below."
+                                                               TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                 </StackPanel>
                                                 <ToggleSwitch x:Name="LocalAiToggle" Grid.Column="2"
                                                               AutomationProperties.AutomationId="LocalAiSetupToggle"

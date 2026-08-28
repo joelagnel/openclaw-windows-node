@@ -304,15 +304,38 @@ public sealed class TraySettingsConfig
     }
 
     public static void UpdateAutoStartInSettingsFile(string settingsPath, bool autoStart)
+        => UpdateSettingInSettingsFile(settingsPath, "AutoStart", autoStart);
+
+    public static bool? ReadLocalAiOnboardingChoice(string settingsPath)
+    {
+        if (!File.Exists(settingsPath))
+            return null;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(settingsPath));
+            return document.RootElement.TryGetProperty("LocalAiOnboardingEnabled", out JsonElement value) &&
+                   value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static void UpdateLocalAiOnboardingChoiceInSettingsFile(string settingsPath, bool enabled)
+        => UpdateSettingInSettingsFile(settingsPath, "LocalAiOnboardingEnabled", enabled);
+
+    private static void UpdateSettingInSettingsFile(string settingsPath, string key, object value)
     {
         Dictionary<string, JsonElement>? existing = null;
-
         if (File.Exists(settingsPath))
         {
             try
             {
-                var content = File.ReadAllText(settingsPath);
-                existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(content, SetupConfig.JsonOptions);
+                existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                    File.ReadAllText(settingsPath), SetupConfig.JsonOptions);
             }
             catch (JsonException ex)
             {
@@ -326,9 +349,7 @@ public sealed class TraySettingsConfig
             foreach (var kvp in existing)
                 settings[kvp.Key] = kvp.Value;
         }
-
-        settings["AutoStart"] = autoStart;
-
+        settings[key] = value;
         Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
         var json = JsonSerializer.Serialize(settings, SetupConfig.JsonWriteOptions);
         AtomicFile.WriteAllText(settingsPath, json);

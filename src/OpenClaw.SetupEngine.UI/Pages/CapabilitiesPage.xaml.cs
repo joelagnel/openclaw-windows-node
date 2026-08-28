@@ -330,6 +330,11 @@ public sealed partial class CapabilitiesPage : Page
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
         _config!.LocalAi.SelectedModelId ??= eligibility.Plan!.Model.Id;
         PopulateLocalAiModels();
+        if (_config.UsesBundledDefaultConfig)
+        {
+            string settingsPath = Path.Combine(SetupWindow.Active?.DataDir ?? SetupContext.ResolveDataDir(), "settings.json");
+            _config.LocalAi.Enabled = TraySettingsConfig.ReadLocalAiOnboardingChoice(settingsPath) ?? true;
+        }
         _suppressLocalAiToggle = true;
         LocalAiToggle.IsOn = _config!.LocalAi.Enabled;
         _suppressLocalAiToggle = false;
@@ -440,6 +445,13 @@ public sealed partial class CapabilitiesPage : Page
     {
         if (_suppressLocalAiToggle || _config is null)
             return;
+        if (_config.UsesBundledDefaultConfig)
+        {
+            string settingsPath = Path.Combine(SetupWindow.Active?.DataDir ?? SetupContext.ResolveDataDir(), "settings.json");
+            TraySettingsConfig.UpdateLocalAiOnboardingChoiceInSettingsFile(
+                settingsPath,
+                LocalAiToggle.IsOn == true);
+        }
         UpdateLocalAiOptions();
         ApplySetupReviewSummary(_config);
     }

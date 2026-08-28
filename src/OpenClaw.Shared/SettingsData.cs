@@ -120,6 +120,8 @@ public record class SettingsData
     /// WSL gateways (never SSH/remote). Kill switch: set false to disable automatic repair.
     /// </summary>
     public bool EnableManagedLocalGatewayAutoRepair { get; set; } = true;
+    /// <summary>User's explicit Local AI choice from bundled setup. Null means no choice yet.</summary>
+    public bool? LocalAiOnboardingEnabled { get; set; }
     /// <summary>
     /// Hostnames the A2UI image renderer is allowed to fetch over HTTPS.
     /// Empty by default — agents can still ship inline data: images. Add hosts

@@ -498,6 +498,20 @@ public class SetupConfigTests : IDisposable
     }
 
     [Fact]
+    public void TraySettingsConfig_LocalAiOnboardingChoice_RoundTripsAndPreservesSettings()
+    {
+        var settingsPath = Path.Combine(_tempDir, "settings.json");
+        File.WriteAllText(settingsPath, """{"NodeCameraEnabled": false}""");
+
+        Assert.Null(TraySettingsConfig.ReadLocalAiOnboardingChoice(settingsPath));
+        TraySettingsConfig.UpdateLocalAiOnboardingChoiceInSettingsFile(settingsPath, enabled: false);
+
+        Assert.False(TraySettingsConfig.ReadLocalAiOnboardingChoice(settingsPath));
+        using JsonDocument result = JsonDocument.Parse(File.ReadAllText(settingsPath));
+        Assert.False(result.RootElement.GetProperty("NodeCameraEnabled").GetBoolean());
+    }
+
+    [Fact]
     public void TraySettingsConfig_CorruptExistingFile_BacksUpAndThrows()
     {
         var settingsPath = Path.Combine(_tempDir, "settings.json");

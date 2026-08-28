@@ -1165,6 +1165,20 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void GatewayInstalledMilestone_AllowsReturnToSetupReview()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml"));
+        var progressPage = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+        var setupWindow = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "SetupWindow.xaml.cs"));
+
+        Assert.Contains("x:Name=\"MilestoneBackButton\"", xaml);
+        Assert.Contains("Click=\"MilestoneBack_Click\"", xaml);
+        Assert.Contains("NavigateToCapabilities(back: true)", ExtractMethod(progressPage, "MilestoneBack_Click"));
+        Assert.Contains("NavigateTo(typeof(CapabilitiesPage), _config, back)", setupWindow);
+    }
+
+    [Fact]
     public void SetupProgress_PreparesWslBeforeLocalAiDownloads()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();

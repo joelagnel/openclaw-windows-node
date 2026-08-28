@@ -220,10 +220,10 @@ public sealed partial class SetupWindow : Window
     }
 
     public void NavigateToAdvancedSetup() => NavigateTo(typeof(AdvancedSetupPage), _config);
-    public void NavigateToCapabilities() => NavigateTo(typeof(CapabilitiesPage), _config);
+    public void NavigateToCapabilities(bool back = false) => NavigateTo(typeof(CapabilitiesPage), _config, back);
     public void NavigateToProgress() => NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: false));
-    public void NavigateToGatewayInstalledMilestone() =>
-        NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: true));
+    public void NavigateToGatewayInstalledMilestone(bool back = false) =>
+        NavigateTo(typeof(ProgressPage), CreateProgressPageArgs(showMilestoneOnly: true), back);
 
     private ProgressPageArgs CreateProgressPageArgs(bool showMilestoneOnly) =>
         new(_config, showMilestoneOnly, _dataDir, _localDataDir);

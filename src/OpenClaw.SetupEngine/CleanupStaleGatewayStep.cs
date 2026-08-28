@@ -36,11 +36,11 @@ public sealed class CleanupStaleGatewayStep : SetupStep
             ctx.Logger.Info("Deleted stale setup-state.json (LocalAppData)");
         }
 
-        // Remove stale gateway record for our local URL if it exists
+        // Remove stale setup-managed records for our local URL. Multiple records
+        // can exist when an older unmarked record sorts before managed records.
         var registry = new GatewayRegistry(ctx.DataDir, logger: new SetupOpenClawLogger(ctx.Logger));
         registry.Load();
-        var existing = registry.FindByUrl(ctx.GatewayUrl!);
-        if (existing != null)
+        foreach (var existing in registry.FindAllByUrl(ctx.GatewayUrl!))
         {
             // Preserve non-local records and SSH-tunneled gateways — they may be
             // remote gateways that happen to use localhost as a forwarded port.

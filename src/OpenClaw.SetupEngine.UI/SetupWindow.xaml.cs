@@ -203,7 +203,7 @@ public sealed partial class SetupWindow : Window
         lock (_localAiHardwareProbeLock)
         {
             return _localAiHardwareProbeTask ??=
-                Task.Run(() => new NvmlHostHardwareProbe().Probe());
+                Task.Run(() => new CudaHostHardwareProbe().Probe());
         }
     }
 

@@ -268,7 +268,7 @@ public sealed partial class CapabilitiesPage : Page
         SetupWindow? setupWindow = _setupWindow;
         Task<HostHardwareInfo> hardwareTask = setupWindow is not null
             ? setupWindow.GetLocalAiHardwareAsync()
-            : Task.Run(() => new NvmlHostHardwareProbe().Probe());
+            : Task.Run(() => new CudaHostHardwareProbe().Probe());
 
         string? hardwareReason = null;
         LocalInferenceEligibilityResult? eligibility = null;
@@ -290,7 +290,7 @@ public sealed partial class CapabilitiesPage : Page
         catch
         {
             hardwareReason =
-                "OpenClaw could not read the NVIDIA GPU, driver, CUDA, or memory information. " +
+                "OpenClaw could not read the CUDA GPU, driver compatibility, or memory information. " +
                 "Check the NVIDIA driver installation and try setup again.";
         }
 
@@ -367,20 +367,17 @@ public sealed partial class CapabilitiesPage : Page
             LocalInferenceSelectionFailureCode.RuntimeUnavailable =>
                 "This Local AI release does not include a native llama-server runtime for the detected Windows architecture.",
             LocalInferenceSelectionFailureCode.NoNvidiaGpu =>
-                "No NVIDIA GPU was reported by the NVIDIA driver. Install or repair the NVIDIA driver, then try setup again.",
+                "No NVIDIA GPU was reported by the CUDA driver. Install or repair the NVIDIA driver, then try setup again.",
             LocalInferenceSelectionFailureCode.UnknownModel =>
                 "The selected model is not available in this Local AI release.",
             _ => eligibility.FailureCode switch
             {
                 LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete =>
-                    "OpenClaw could not read a stable NVIDIA GPU identifier, memory, driver, or CUDA capability.",
+                    "OpenClaw could not read a stable CUDA GPU identifier, memory, or CUDA capability.",
                 LocalInferenceEligibilityFailureCode.InsufficientGpuMemory =>
                     $"{eligibility.Plan?.Model.DisplayName ?? "The selected model"} requires " +
                     $"{FormatSize(eligibility.RequiredTotalMemoryBytes)} of GPU memory for model weights, KV cache, and runtime workspace. " +
                     $"OpenClaw detected {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}.",
-                LocalInferenceEligibilityFailureCode.DriverTooOld =>
-                    $"NVIDIA driver {eligibility.SelectedGpu?.DriverVersion ?? "unknown"} was detected. " +
-                    $"Local AI requires version {LocalInferenceEligibility.MinimumNvidiaDriverVersion} or newer.",
                 LocalInferenceEligibilityFailureCode.CudaCapabilityTooLow =>
                     "The NVIDIA driver does not provide CUDA 13 support. A separate CUDA Toolkit is not required.",
                 _ => "OpenClaw could not verify the Local AI requirements on this system.",

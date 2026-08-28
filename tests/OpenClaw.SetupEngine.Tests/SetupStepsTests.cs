@@ -1818,16 +1818,23 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
-    public void InstallCli_BuildInstallCommand_AppendsExactReleaseAndRuntime()
+    public void InstallCli_BuildInstallCommand_DownloadsBeforeExecutingWithBoundedRetries()
     {
         var command = InstallCliStep.BuildInstallCommand(
             "https://openclaw.ai/install-cli.sh",
             "2026.5.22",
             GatewayReleasePolicy.NodeVersion);
 
-        Assert.Equal(
-            "curl -fsSL --proto '=https' --tlsv1.2 'https://openclaw.ai/install-cli.sh' | bash -s -- --version '2026.5.22' --node-version '22.22.3'",
-            command);
+        Assert.StartsWith("set -euo pipefail", command);
+        Assert.Contains("installer=\"$(mktemp)\"", command);
+        Assert.Contains("trap 'rm -f \"$installer\"' EXIT", command);
+        Assert.Contains("--retry 5", command);
+        Assert.Contains("--retry-all-errors", command);
+        Assert.Contains("--retry-max-time 90", command);
+        Assert.Contains("--output \"$installer\"", command);
+        Assert.Contains("'https://openclaw.ai/install-cli.sh'", command);
+        Assert.Contains("bash -s -- --version '2026.5.22' --node-version '22.22.3' < \"$installer\"", command);
+        Assert.DoesNotContain("| bash", command);
     }
 
     [Fact]
@@ -1835,7 +1842,28 @@ public class SetupStepsTests : IDisposable
     {
         var command = InstallCliStep.BuildInstallCommand("https://openclaw.ai/install-cli's.sh", "2026.5.22'a");
 
-        Assert.Equal("curl -fsSL --proto '=https' --tlsv1.2 'https://openclaw.ai/install-cli'\\''s.sh' | bash -s -- --version '2026.5.22'\\''a'", command);
+        Assert.Contains("'https://openclaw.ai/install-cli'\\''s.sh'", command);
+        Assert.Contains("--version '2026.5.22'\\''a'", command);
+    }
+
+    [Fact]
+    public async Task InstallCli_DownloadFailurePreservesCurlError()
+    {
+        var commands = new FakeCommandRunner(
+            _ => Ok(),
+            (_, command, _) => command.Contains("curl -fsSL", StringComparison.Ordinal)
+                ? new CommandResult(6, "", "curl: (6) Could not resolve host: openclaw.ai", TimeSpan.Zero, TimedOut: false)
+                : throw new InvalidOperationException($"Unexpected command: {command}"));
+        var config = new SetupConfig();
+        GatewayReleasePolicy.ResolveAndApply(config);
+        var ctx = CreateContext(config, commands);
+
+        var result = await new InstallCliStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.Failed, result.Outcome);
+        Assert.Contains("exit 6", result.Message);
+        Assert.Contains("Could not resolve host: openclaw.ai", result.Message);
+        Assert.True(Assert.Single(commands.WslCalls).InputViaStdin);
     }
 
     [Fact]

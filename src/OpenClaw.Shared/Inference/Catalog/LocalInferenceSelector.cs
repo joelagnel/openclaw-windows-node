@@ -108,7 +108,6 @@ internal static class LocalInferenceQualificationPolicy
     public static bool HasCompleteFacts(GpuInfo gpu) =>
         IsStableGpuId(gpu.StableId) &&
         gpu.GpuVisibleMemoryBytes is > 0 &&
-        !string.IsNullOrWhiteSpace(gpu.DriverVersion) &&
         gpu.CudaMajorVersion is not null;
 
     public static bool HasRuntimePrerequisites(GpuInfo gpu, LlamaRuntimeVariant runtime)
@@ -116,8 +115,6 @@ internal static class LocalInferenceQualificationPolicy
         ArgumentNullException.ThrowIfNull(gpu);
         ArgumentNullException.ThrowIfNull(runtime);
         return HasCompleteFacts(gpu) &&
-            Version.TryParse(gpu.DriverVersion, out Version? driverVersion) &&
-            driverVersion >= LocalInferenceEligibility.MinimumNvidiaDriverVersion &&
             gpu.CudaMajorVersion >= runtime.CudaVersion.Major;
     }
 
@@ -141,20 +138,9 @@ internal static class LocalInferenceQualificationPolicy
         return SaturatingMultiply(bytesPerToken, recipe.ContextTokens);
     }
 
-    /// <summary>
-    /// CUDA-allocatable capacity is NVML dedicated memory only. DXGI-reported
-    /// shared memory is a WDDM host-RAM budget the GPU may borrow for graphics
-    /// use; it does not back CUDA device allocations, so it must not be counted
-    /// as usable capacity for model-fit decisions.
-    /// </summary>
     public static long GetEffectiveTotalMemoryBytes(GpuInfo gpu) =>
         gpu.GpuVisibleMemoryBytes is > 0 ? gpu.GpuVisibleMemoryBytes.Value : 0;
 
-    /// <summary>
-    /// Free CUDA-allocatable memory is NVML dedicated free memory only, for the
-    /// same reason as <see cref="GetEffectiveTotalMemoryBytes"/> — DXGI shared
-    /// memory is excluded rather than added in.
-    /// </summary>
     public static long? GetEffectiveFreeMemoryBytes(GpuInfo gpu) =>
         gpu.FreeGpuVisibleMemoryBytes is >= 0 ? gpu.FreeGpuVisibleMemoryBytes.Value : null;
 

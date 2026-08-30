@@ -29,6 +29,73 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
     }
 
     [Fact]
+    public async Task Quiesce_AcceptsExactMissingPathJsonOnStdoutForProviderAndPrimary()
+    {
+        LocalAiResolvedInstall install = Install(28_765);
+        var commands = new FakeWslCommandRunner(
+            LocalAiGatewayProviderDefinition.BuildProviderJson(install),
+            LocalAiGatewayProviderDefinition.BuildPrimaryModel(install))
+        {
+            ProviderMissingEmission = MissingPathEmission.JsonStandardOutput,
+            PrimaryMissingEmission = MissingPathEmission.JsonStandardOutput,
+        };
+        var coordinator = CreateCoordinator(commands);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.True(result.Success);
+        Assert.Null(commands.ProviderJson);
+        Assert.Null(commands.PrimaryModel);
+    }
+
+    [Fact]
+    public async Task Quiesce_RejectsMissingPathJsonWithAdditionalFields()
+    {
+        LocalAiResolvedInstall install = Install(28_765);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            ProviderMissingEmission = MissingPathEmission.JsonStandardOutputWithAdditionalField,
+        };
+        var coordinator = CreateCoordinator(commands);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(commands.Calls, call => call.Contains("unset"));
+    }
+
+    [Fact]
+    public async Task Quiesce_AcceptsExactMissingPathJsonOnStderr()
+    {
+        LocalAiResolvedInstall install = Install(28_765);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            ProviderMissingEmission = MissingPathEmission.JsonStandardError,
+            PrimaryMissingEmission = MissingPathEmission.JsonStandardError,
+        };
+        var coordinator = CreateCoordinator(commands);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task Quiesce_RejectsOversizedExactMissingPathJson()
+    {
+        LocalAiResolvedInstall install = Install(28_765);
+        var commands = new FakeWslCommandRunner(providerJson: null)
+        {
+            ProviderMissingEmission = MissingPathEmission.OversizedJsonStandardOutput,
+        };
+        var coordinator = CreateCoordinator(commands);
+
+        LocalAiEndpointLifecycleResult result = await coordinator.QuiesceAsync(install);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
     public async Task Quiesce_AcceptsCliRedactedManagedApiKey()
     {
         LocalAiResolvedInstall install = Install(28_765);
@@ -327,6 +394,15 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         $"\"apiKey\":\"{LocalAiGatewayProviderDefinition.CliRedactedApiKey}\",\"api\":\"openai-completions\"",
         StringComparison.Ordinal);
 
+    private enum MissingPathEmission
+    {
+        LegacyStandardError,
+        JsonStandardOutput,
+        JsonStandardError,
+        JsonStandardOutputWithAdditionalField,
+        OversizedJsonStandardOutput,
+    }
+
     private sealed class FakeWslCommandRunner(string? providerJson, string? primaryModel = null) : IWslCommandRunner
     {
         public string? ProviderJson { get; private set; } = providerJson;
@@ -334,6 +410,8 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
         public string? ProviderAfterApply { get; init; }
         public string? PrimaryAfterApply { get; init; }
         public bool FailReads { get; init; }
+        public MissingPathEmission ProviderMissingEmission { get; init; } = MissingPathEmission.LegacyStandardError;
+        public MissingPathEmission PrimaryMissingEmission { get; init; } = MissingPathEmission.LegacyStandardError;
         public HashSet<int> FailedReadCalls { get; init; } = [];
         public Action<int>? CommandObserved { get; init; }
         public List<IReadOnlyList<string>> Calls { get; } = [];
@@ -371,17 +449,15 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             }
             if (command.Contains(LocalAiGatewayProviderDefinition.ProviderPath))
                 return ProviderJson is null
-                    ? Result(
-                        1,
-                        string.Empty,
-                        $"Config path not found: {LocalAiGatewayProviderDefinition.ProviderPath}")
+                    ? MissingPathResult(
+                        LocalAiGatewayProviderDefinition.ProviderPath,
+                        ProviderMissingEmission)
                     : Result(0, ProviderJson);
             if (command.Contains(LocalAiGatewayProviderDefinition.PrimaryModelPath))
                 return PrimaryModel is null
-                    ? Result(
-                        1,
-                        string.Empty,
-                        $"Config path not found: {LocalAiGatewayProviderDefinition.PrimaryModelPath}")
+                    ? MissingPathResult(
+                        LocalAiGatewayProviderDefinition.PrimaryModelPath,
+                        PrimaryMissingEmission)
                     : Result(0, JsonSerializer.Serialize(PrimaryModel));
             return Result(1, string.Empty);
         }
@@ -407,5 +483,30 @@ public sealed class LocalAiGatewayProviderCoordinatorTests
             string stdout,
             string stderr = "") =>
             Task.FromResult(new WslCommandResult(exitCode, stdout, stderr));
+
+        private static Task<WslCommandResult> MissingPathResult(
+            string path,
+            MissingPathEmission emission)
+        {
+            string error = $"Config path not found: {path}";
+            return emission switch
+            {
+                MissingPathEmission.LegacyStandardError => Result(1, string.Empty, error),
+                MissingPathEmission.JsonStandardOutput => Result(
+                    1,
+                    JsonSerializer.Serialize(new { error })),
+                MissingPathEmission.JsonStandardError => Result(
+                    1,
+                    string.Empty,
+                    JsonSerializer.Serialize(new { error })),
+                MissingPathEmission.JsonStandardOutputWithAdditionalField => Result(
+                    1,
+                    JsonSerializer.Serialize(new { error, code = "CONFIG_PATH_MISSING" })),
+                MissingPathEmission.OversizedJsonStandardOutput => Result(
+                    1,
+                    JsonSerializer.Serialize(new { error }).PadRight(20 * 1024, ' ')),
+                _ => throw new ArgumentOutOfRangeException(nameof(emission)),
+            };
+        }
     }
 }

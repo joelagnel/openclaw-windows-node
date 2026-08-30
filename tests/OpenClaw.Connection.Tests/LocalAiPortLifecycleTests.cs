@@ -113,6 +113,216 @@ public sealed class LocalAiPortLifecycleTests
     }
 
     [Fact]
+    public async Task DefaultRuntime_UsesManagedExecutableWithoutDiagnosticTelemetry()
+    {
+        using var temp = new TempDirectory("local-ai-default-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        LocalAiResolvedInstall install = (await new LocalAiManifestStore(paths).LoadAsync())!;
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_780);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            static () => null,
+            static () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.Equal(install.ExecutablePath, host.LastSpec!.ExecutablePath);
+        Assert.Equal(Path.GetDirectoryName(install.ExecutablePath), host.LastSpec.WorkingDirectory);
+        Assert.DoesNotContain(
+            host.LastSpec.Environment.Keys,
+            key => key.StartsWith("LLAMA_TELEMETRY_", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CustomRuntime_WithContentEnabled_UsesCustomDirectoryAndBoundedTelemetry()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string customExecutable = await CopyCustomExecutableAsync(temp, wrongArchitecture: false);
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_781);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.Equal(customExecutable, host.LastSpec!.ExecutablePath);
+        Assert.Equal(Path.GetDirectoryName(customExecutable), host.LastSpec.WorkingDirectory);
+        Assert.Equal("1", host.LastSpec.Environment["LLAMA_TELEMETRY_CONTENT"]);
+        Assert.Equal("1", host.LastSpec.Environment["LLAMA_TELEMETRY_OUTPUT_TOKENS"]);
+        Assert.Equal("1", host.LastSpec.Environment["LLAMA_TELEMETRY_TOKEN_CANDIDATES"]);
+        Assert.Equal("8192", host.LastSpec.Environment["LLAMA_TELEMETRY_OUTPUT_TOKEN_LIMIT"]);
+        Assert.False(host.LastSpec.Environment.ContainsKey("LLAMA_TELEMETRY_MTP_PASS_LIMIT"));
+        Assert.False(host.LastSpec.Environment.ContainsKey("LLAMA_TELEMETRY_MTP_PROPOSAL_LIMIT"));
+        Assert.False(host.LastSpec.Environment.ContainsKey("LLAMA_TELEMETRY_TOKEN_CANDIDATE_DECISION_LIMIT"));
+        Assert.False(host.LastSpec.Environment.ContainsKey("LLAMA_TELEMETRY_TOKEN_CANDIDATE_MAX_BYTES"));
+    }
+
+    [Fact]
+    public async Task CustomRuntime_WithContentDisabled_OmitsDiagnosticTelemetry()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string customExecutable = await CopyCustomExecutableAsync(temp, wrongArchitecture: false);
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_782);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => false);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, snapshot.State);
+        Assert.DoesNotContain(
+            host.LastSpec!.Environment.Keys,
+            key => key.StartsWith("LLAMA_TELEMETRY_", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CustomRuntime_RejectsExecutableWithWrongArchitectureBeforeLaunch()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string customExecutable = await CopyCustomExecutableAsync(temp, wrongArchitecture: true);
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_783);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Contains("architecture", snapshot.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
+    public async Task CustomRuntime_RejectsMissingAdjacentImplementationBeforeLaunch()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string customExecutable = await CopyCustomExecutableAsync(temp, wrongArchitecture: false);
+        File.Delete(Path.Combine(Path.GetDirectoryName(customExecutable)!, "llama-server-impl.dll"));
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_784);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Contains("llama-server-impl.dll", snapshot.Detail, StringComparison.Ordinal);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Theory]
+    [InlineData(@"relative\llama-server.exe")]
+    [InlineData(@"C:\custom-runtime\not-llama-server.exe")]
+    [InlineData(@"\\server\share\llama-server.exe")]
+    [InlineData("C:\\custom-runtime\\bad\0path\\llama-server.exe")]
+    public async Task CustomRuntime_RejectsInvalidPathBeforeLaunch(string customExecutable)
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_785);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
+    public async Task CustomRuntime_RejectsDirectoryNamedLikeExecutableBeforeLaunch()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string customExecutable = Path.Combine(temp.Path, "custom-runtime", "llama-server.exe");
+        Directory.CreateDirectory(customExecutable);
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_786);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => customExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot snapshot = await runtime.EnsureStartedAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Failed, snapshot.State);
+        Assert.Null(host.LastSpec);
+    }
+
+    [Fact]
+    public async Task Refresh_KeepsExecutableSelectionBoundToRunningChild()
+    {
+        using var temp = new TempDirectory("local-ai-custom-runtime-");
+        LocalAiPaths paths = await PrepareInstallAsync(temp);
+        string selectedExecutable = await CopyCustomExecutableAsync(temp, wrongArchitecture: false);
+        string configuredExecutable = selectedExecutable;
+        var platform = new FakePlatform();
+        var host = new FakeProcessHost(platform, [], selectedPort: 28_787);
+        await using var runtime = CreateRuntime(
+            paths,
+            host,
+            platform,
+            new FakeClient([]),
+            new FakeLifecycle([]),
+            () => configuredExecutable,
+            () => true);
+
+        LocalAiRuntimeSnapshot started = await runtime.EnsureStartedAsync();
+        configuredExecutable = @"relative\replacement\llama-server.exe";
+        LocalAiRuntimeSnapshot refreshed = await runtime.RefreshAsync();
+
+        Assert.Equal(LocalAiRuntimeState.Healthy, started.State);
+        Assert.Equal(LocalAiRuntimeState.Healthy, refreshed.State);
+        Assert.Equal(selectedExecutable, host.LastSpec!.ExecutablePath);
+    }
+
+    [Fact]
     public async Task AutomaticPort_NeverProbesListenerWithoutMatchingProcessStartTime()
     {
         using var temp = new TempDirectory("local-ai-port-");
@@ -292,7 +502,9 @@ public sealed class LocalAiPortLifecycleTests
         FakeProcessHost host,
         FakePlatform platform,
         FakeClient client,
-        ILocalAiEndpointLifecycle lifecycle) => new(
+        ILocalAiEndpointLifecycle lifecycle,
+        Func<string?>? executablePathOverrideProvider = null,
+        Func<bool>? telemetryContentLoggingEnabledProvider = null) => new(
             new LlamaServerRuntimeOptions
             {
                 Paths = paths,
@@ -300,11 +512,40 @@ public sealed class LocalAiPortLifecycleTests
                 HealthPollInterval = TimeSpan.FromMilliseconds(1),
                 StartupTimeout = TimeSpan.FromSeconds(1),
                 RestartDelay = TimeSpan.Zero,
+                ExecutablePathOverrideProvider = executablePathOverrideProvider ?? (static () => null),
+                TelemetryContentLoggingEnabledProvider = telemetryContentLoggingEnabledProvider ?? (static () => false),
             },
             NullLogger.Instance,
             host,
             platform,
             client);
+
+    private static async Task<string> CopyCustomExecutableAsync(
+        TempDirectory temp,
+        bool wrongArchitecture)
+    {
+        string source = Environment.ProcessPath
+            ?? throw new InvalidOperationException("The test host executable path is unavailable.");
+        byte[] image = await File.ReadAllBytesAsync(source);
+        if (wrongArchitecture)
+        {
+            int peOffset = BitConverter.ToInt32(image, 0x3c);
+            ushort wrongMachine = string.Equals(ValidManifest().Architecture, "arm64", StringComparison.Ordinal)
+                ? (ushort)0x8664
+                : (ushort)0xaa64;
+            image[peOffset + 4] = (byte)(wrongMachine & 0xff);
+            image[peOffset + 5] = (byte)(wrongMachine >> 8);
+        }
+
+        string directory = Path.Combine(temp.Path, "custom-runtime", "bin");
+        Directory.CreateDirectory(directory);
+        string destination = Path.Combine(directory, "llama-server.exe");
+        await File.WriteAllBytesAsync(destination, image);
+        await File.WriteAllBytesAsync(
+            Path.Combine(directory, "llama-server-impl.dll"),
+            [0]);
+        return destination;
+    }
 
     private static async Task<LocalAiPaths> PrepareInstallAsync(TempDirectory temp)
     {

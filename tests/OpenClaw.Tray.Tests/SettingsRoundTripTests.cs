@@ -60,6 +60,8 @@ public class SettingsRoundTripTests
             ShowDiagnostics = true,
             OpenTelemetryEndpoint = "http://localhost:4317",
             OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.HttpProtobuf,
+            CustomLlamaServerExecutablePath = @"C:\llamascope\bin\llama-server.exe",
+            LocalInferenceContentLoggingEnabled = true,
             ShowCompletedSessions = true,
             SystemRunSandboxEnabled = true,
             SystemRunBlockHostFallbackWhenMxcUnavailable = true,
@@ -125,6 +127,8 @@ public class SettingsRoundTripTests
         Assert.Equal(original.ShowDiagnostics, restored.ShowDiagnostics);
         Assert.Equal(original.OpenTelemetryEndpoint, restored.OpenTelemetryEndpoint);
         Assert.Equal(original.OpenTelemetryProtocol, restored.OpenTelemetryProtocol);
+        Assert.Equal(original.CustomLlamaServerExecutablePath, restored.CustomLlamaServerExecutablePath);
+        Assert.Equal(original.LocalInferenceContentLoggingEnabled, restored.LocalInferenceContentLoggingEnabled);
         Assert.Equal(original.ShowCompletedSessions, restored.ShowCompletedSessions);
         Assert.Equal(original.SystemRunSandboxEnabled, restored.SystemRunSandboxEnabled);
         Assert.Equal(original.SystemRunBlockHostFallbackWhenMxcUnavailable, restored.SystemRunBlockHostFallbackWhenMxcUnavailable);
@@ -199,6 +203,8 @@ public class SettingsRoundTripTests
         Assert.Null(settings.ShowDiagnostics);
         Assert.Null(settings.OpenTelemetryEndpoint);
         Assert.Equal(OpenTelemetryEndpointProtocol.Grpc, settings.OpenTelemetryProtocol);
+        Assert.Null(settings.CustomLlamaServerExecutablePath);
+        Assert.False(settings.LocalInferenceContentLoggingEnabled);
         Assert.False(settings.ShowCompletedSessions);
         Assert.True(settings.SystemRunSandboxEnabled);
         Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
@@ -231,6 +237,41 @@ public class SettingsRoundTripTests
             settings.OpenTelemetryProtocol = "not-a-protocol";
             Assert.Equal(string.Empty, settings.OpenTelemetryEndpoint);
             Assert.Equal(OpenTelemetryEndpointProtocol.Grpc, settings.OpenTelemetryProtocol);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_PreservesCustomLlamaServerDiagnosticSettingsOnSave()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+        string configuredPath = Path.Combine(dir, "runtime", "bin", "llama-server.exe");
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(
+                Path.Combine(dir, "settings.json"),
+                new SettingsData
+                {
+                    CustomLlamaServerExecutablePath = $"  {configuredPath}  ",
+                    LocalInferenceContentLoggingEnabled = true,
+                }.ToJson());
+
+            var settings = new SettingsManager(dir);
+
+            Assert.Equal(configuredPath, settings.CustomLlamaServerExecutablePath);
+            Assert.True(settings.LocalInferenceContentLoggingEnabled);
+
+            settings.Save();
+            SettingsData restored = SettingsData.FromJson(
+                File.ReadAllText(Path.Combine(dir, "settings.json")))!;
+            Assert.Equal(configuredPath, restored.CustomLlamaServerExecutablePath);
+            Assert.True(restored.LocalInferenceContentLoggingEnabled);
         }
         finally
         {

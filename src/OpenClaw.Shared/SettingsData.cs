@@ -154,6 +154,16 @@ public record class SettingsData
     /// OTLP transport protocol for the configured OpenTelemetry endpoint.
     /// </summary>
     public string OpenTelemetryProtocol { get; set; } = "grpc";
+    /// <summary>
+    /// Optional absolute path to an operator-provided llama-server executable.
+    /// Null or empty preserves the qualified managed runtime selected by setup.
+    /// </summary>
+    public string? CustomLlamaServerExecutablePath { get; set; }
+    /// <summary>
+    /// Allows content-bearing native telemetry only for an explicitly selected
+    /// custom llama-server diagnostic launch. The privacy-preserving default is false.
+    /// </summary>
+    public bool LocalInferenceContentLoggingEnabled { get; set; } = false;
     public List<UserNotificationRule>? UserRules { get; set; }
 
     // ── MXC sandbox ─────────────────────────────────────────────────────

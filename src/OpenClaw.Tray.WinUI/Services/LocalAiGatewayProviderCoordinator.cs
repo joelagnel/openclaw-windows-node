@@ -14,6 +14,7 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
 {
     private const string FixedPath = "/home/openclaw/.openclaw/bin:/opt/openclaw/bin:/usr/local/bin:/usr/bin:/bin";
     private const int MaximumConfigBytes = 1024 * 1024;
+    private const int MaximumCliErrorBytes = 16 * 1024;
 
     private readonly IWslCommandRunner _commands;
     private readonly ILocalAiGatewayDistroResolver _distroResolver;
@@ -232,10 +233,73 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
         WslCommandResult direct = routed.Result!;
         if (direct.Success)
             return new(true, true, direct.StandardOutput, null);
-        string missing = $"Config path not found: {path}";
-        return direct.StandardError.Contains(missing, StringComparison.Ordinal)
+        return IsExactMissingPathResult(direct, path)
             ? new(true, false, null, null)
             : new(false, false, null, $"The app-owned gateway setting '{path}' could not be read.");
+    }
+
+    private static bool IsExactMissingPathResult(WslCommandResult result, string path)
+    {
+        string expected = $"Config path not found: {path}";
+        CliErrorEvidence standardOutput = ClassifyCliError(
+            result.StandardOutput,
+            expected,
+            allowLegacyPlainText: false);
+        CliErrorEvidence standardError = ClassifyCliError(
+            result.StandardError,
+            expected,
+            allowLegacyPlainText: true);
+        return (standardOutput == CliErrorEvidence.ExactMissingPath ||
+                standardError == CliErrorEvidence.ExactMissingPath) &&
+            standardOutput != CliErrorEvidence.Unrelated &&
+            standardError != CliErrorEvidence.Unrelated;
+    }
+
+    private static CliErrorEvidence ClassifyCliError(
+        string value,
+        string expected,
+        bool allowLegacyPlainText)
+    {
+        if (value.Length == 0)
+            return CliErrorEvidence.Empty;
+        if (value.Length > MaximumCliErrorBytes ||
+            Encoding.UTF8.GetByteCount(value) > MaximumCliErrorBytes)
+        {
+            return CliErrorEvidence.Unrelated;
+        }
+        if (string.IsNullOrWhiteSpace(value))
+            return CliErrorEvidence.Empty;
+        if (allowLegacyPlainText &&
+            string.Equals(value.Trim(), expected, StringComparison.Ordinal))
+        {
+            return CliErrorEvidence.ExactMissingPath;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(
+                value,
+                new JsonDocumentOptions { MaxDepth = 4 });
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return CliErrorEvidence.Unrelated;
+
+            JsonElement.ObjectEnumerator properties = document.RootElement.EnumerateObject();
+            if (!properties.MoveNext())
+                return CliErrorEvidence.Unrelated;
+            JsonProperty property = properties.Current;
+            if (!string.Equals(property.Name, "error", StringComparison.Ordinal) ||
+                property.Value.ValueKind != JsonValueKind.String ||
+                !string.Equals(property.Value.GetString(), expected, StringComparison.Ordinal) ||
+                properties.MoveNext())
+            {
+                return CliErrorEvidence.Unrelated;
+            }
+            return CliErrorEvidence.ExactMissingPath;
+        }
+        catch (JsonException)
+        {
+            return CliErrorEvidence.Unrelated;
+        }
     }
 
     private async Task<LocalAiEndpointLifecycleResult> SetPrimaryAsync(
@@ -325,6 +389,12 @@ internal sealed class LocalAiGatewayProviderCoordinator : ILocalAiEndpointLifecy
     }
 
     private sealed record SettingCapture(bool Success, bool Exists, string? Json, string? Detail);
+    private enum CliErrorEvidence
+    {
+        Empty,
+        ExactMissingPath,
+        Unrelated,
+    }
     private sealed record RoutedCommandResult(WslCommandResult? Result, string? Detail)
     {
         public bool Routed => Result is not null;

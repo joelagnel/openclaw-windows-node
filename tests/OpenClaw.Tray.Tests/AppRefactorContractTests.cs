@@ -44,6 +44,19 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void Startup_WiresCustomLlamaServerDiagnosticsFromTypedSettings()
+    {
+        var source = ReadAppSources();
+
+        Assert.Contains(
+            "ExecutablePathOverrideProvider = () => _settings?.CustomLlamaServerExecutablePath",
+            source);
+        Assert.Contains(
+            "TelemetryContentLoggingEnabledProvider = () => _settings?.LocalInferenceContentLoggingEnabled == true",
+            source);
+    }
+
+    [Fact]
     public void Startup_WslKeepAlive_IsOwnedByDedicatedService()
     {
         var source = ReadAppSources();

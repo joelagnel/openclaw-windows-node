@@ -17,6 +17,8 @@ public sealed record LlamaServerRuntimeOptions
     public long MaxLogBytes { get; init; } = 8 * 1024 * 1024;
     public int LogBackupCount { get; init; } = 2;
     public int MaxLogLineCharacters { get; init; } = 16 * 1024;
+    public Func<string?> ExecutablePathOverrideProvider { get; init; } = static () => null;
+    public Func<bool> TelemetryContentLoggingEnabledProvider { get; init; } = static () => false;
 }
 
 internal interface ILlamaServerRuntimePlatform
@@ -52,6 +54,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
     private readonly object _snapshotGate = new();
     private LocalAiRuntimeSnapshot _snapshot;
     private ILocalAiManagedProcess? _managedProcess;
+    private LlamaServerExecutableSelection? _activeExecutableSelection;
     private LocalAiResolvedInstall? _install;
     private long _generation;
     private int _restartAttempts;
@@ -177,14 +180,23 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         }
 
         LlamaServerRouterLaunchPlan launchPlan;
+        LlamaServerExecutableSelection executable;
         try
         {
-            ValidateInstalledFiles(install);
+            executable = LocalAiExecutablePathPolicy.Resolve(
+                _options.ExecutablePathOverrideProvider(),
+                install);
+            ValidateInstalledFiles(install, executable.ExecutablePath);
             LocalAiPortPolicy.Validate(install.Manifest.RequestedPort);
+            bool diagnosticTelemetryEnabled = executable.IsCustom &&
+                _options.TelemetryContentLoggingEnabledProvider();
             launchPlan = LlamaServerRouterConfiguration.Build(
                 _options.Paths,
                 install,
-                install.Manifest.RequestedPort);
+                install.Manifest.RequestedPort,
+                diagnosticTelemetryEnabled
+                    ? new LlamaServerDiagnosticTelemetryOptions(ContentLoggingEnabled: true)
+                    : null);
             await WritePresetAtomicallyAsync(launchPlan, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -205,8 +217,8 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         long generation = ++_generation;
         Publish(LocalAiRuntimeState.Starting, LocalAiOwnership.CompanionManaged, "Starting the local AI router.");
         var spec = new LocalAiProcessStartSpec(
-            install.ExecutablePath,
-            Path.GetDirectoryName(install.ExecutablePath)!,
+            executable.ExecutablePath,
+            executable.RuntimeDirectory,
             launchPlan.Arguments,
             launchPlan.Environment,
             _options.Paths.StandardOutputLogPath,
@@ -222,6 +234,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                     exit => OnManagedProcessExited(generation, exit),
                     cancellationToken)
                 .ConfigureAwait(false);
+            _activeExecutableSelection = executable;
 
             DateTimeOffset deadline = _platform.UtcNow + _options.StartupTimeout;
             while (_platform.UtcNow < deadline)
@@ -301,7 +314,13 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
 
         try
         {
-            ValidateInstalledFiles(_install!);
+            LlamaServerExecutableSelection executable = _managedProcess is { HasExited: false }
+                ? _activeExecutableSelection
+                    ?? throw new InvalidDataException("The active llama-server executable selection is unavailable.")
+                : LocalAiExecutablePathPolicy.Resolve(
+                    _options.ExecutablePathOverrideProvider(),
+                    _install!);
+            ValidateInstalledFiles(_install!, executable.ExecutablePath);
         }
         catch (InvalidDataException ex)
         {
@@ -375,10 +394,10 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         return false;
     }
 
-    private static void ValidateInstalledFiles(LocalAiResolvedInstall install)
+    private static void ValidateInstalledFiles(LocalAiResolvedInstall install, string executablePath)
     {
-        if (!File.Exists(install.ExecutablePath))
-            throw new InvalidDataException("The managed llama-server executable is missing.");
+        if (!File.Exists(executablePath))
+            throw new InvalidDataException("The selected llama-server executable is missing.");
         var model = new FileInfo(install.ModelPath);
         if (!model.Exists || model.Length != install.Manifest.ModelAsset.SizeBytes)
             throw new InvalidDataException("The managed GGUF model is missing or has an unexpected size.");
@@ -476,6 +495,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
     {
         ILocalAiManagedProcess? process = _managedProcess;
         _managedProcess = null;
+        _activeExecutableSelection = null;
         if (process is null)
             return;
         try
@@ -512,6 +532,7 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
                     return;
                 ILocalAiManagedProcess? exited = _managedProcess;
                 _managedProcess = null;
+                _activeExecutableSelection = null;
                 if (exited is not null)
                     await exited.DisposeAsync().ConfigureAwait(false);
 
@@ -775,6 +796,8 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.Paths);
         ArgumentNullException.ThrowIfNull(options.EndpointLifecycle);
+        ArgumentNullException.ThrowIfNull(options.ExecutablePathOverrideProvider);
+        ArgumentNullException.ThrowIfNull(options.TelemetryContentLoggingEnabledProvider);
         if (!options.InitialEndpoint.IsAbsoluteUri ||
             options.InitialEndpoint.Scheme != Uri.UriSchemeHttp ||
             !string.Equals(options.InitialEndpoint.Host, "127.0.0.1", StringComparison.Ordinal) ||

@@ -87,6 +87,9 @@ public sealed class LocalAiPortHandoffTests
         Assert.Equal("GPU-a", context.LocalAiEligibility.SelectedGpu?.StableId);
         Assert.Equal("GPU-a", saved.Manifest.SelectedGpuId);
         Assert.Equal("GPU-a", launch.Environment["CUDA_VISIBLE_DEVICES"]);
+        Assert.DoesNotContain(
+            launch.Environment.Keys,
+            key => key.StartsWith("LLAMA_TELEMETRY_", StringComparison.OrdinalIgnoreCase));
     }
 
     private static SetupContext CreateContext(LocalAiConfig localAi, string? localDataDirectory = null)

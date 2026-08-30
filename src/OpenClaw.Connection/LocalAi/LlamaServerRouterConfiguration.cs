@@ -14,12 +14,19 @@ public sealed record LlamaServerRouterLaunchPlan(
     string PresetContent,
     string ModelAlias);
 
+/// <summary>
+/// Enables the bounded diagnostic telemetry contract for an explicitly selected
+/// custom llama-server. Content capture remains a separate, explicit opt-in.
+/// </summary>
+public sealed record LlamaServerDiagnosticTelemetryOptions(bool ContentLoggingEnabled);
+
 public static class LlamaServerRouterConfiguration
 {
     public static LlamaServerRouterLaunchPlan Build(
         LocalAiPaths paths,
         LocalAiResolvedInstall install,
-        int? listenPort = null)
+        int? listenPort = null,
+        LlamaServerDiagnosticTelemetryOptions? diagnosticTelemetry = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(install);
@@ -52,11 +59,21 @@ public static class LlamaServerRouterConfiguration
             "--no-log-prefix",
             "--no-log-timestamps");
 
+        ImmutableDictionary<string, string> environment = ImmutableDictionary<string, string>.Empty
+            .WithComparers(StringComparer.OrdinalIgnoreCase)
+            .Add("CUDA_VISIBLE_DEVICES", manifest.SelectedGpuId);
+        if (diagnosticTelemetry is { ContentLoggingEnabled: true })
+        {
+            environment = environment
+                .Add("LLAMA_TELEMETRY_CONTENT", "1")
+                .Add("LLAMA_TELEMETRY_OUTPUT_TOKENS", "1")
+                .Add("LLAMA_TELEMETRY_TOKEN_CANDIDATES", "1")
+                .Add("LLAMA_TELEMETRY_OUTPUT_TOKEN_LIMIT", "8192");
+        }
+
         return new LlamaServerRouterLaunchPlan(
             arguments,
-            ImmutableDictionary<string, string>.Empty
-                .WithComparers(StringComparer.OrdinalIgnoreCase)
-                .Add("CUDA_VISIBLE_DEVICES", manifest.SelectedGpuId),
+            environment,
             presetPath,
             BuildPreset(model, install.ModelPath),
             model.Id);

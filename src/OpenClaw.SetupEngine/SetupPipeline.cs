@@ -36,7 +36,8 @@ public sealed record PipelineResult(
     PipelineOutcome Outcome,
     string? FailedStepId = null,
     string? Message = null,
-    GatewayCompatibilityFailureKind? CompatibilityFailure = null)
+    GatewayCompatibilityFailureKind? CompatibilityFailure = null,
+    LocalAiFailureDetail? Detail = null)
 {
     public int ExitCode => Outcome switch
     {
@@ -240,7 +241,8 @@ public sealed class SetupPipeline
                 PipelineOutcome.Failed,
                 step.Id,
                 result.Message,
-                (result.Error as GatewayCompatibilityException)?.Kind);
+                (result.Error as GatewayCompatibilityException)?.Kind,
+                result.Detail);
         }
 
         pipelineSw.Stop();

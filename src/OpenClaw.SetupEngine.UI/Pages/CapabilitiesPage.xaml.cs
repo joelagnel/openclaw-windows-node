@@ -23,14 +23,12 @@ public sealed partial class CapabilitiesPage : Page
     private bool _suppressProfile;
     private bool _suppressLocalAiToggle;
     private bool _suppressLocalAiSelection;
-    private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
     private bool _skipWizardWithoutLocalAi;
     private bool _localAiSelectionEligible;
-    private bool _localAiNetworkingConsentRequired;
+    private bool _localAiNetworkingChangeRequired;
     private HostHardwareInfo? _localAiHardware;
     private string? _localAiRecommendedModelId;
-    private long? _localAiSelectedGpuCapacityBytes;
     private WslGlobalConfigStatus? _localAiNetworkingStatus;
     private string _localAiUnavailableReason = string.Empty;
     private readonly LocalAiSetupAvailabilityCoordinator _localAiAvailability = new();
@@ -247,10 +245,7 @@ public sealed partial class CapabilitiesPage : Page
             : null;
         config.LocalAi.Enabled = LocalAiToggle.IsOn == true;
         config.SkipWizard = config.LocalAi.Enabled || _skipWizardWithoutLocalAi;
-        config.LocalAi.WslMirroredNetworkingConsent =
-            config.LocalAi.Enabled &&
-            _localAiNetworkingConsentRequired &&
-            LocalAiNetworkingConsentCheckBox.IsChecked == true;
+        config.LocalAi.WslMirroredNetworkingConsent = config.LocalAi.Enabled;
     }
 
     private void ApplySetupReviewSummary(SetupConfig config)
@@ -310,12 +305,9 @@ public sealed partial class CapabilitiesPage : Page
                 }
                 return;
             }
-            _localAiSelectedGpuCapacityBytes = deviceEligibility.DetectedTotalMemoryBytes;
-            _localAiRecommendedModelId = LocalModelCatalog.Models
-                .OrderByDescending(model => model.Weights.SizeBytes)
-                .FirstOrDefault(model =>
-                    _localAiSelectedGpuCapacityBytes is { } capacityBytes &&
-                    LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes)?.Id;
+            _localAiRecommendedModelId = deviceEligibility.CanInstall
+                ? deviceEligibility.Plan?.Model.Id
+                : null;
 
             if (!deviceEligibility.CanInstall || deviceEligibility.Plan is null || deviceEligibility.SelectedGpu is null)
             {
@@ -401,6 +393,7 @@ public sealed partial class CapabilitiesPage : Page
         SetLocalAiOptionAvailability(isAvailable: true);
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
         _config!.LocalAi.SelectedModelId ??= eligibility.Plan!.Model.Id;
+        _config.LocalAi.SelectedProfileId = eligibility.Plan!.Profile.Id;
         PopulateLocalAiModels();
         _config.LocalAi.Enabled = TraySettingsConfig.ResolveLocalAiOnboardingEnabled(
             _config.UsesBundledDefaultConfig,
@@ -575,7 +568,6 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiOptionContent.Opacity = isAvailable ? 1 : 0.55;
         LocalAiToggle.IsEnabled = isAvailable;
         LocalAiModelSelector.IsEnabled = isAvailable;
-        LocalAiNetworkingConsentCheckBox.IsEnabled = isAvailable;
         AutomationProperties.SetHelpText(
             LocalAiOptionContent,
             isAvailable
@@ -634,14 +626,14 @@ public sealed partial class CapabilitiesPage : Page
         _suppressLocalAiSelection = true;
         LocalAiModelSelector.Items.Clear();
         int selectedIndex = 0;
-        LocalModelInfo[] fittingModels = LocalModelCatalog.Models
-            .Where(model =>
-                _localAiSelectedGpuCapacityBytes is { } capacityBytes &&
-                LocalInferenceEligibility.GetRequiredMemoryBytes(model) <= capacityBytes)
+        (LocalModelInfo Model, LocalInferencePlan Plan)[] fittingModels = LocalModelCatalog.Models
+            .Select(model => (Model: model, Eligibility: LocalInferenceEligibility.Evaluate(_localAiHardware!, model.Id)))
+            .Where(candidate => candidate.Eligibility.CanInstall && candidate.Eligibility.Plan is not null)
+            .Select(candidate => (candidate.Model, candidate.Eligibility.Plan!))
             .ToArray();
         for (int index = 0; index < fittingModels.Length; index++)
         {
-            LocalModelInfo model = fittingModels[index];
+            (LocalModelInfo model, _) = fittingModels[index];
             bool isRecommended = string.Equals(
                 _localAiRecommendedModelId,
                 model.Id,
@@ -680,17 +672,6 @@ public sealed partial class CapabilitiesPage : Page
         ApplySetupReviewSummary(_config);
     }
 
-    private void LocalAiNetworkingConsent_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_suppressLocalAiConsent || _config is null)
-            return;
-        _config.LocalAi.WslMirroredNetworkingConsent =
-            LocalAiToggle.IsOn == true &&
-            _localAiNetworkingConsentRequired &&
-            LocalAiNetworkingConsentCheckBox.IsChecked == true;
-        UpdatePrimaryButtonState();
-    }
-
     private void UpdateLocalAiOptions(bool forceNetworkingConsent = false)
     {
         var config = _config!;
@@ -699,12 +680,11 @@ public sealed partial class CapabilitiesPage : Page
         config.SkipWizard = enabled || _skipWizardWithoutLocalAi;
         LocalAiDetailsPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
-        _localAiNetworkingConsentRequired = false;
+        _localAiNetworkingChangeRequired = false;
 
         if (!enabled)
         {
             LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
-            SetLocalAiNetworkingConsent(false);
             config.LocalAi.WslMirroredNetworkingConsent = false;
             UpdatePrimaryButtonState();
             return;
@@ -714,12 +694,11 @@ public sealed partial class CapabilitiesPage : Page
         WslGlobalConfigStatus status = forceNetworkingConsent
             ? new(false, false)
             : _localAiNetworkingStatus ?? new(false, false);
-        _localAiNetworkingConsentRequired = !status.IsMirrored;
-        LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
+        _localAiNetworkingChangeRequired = !status.IsMirrored;
+        LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingChangeRequired
             ? Visibility.Visible
             : Visibility.Collapsed;
-        SetLocalAiNetworkingConsent(false);
-        config.LocalAi.WslMirroredNetworkingConsent = false;
+        config.LocalAi.WslMirroredNetworkingConsent = true;
         UpdatePrimaryButtonState();
     }
 
@@ -735,36 +714,30 @@ public sealed partial class CapabilitiesPage : Page
         if (eligibility.Plan is not { } plan || eligibility.SelectedGpu is not { } gpu)
         {
             _localAiSelectionEligible = false;
+            _config!.LocalAi.SelectedProfileId = null;
             LocalAiHardwareStatusText.Text = "This model is not qualified for the detected hardware.";
             UpdatePrimaryButtonState();
             return;
         }
 
         _localAiSelectionEligible = eligibility.Status == LocalInferenceEligibilityStatus.Eligible;
+        _config!.LocalAi.SelectedProfileId = plan.Profile.Id;
         LocalAiHardwareStatusText.Text = eligibility.Status switch
         {
             LocalInferenceEligibilityStatus.Eligible =>
-                $"{gpu.Name}: {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)} memory; " +
-                $"{FormatSize(eligibility.RequiredTotalMemoryBytes)} required.",
+                $"{FormatMemorySize(eligibility.RequiredTotalMemoryBytes)} required \u00b7 " +
+                $"{FormatOptionalMemorySize(eligibility.DetectedTotalMemoryBytes)} CUDA-visible on {gpu.Name}",
             LocalInferenceEligibilityStatus.EligibleButBusy =>
-                $"Only {FormatOptionalSize(eligibility.AvailableFreeMemoryBytes)} of " +
-                $"{FormatSize(eligibility.RequiredFreeMemoryBytes)} GPU memory is free. Close GPU apps and retry.",
+                $"Only {FormatOptionalMemorySize(eligibility.AvailableFreeMemoryBytes)} of " +
+                $"{FormatMemorySize(eligibility.RequiredFreeMemoryBytes)} GPU memory is free. Close GPU apps and retry.",
             _ => DescribeLocalAiUnavailable(eligibility),
         };
         LocalAiEngineDetailText.Text =
-            $"llama-server for Windows · {FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))}";
+            $"llama-server for Windows · {FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))} · " +
+            "loads on first request";
         LocalAiModelDetailText.Text =
             $"{SetupReviewSummaryBuilder.DisplayModelName(plan.Model)} · {FormatSize(plan.Model.Weights.SizeBytes)}";
-        LocalAiSettingsDetailText.Text =
-            $"{plan.Model.Recipe.ContextTokens / 1024}K context · CUDA enabled · loads when first used";
         UpdatePrimaryButtonState();
-    }
-
-    private void SetLocalAiNetworkingConsent(bool value)
-    {
-        _suppressLocalAiConsent = true;
-        LocalAiNetworkingConsentCheckBox.IsChecked = value;
-        _suppressLocalAiConsent = false;
     }
 
     private void UpdatePrimaryButtonState()
@@ -778,15 +751,17 @@ public sealed partial class CapabilitiesPage : Page
         PrimaryButton.IsEnabled =
             _step != 3 ||
             LocalAiToggle.IsOn != true ||
-            (_localAiSelectionEligible &&
-             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
+            _localAiSelectionEligible;
     }
 
     private static string FormatSize(long bytes) =>
         $"{bytes / 1_000_000_000d:0.#} GB";
 
-    private static string FormatOptionalSize(long? bytes) =>
-        bytes is { } value ? FormatSize(value) : "an unknown amount";
+    private static string FormatMemorySize(long bytes) =>
+        $"{bytes / (1024d * 1024d * 1024d):0.#} GiB";
+
+    private static string FormatOptionalMemorySize(long? bytes) =>
+        bytes is { } value ? FormatMemorySize(value) : "an unknown amount";
 
     private void TailscaleToggle_Toggled(object sender, RoutedEventArgs e)
     {

@@ -261,7 +261,7 @@ public class LocalInferenceQualificationTests
     {
         var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (46 * GiB, 46 * GiB) };
 
-        HostHardwareInfo hardware = Probe(reader, new StubDedicatedMemoryProbe());
+        HostHardwareInfo hardware = Probe(reader, new StubDedicatedMemoryProbe(), new StubNvmlMemoryProbe());
 
         GpuInfo gpu = Assert.Single(hardware.Gpus);
         Assert.Null(gpu.GpuVisibleMemoryBytes);
@@ -271,13 +271,114 @@ public class LocalInferenceQualificationTests
     }
 
     [Fact]
-    public void CudaProbe_LeavesCapacityUnknownWhenTheAdapterLuidCannotBeRead()
+    public void CudaProbe_FallsBackToNvmlWhenNoDxgiAdapterDescribesTheDevice()
     {
-        var reader = new StubCudaDeviceReader { DeviceCount = 1, Luid = null };
+        // The DGX Spark shape: CUDA advertises about 46 GiB, DXGI supplies no
+        // usable adapter, and NVML reports the 16,320 MiB that actually backs
+        // device allocations.
+        HostHardwareInfo hardware = Probe(
+            DgxSparkReader(),
+            new StubDedicatedMemoryProbe(),
+            NvmlSpark(15_000L * MiB));
 
-        GpuInfo gpu = Assert.Single(Probe(reader).Gpus);
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Equal(16_320L * MiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(15_000L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+        Assert.Equal(
+            LocalInferenceEligibilityFailureCode.InsufficientGpuMemory,
+            LocalInferenceEligibility.Evaluate(hardware).FailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_FallsBackToNvmlWhenTheAdapterLuidCannotBeRead()
+    {
+        // A TCC or headless CUDA device has no DXGI adapter LUID at all, and
+        // must stay supported rather than becoming permanently incomplete.
+        var reader = new StubCudaDeviceReader
+        {
+            DeviceCount = 1,
+            Luid = null,
+            Memory = (30 * GiB, 48 * GiB),
+        };
+        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(48 * GiB, 30 * GiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, new StubDedicatedMemoryProbe(), nvml).Gpus);
+
+        Assert.Equal(48 * GiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(30 * GiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_FallsBackToNvmlWhenTheAdapterReportsZeroDedicatedMemory()
+    {
+        // A true UMA adapter can report no dedicated video memory through DXGI.
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (40 * GiB, 46 * GiB) };
+        var dxgi = new StubDedicatedMemoryProbe(
+            StubCudaDeviceReader.StubLuid,
+            new GpuAdapterMemory(DedicatedVideoMemoryBytes: 0, AvailableLocalBytes: 0));
+        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(20 * GiB, 18 * GiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, dxgi, nvml).Gpus);
+
+        Assert.Equal(20 * GiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(18 * GiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_PrefersTheDxgiBoundOverNvmlWhenBothDescribeTheDevice()
+    {
+        // Conservative WDDM budget behavior must not regress where DXGI applies.
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (15_061L * MiB, 16_375L * MiB) };
+        var dxgi = new StubDedicatedMemoryProbe(
+            StubCudaDeviceReader.StubLuid,
+            new GpuAdapterMemory(16_045L * MiB, 15_277L * MiB));
+        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(16_376L * MiB, 16_000L * MiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, dxgi, nvml).Gpus);
+
+        Assert.Equal(16_045L * MiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(15_277L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_NvmlBoundIsJoinedByDeviceIdentityNotOrdinal()
+    {
+        var reader = new StubCudaDeviceReader
+        {
+            DeviceCount = 1,
+            Uuid = "GPU-actual",
+            Memory = (40 * GiB, 46 * GiB),
+        };
+        var nvml = new StubNvmlMemoryProbe("GPU-different", new GpuAdapterMemory(20 * GiB, 18 * GiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, new StubDedicatedMemoryProbe(), nvml).Gpus);
 
         Assert.Null(gpu.GpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_LeavesCapacityUnknownWhenTheNvmlProbeAlsoThrows()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1 };
+
+        GpuInfo gpu = Assert.Single(
+            Probe(reader, new ThrowingDedicatedMemoryProbe(), new ThrowingNvmlMemoryProbe()).Gpus);
+
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.Null(gpu.GpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void NvmlProbe_LoadsOnlyFullyQualifiedDriverOwnedLibraries()
+    {
+        IReadOnlyList<string> candidates = NvmlDedicatedMemoryProbe.GetNvmlLibraryCandidates();
+
+        Assert.NotEmpty(candidates);
+        Assert.All(candidates, candidate =>
+        {
+            Assert.True(Path.IsPathFullyQualified(candidate));
+            Assert.Equal("nvml.dll", Path.GetFileName(candidate), ignoreCase: true);
+        });
     }
 
     [Fact]
@@ -342,14 +443,19 @@ public class LocalInferenceQualificationTests
     private static StubDedicatedMemoryProbe DgxSparkAdapter(long? availableLocalBytes) =>
         new(StubCudaDeviceReader.StubLuid, new GpuAdapterMemory(16_320L * MiB, availableLocalBytes));
 
+    private static StubNvmlMemoryProbe NvmlSpark(long? freeBytes) =>
+        new("GPU-stub", new GpuAdapterMemory(16_320L * MiB, freeBytes));
+
     private static HostHardwareInfo Probe(
         ICudaDeviceReader reader,
-        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null) =>
+        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null,
+        INvmlDedicatedMemoryProbe? nvmlMemoryProbe = null) =>
         new CudaHostHardwareProbe(
             reader,
             dedicatedMemoryProbe ?? new StubDedicatedMemoryProbe(
                 StubCudaDeviceReader.StubLuid,
-                new GpuAdapterMemory(32 * GiB, 32 * GiB)))
+                new GpuAdapterMemory(32 * GiB, 32 * GiB)),
+            nvmlMemoryProbe ?? new StubNvmlMemoryProbe())
             .Probe();
 
     private sealed class StubCudaDeviceReader : ICudaDeviceReader
@@ -404,6 +510,27 @@ public class LocalInferenceQualificationTests
     {
         public IReadOnlyDictionary<long, GpuAdapterMemory> CaptureAdapterMemoryByLuid() =>
             throw new InvalidOperationException("DXGI faulted.");
+    }
+
+    private sealed class StubNvmlMemoryProbe : INvmlDedicatedMemoryProbe
+    {
+        private readonly Dictionary<string, GpuAdapterMemory> _memoryByUuid =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public StubNvmlMemoryProbe()
+        {
+        }
+
+        public StubNvmlMemoryProbe(string uuid, GpuAdapterMemory memory) =>
+            _memoryByUuid[uuid] = memory;
+
+        public IReadOnlyDictionary<string, GpuAdapterMemory> CaptureAdapterMemoryByUuid() => _memoryByUuid;
+    }
+
+    private sealed class ThrowingNvmlMemoryProbe : INvmlDedicatedMemoryProbe
+    {
+        public IReadOnlyDictionary<string, GpuAdapterMemory> CaptureAdapterMemoryByUuid() =>
+            throw new InvalidOperationException("NVML faulted.");
     }
 
     [Theory]

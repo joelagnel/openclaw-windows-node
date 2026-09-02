@@ -72,18 +72,21 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
 
     private readonly ICudaDeviceReader _reader;
     private readonly IGpuDedicatedMemoryProbe _dedicatedMemoryProbe;
+    private readonly INvmlDedicatedMemoryProbe _nvmlMemoryProbe;
 
     public CudaHostHardwareProbe()
-        : this(new NvcudaDeviceReader(), new DxgiDedicatedMemoryProbe())
+        : this(new NvcudaDeviceReader(), new DxgiDedicatedMemoryProbe(), new NvmlDedicatedMemoryProbe())
     {
     }
 
     internal CudaHostHardwareProbe(
         ICudaDeviceReader reader,
-        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null)
+        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null,
+        INvmlDedicatedMemoryProbe? nvmlMemoryProbe = null)
     {
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
         _dedicatedMemoryProbe = dedicatedMemoryProbe ?? new DxgiDedicatedMemoryProbe();
+        _nvmlMemoryProbe = nvmlMemoryProbe ?? new NvmlDedicatedMemoryProbe();
     }
 
     public HostHardwareInfo Probe()
@@ -132,15 +135,20 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
         try { adapterMemoryByLuid = _dedicatedMemoryProbe.CaptureAdapterMemoryByLuid(); }
         catch { adapterMemoryByLuid = new Dictionary<long, GpuAdapterMemory>(); }
 
+        IReadOnlyDictionary<string, GpuAdapterMemory> adapterMemoryByUuid;
+        try { adapterMemoryByUuid = _nvmlMemoryProbe.CaptureAdapterMemoryByUuid(); }
+        catch { adapterMemoryByUuid = new Dictionary<string, GpuAdapterMemory>(); }
+
         return Enumerable.Range(0, devices)
-            .Select(ordinal => CaptureGpu(ordinal, cudaMajorVersion, adapterMemoryByLuid))
+            .Select(ordinal => CaptureGpu(ordinal, cudaMajorVersion, adapterMemoryByLuid, adapterMemoryByUuid))
             .ToList();
     }
 
     private GpuInfo CaptureGpu(
         int ordinal,
         int? cudaMajorVersion,
-        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid)
+        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid,
+        IReadOnlyDictionary<string, GpuAdapterMemory> adapterMemoryByUuid)
     {
         // Contained per device so one failing device or entry point cannot
         // discard the devices that read cleanly.
@@ -159,7 +167,8 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
                 StableId: Read(() => _reader.TryReadDeviceUuid(device)));
 
             if (Read(() => _reader.TryReadMemoryInfo(device)) is not { } memory ||
-                ResolveAdapterMemory(device, adapterMemoryByLuid) is not { } adapterMemory)
+                ResolveAdapterMemory(device, identifiedGpu.StableId, adapterMemoryByLuid, adapterMemoryByUuid)
+                    is not { } adapterMemory)
             {
                 // Without a dedicated-memory bound the CUDA total cannot be
                 // trusted for admission, so capacity stays unknown and
@@ -181,29 +190,42 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
     }
 
     /// <summary>
-    /// The adapter's local budget is the authority on how much memory this
-    /// process may still use, because CUDA's own free value can also count the
-    /// shared host pool. CUDA's figure is only a fallback, and either way the
-    /// result never exceeds the admission capacity.
+    /// The dedicated-memory bound for one device. DXGI is preferred so the
+    /// conservative WDDM budget behavior is unchanged wherever it applies, and
+    /// NVML covers supported CUDA hosts that DXGI cannot describe. Both are
+    /// joined on device identity, never on adapter name.
+    /// </summary>
+    private GpuAdapterMemory? ResolveAdapterMemory(
+        int device,
+        string? stableId,
+        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid,
+        IReadOnlyDictionary<string, GpuAdapterMemory> adapterMemoryByUuid)
+    {
+        if (Read(() => _reader.TryReadDeviceLuid(device)) is { } luid &&
+            adapterMemoryByLuid.TryGetValue(luid, out GpuAdapterMemory? dxgiMemory) &&
+            dxgiMemory.DedicatedVideoMemoryBytes > 0)
+        {
+            return dxgiMemory;
+        }
+
+        return stableId is { Length: > 0 } &&
+            adapterMemoryByUuid.TryGetValue(stableId, out GpuAdapterMemory? nvmlMemory) &&
+            nvmlMemory.DedicatedVideoMemoryBytes > 0
+            ? nvmlMemory
+            : null;
+    }
+
+    /// <summary>
+    /// The adapter's own budget is the authority on how much memory this process
+    /// may still use, because CUDA's free value can also count the shared host
+    /// pool. CUDA's figure is only a fallback, and either way the result never
+    /// exceeds the admission capacity.
     /// </summary>
     private static long ResolveFreeBytes(
         (long FreeBytes, long TotalBytes) memory,
         GpuAdapterMemory adapterMemory,
         long capacityBytes) =>
         Math.Min(adapterMemory.AvailableLocalBytes ?? memory.FreeBytes, capacityBytes);
-
-    private GpuAdapterMemory? ResolveAdapterMemory(
-        int device,
-        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid)
-    {
-        if (Read(() => _reader.TryReadDeviceLuid(device)) is not { } luid)
-            return null;
-
-        return adapterMemoryByLuid.TryGetValue(luid, out GpuAdapterMemory? adapterMemory) &&
-            adapterMemory.DedicatedVideoMemoryBytes > 0
-            ? adapterMemory
-            : null;
-    }
 
     private static T? Read<T>(Func<T?> read)
         where T : struct

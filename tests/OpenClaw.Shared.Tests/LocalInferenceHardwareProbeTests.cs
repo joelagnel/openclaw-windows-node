@@ -8,16 +8,16 @@ namespace OpenClaw.Shared.Tests;
 /// Hardware-gated proof that Local AI qualification works on a real NVIDIA GPU
 /// through both dedicated-memory sources, including the non-DXGI NVML path used
 /// by unified-memory DGX and Blackwell parts, TCC devices, and headless GPUs.
-/// Gated by OPENCLAW_RUN_INTEGRATION=1 and skipped when no NVIDIA GPU is present.
+/// Skipped when no NVIDIA GPU is present. Set OPENCLAW_RUN_GPU_PROOF=1 to require it.
 /// </summary>
 public sealed class LocalInferenceHardwareProbeTests(ITestOutputHelper output)
 {
-    [IntegrationFact]
+    [NvidiaHardwareFact]
     public void NvmlSuppliesADedicatedBoundForEveryCudaDeviceIdentity()
     {
         HostHardwareInfo hardware = new CudaHostHardwareProbe().Probe();
         GpuInfo[] identified = hardware.NvidiaGpus.Where(gpu => gpu.StableId is { Length: > 0 }).ToArray();
-        Assert.True(identified.Length > 0, "Integration run requires an identified NVIDIA GPU on this host.");
+        Assert.True(identified.Length > 0, "Hardware proof run requires an identified NVIDIA GPU on this host.");
 
         IReadOnlyDictionary<string, GpuAdapterMemory> nvml =
             new NvmlDedicatedMemoryProbe().CaptureAdapterMemoryByUuid();
@@ -35,7 +35,7 @@ public sealed class LocalInferenceHardwareProbeTests(ITestOutputHelper output)
         }
     }
 
-    [IntegrationFact]
+    [NvidiaHardwareFact]
     public void NonDxgiFallbackKeepsTheDeviceSupportedWithABoundNoLargerThanTheDxgiPath()
     {
         var reader = new NvcudaDeviceReader();
@@ -43,7 +43,7 @@ public sealed class LocalInferenceHardwareProbeTests(ITestOutputHelper output)
             reader,
             new DxgiDedicatedMemoryProbe(),
             new NvmlDedicatedMemoryProbe()).Probe();
-        Assert.True(withDxgi.HasNvidiaGpu, "Integration run requires an NVIDIA GPU on this host.");
+        Assert.True(withDxgi.HasNvidiaGpu, "Hardware proof run requires an NVIDIA GPU on this host.");
 
         // Force the DXGI source to supply nothing so resolution must fall back
         // to the NVML identity join, exactly as it would on a host DXGI cannot
@@ -92,4 +92,5 @@ public sealed class LocalInferenceHardwareProbeTests(ITestOutputHelper output)
             new Dictionary<long, GpuAdapterMemory>();
     }
 }
+
 

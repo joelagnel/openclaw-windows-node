@@ -35,6 +35,25 @@ public sealed class LocalAiPortHandoffTests
     }
 
     [Fact]
+    public async Task Preflight_StopsBeforeAnyDownloadWhenCapacityIsUnknown()
+    {
+        // A GPU whose dedicated-memory bound could not be resolved has no
+        // trustworthy admission capacity, so setup must stop before downloading.
+        SetupContext context = CreateContext(new LocalAiConfig { Enabled = true, Port = 0 });
+        var step = new PreflightLocalAiHardwareStep(
+            new FakeHardwareProbe(CreateIncompleteFactsHardware()));
+
+        StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
+        Assert.Contains(
+            nameof(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete),
+            result.Message,
+            StringComparison.Ordinal);
+        Assert.Null(context.LocalAiPort);
+    }
+
+    [Fact]
     public async Task PersistStep_RecordsRequestButNotEndpointBeforeHealth()
     {
         using var temp = new TempDirectory("local-ai-handoff-");
@@ -113,6 +132,19 @@ public sealed class LocalAiPortHandoffTests
                 GpuVisibleMemoryBytes: 25_702_694_912,
                 FreeGpuVisibleMemoryBytes: 25_000_000_000,
                 DriverVersion: "616.00",
+                CudaMajorVersion: 13,
+                StableId: "GPU-SPARK"),
+        ],
+        VulkanAvailable: false);
+
+    private static HostHardwareInfo CreateIncompleteFactsHardware() => new(
+        Architecture.Arm64,
+        128L * 1024 * 1024 * 1024,
+        100L * 1024 * 1024 * 1024,
+        [
+            new GpuInfo(
+                GpuVendor.Nvidia,
+                "NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU)",
                 CudaMajorVersion: 13,
                 StableId: "GPU-SPARK"),
         ],

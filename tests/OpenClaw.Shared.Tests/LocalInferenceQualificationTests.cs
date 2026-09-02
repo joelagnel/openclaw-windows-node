@@ -9,6 +9,7 @@ namespace OpenClaw.Shared.Tests;
 public class LocalInferenceQualificationTests
 {
     private const long GiB = 1024L * 1024 * 1024;
+    private const long MiB = 1024L * 1024;
 
     [Fact]
     public void CudaVisibleDevicesSelector_FormatsDriverUuidLikeNvml()
@@ -17,15 +18,18 @@ public class LocalInferenceQualificationTests
 
         Assert.Equal(
             "GPU-cc66bca6-b5ff-dd70-995c-d81a07add980",
-            CudaHostHardwareProbe.ToCudaVisibleDevicesSelector(cudaUuid));
+            NvcudaDriver.ToCudaVisibleDevicesSelector(cudaUuid));
     }
 
     [Fact]
     public void CudaProbe_LoadsNativeDriverOnlyFromSystem32()
     {
-        MethodInfo[] imports = typeof(CudaHostHardwareProbe)
-            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-            .Where(method => method.GetCustomAttribute<DllImportAttribute>() is not null)
+        MethodInfo[] imports = typeof(NvcudaDriver).Assembly
+            .GetTypes()
+            .SelectMany(type => type.GetMethods(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance))
+            .Where(method => method.GetCustomAttribute<DllImportAttribute>() is { } import &&
+                import.Value.Contains("nvcuda", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         Assert.NotEmpty(imports);
@@ -35,6 +39,371 @@ public class LocalInferenceQualificationTests
                 method.GetCustomAttribute<DefaultDllImportSearchPathsAttribute>());
             Assert.Equal(DllImportSearchPath.System32, attribute.Paths);
         });
+    }
+
+    [Fact]
+    public void CudaProbe_MissingUuidKeepsDetectedNvidiaGpuAsIncompleteFacts()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Uuid = null };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.Null(gpu.StableId);
+        Assert.Equal(32 * GiB, gpu.GpuVisibleMemoryBytes);
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete, result.FailureCode);
+        Assert.Equal(LocalInferenceSelectionFailureCode.None, result.SelectionFailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_FailingUuidEntryPointKeepsDetectedNvidiaGpuAsIncompleteFacts()
+    {
+        var reader = new StubCudaDeviceReader
+        {
+            DeviceCount = 1,
+            UuidFailure = () => new EntryPointNotFoundException("cuDeviceGetUuid_v2"),
+        };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.Null(gpu.StableId);
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete, result.FailureCode);
+        Assert.NotEqual(LocalInferenceSelectionFailureCode.NoNvidiaGpu, result.SelectionFailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_KeepsHealthyGpuWhenAnotherDeviceFailsItsUuidLookup()
+    {
+        var reader = new StubCudaDeviceReader
+        {
+            DeviceCount = 2,
+            UuidByDevice = device => device == 0 ? null : "GPU-healthy",
+        };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        Assert.Equal(2, hardware.Gpus.Count);
+        Assert.Null(hardware.Gpus[0].StableId);
+        Assert.Equal("GPU-healthy", hardware.Gpus[1].StableId);
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+        Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
+        Assert.Equal("GPU-healthy", result.SelectedGpu?.StableId);
+    }
+
+    [Fact]
+    public void CudaProbe_FailedDeviceCountKeepsRetryableNvidiaFactsInsteadOfNoGpu()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = null };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        Assert.True(hardware.HasNvidiaGpu);
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete, result.FailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_FailedDeviceHandleKeepsRetryableNvidiaFacts()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, DeviceHandle = null };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.Null(gpu.StableId);
+        Assert.Equal(
+            LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete,
+            LocalInferenceEligibility.Evaluate(hardware).FailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_MissingNameStillReportsTheDetectedNvidiaDevice()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Name = null };
+
+        GpuInfo gpu = Assert.Single(Probe(reader).Gpus);
+
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.False(string.IsNullOrWhiteSpace(gpu.Name));
+        Assert.Equal("GPU-stub", gpu.StableId);
+    }
+
+    [Fact]
+    public void CudaProbe_AbsentDriverIsDefinitiveNoNvidiaGpu() =>
+        AssertDefinitiveNoNvidiaGpu(CudaDriverAvailability.Absent);
+
+    [Fact]
+    public void CudaProbe_DriverReportingNoDeviceIsDefinitiveNoNvidiaGpu() =>
+        AssertDefinitiveNoNvidiaGpu(CudaDriverAvailability.NoDevice);
+
+    private static void AssertDefinitiveNoNvidiaGpu(CudaDriverAvailability availability)
+    {
+        var reader = new StubCudaDeviceReader { Availability = availability };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        Assert.False(hardware.HasNvidiaGpu);
+        Assert.Equal(
+            LocalInferenceSelectionFailureCode.NoNvidiaGpu,
+            LocalInferenceEligibility.Evaluate(hardware).SelectionFailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_DriverInitializationFailureStaysRetryableRatherThanNoGpu()
+    {
+        // A driver/runtime mismatch fails cuInit while NVIDIA hardware is still
+        // present, so presence is unknown rather than disproven.
+        var reader = new StubCudaDeviceReader { Availability = CudaDriverAvailability.Failed };
+
+        HostHardwareInfo hardware = Probe(reader);
+
+        Assert.True(hardware.HasNvidiaGpu);
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete, result.FailureCode);
+        Assert.NotEqual(LocalInferenceSelectionFailureCode.NoNvidiaGpu, result.SelectionFailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_ZeroReportedDevicesIsAlsoDefinitiveNoNvidiaGpu()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 0 };
+
+        Assert.Equal(
+            LocalInferenceSelectionFailureCode.NoNvidiaGpu,
+            LocalInferenceEligibility.Evaluate(Probe(reader)).SelectionFailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_CapsReportedCapacityAtDedicatedDeviceMemory()
+    {
+        // The recorded DGX Spark case: CUDA advertises about 46 GiB because it
+        // surfaces the WDDM shared host pool, while only about 15.9 GiB of real
+        // device memory backs llama-server allocations.
+        GpuInfo gpu = Assert.Single(Probe(DgxSparkReader(), DgxSparkAdapter(12_000L * MiB)).Gpus);
+
+        Assert.Equal(16_320L * MiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(12_000L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+        Assert.Null(gpu.SharedGpuMemoryBytes);
+    }
+
+    [Fact]
+    public void Evaluate_DoesNotQualifyAnyModelOnTheRecordedDgxSparkCapacity()
+    {
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
+            Probe(DgxSparkReader(), DgxSparkAdapter(12_000L * MiB)));
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, result.FailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_PrefersTheAdapterBudgetOverCudaFreeMemory()
+    {
+        // CUDA reports 46,114 MiB free while the adapter's local budget says only
+        // 4,000 MiB remains. Trusting the CUDA figure would claim the whole
+        // dedicated segment is free and launch straight into an out-of-memory.
+        GpuInfo gpu = Assert.Single(Probe(DgxSparkReader(), DgxSparkAdapter(4_000L * MiB)).Gpus);
+
+        Assert.Equal(4_000L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_FallsBackToCudaFreeMemoryWhenNoAdapterBudgetIsAvailable()
+    {
+        HostHardwareInfo hardware = Probe(DgxSparkReader(), DgxSparkAdapter(availableLocalBytes: null));
+
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Equal(16_320L * MiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(16_320L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_KeepsCapacityWhenCudaTotalSlightlyExceedsTheDedicatedBound()
+    {
+        // A discrete adapter normally reports a slightly larger CUDA total than
+        // DXGI dedicated. That small gap must not blank out capacity.
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (15_061L * MiB, 16_375L * MiB) };
+        var adapter = new StubDedicatedMemoryProbe(
+            StubCudaDeviceReader.StubLuid,
+            new GpuAdapterMemory(16_045L * MiB, 15_000L * MiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, adapter).Gpus);
+
+        Assert.Equal(16_045L * MiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(15_000L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_NeverRaisesCapacityAboveTheCudaReportedTotal()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (8 * GiB, 12 * GiB) };
+        var adapter = new StubDedicatedMemoryProbe(
+            StubCudaDeviceReader.StubLuid,
+            new GpuAdapterMemory(24 * GiB, 8 * GiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, adapter).Gpus);
+
+        Assert.Equal(12 * GiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(8 * GiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_LeavesCapacityUnknownWhenNoDedicatedBoundIsAvailable()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (46 * GiB, 46 * GiB) };
+
+        HostHardwareInfo hardware = Probe(reader, new StubDedicatedMemoryProbe());
+
+        GpuInfo gpu = Assert.Single(hardware.Gpus);
+        Assert.Null(gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(
+            LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete,
+            LocalInferenceEligibility.Evaluate(hardware).FailureCode);
+    }
+
+    [Fact]
+    public void CudaProbe_LeavesCapacityUnknownWhenTheAdapterLuidCannotBeRead()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Luid = null };
+
+        GpuInfo gpu = Assert.Single(Probe(reader).Gpus);
+
+        Assert.Null(gpu.GpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_LeavesCapacityUnknownWhenTheDedicatedMemoryProbeThrows()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1 };
+
+        GpuInfo gpu = Assert.Single(Probe(reader, new ThrowingDedicatedMemoryProbe()).Gpus);
+
+        Assert.Equal(GpuVendor.Nvidia, gpu.Vendor);
+        Assert.Null(gpu.GpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void Evaluate_InconclusiveGpuIsNotHiddenByADefinitivelyUnsupportedGpu()
+    {
+        // The unreadable device could still be supported, so reporting the other
+        // adapter's definitive verdict would disable recheck on this machine.
+        HostHardwareInfo hardware = Hardware(
+            RuntimeArchitecture.X64,
+            new GpuInfo(GpuVendor.Nvidia, "NVIDIA unreadable adapter", CudaMajorVersion: 13),
+            Gpu("NVIDIA small adapter", "GPU-small", 16, 16));
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete, result.FailureCode);
+    }
+
+    [Fact]
+    public void Evaluate_EligibleGpuStillWinsOverAnInconclusiveGpu()
+    {
+        HostHardwareInfo hardware = Hardware(
+            RuntimeArchitecture.X64,
+            new GpuInfo(GpuVendor.Nvidia, "NVIDIA unreadable adapter", CudaMajorVersion: 13),
+            Gpu("NVIDIA capable adapter", "GPU-capable", 48, 48));
+
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(hardware);
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
+        Assert.Equal("GPU-capable", result.SelectedGpu?.StableId);
+    }
+
+    [Theory]
+    [InlineData(0x00018980u, 0, "8089010000000000")]
+    [InlineData(0x00018980u, 0x0000007F, "808901007F000000")]
+    [InlineData(0xFFFFFFFFu, -1, "FFFFFFFFFFFFFFFF")]
+    [InlineData(0x00000000u, int.MinValue, "0000000000000080")]
+    public void DxgiLuid_MatchesTheSignedCudaAdapterLuidEncoding(
+        uint lowPart,
+        int highPart,
+        string cudaLuidHex)
+    {
+        Assert.Equal(
+            BitConverter.ToInt64(Convert.FromHexString(cudaLuidHex)),
+            DxgiDedicatedMemoryProbe.ToLuid(lowPart, highPart));
+    }
+
+    private static StubCudaDeviceReader DgxSparkReader() =>
+        new() { DeviceCount = 1, Memory = (46_114L * MiB, 46_332L * MiB) };
+
+    private static StubDedicatedMemoryProbe DgxSparkAdapter(long? availableLocalBytes) =>
+        new(StubCudaDeviceReader.StubLuid, new GpuAdapterMemory(16_320L * MiB, availableLocalBytes));
+
+    private static HostHardwareInfo Probe(
+        ICudaDeviceReader reader,
+        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null) =>
+        new CudaHostHardwareProbe(
+            reader,
+            dedicatedMemoryProbe ?? new StubDedicatedMemoryProbe(
+                StubCudaDeviceReader.StubLuid,
+                new GpuAdapterMemory(32 * GiB, 32 * GiB)))
+            .Probe();
+
+    private sealed class StubCudaDeviceReader : ICudaDeviceReader
+    {
+        internal const long StubLuid = 0x18980;
+
+        public CudaDriverAvailability Availability { get; init; } = CudaDriverAvailability.Ready;
+        public int? DeviceCount { get; init; } = 1;
+        public int? DeviceHandle { get; init; } = 0;
+        public string? Name { get; init; } = "NVIDIA GeForce RTX 5090";
+        public string? Uuid { get; init; } = "GPU-stub";
+        public long? Luid { get; init; } = StubLuid;
+        public (long FreeBytes, long TotalBytes)? Memory { get; init; } = (32 * GiB, 32 * GiB);
+        public Func<int, string?>? UuidByDevice { get; init; }
+        public Func<Exception>? UuidFailure { get; init; }
+
+        public CudaDriverAvailability TryInitialize() => Availability;
+
+        public int? TryReadDeviceCount() => DeviceCount;
+
+        public int? TryReadCudaMajorVersion() => 13;
+
+        public int? TryReadDeviceHandle(int ordinal) => DeviceHandle is null ? null : ordinal;
+
+        public string? TryReadDeviceName(int device) => Name;
+
+        public string? TryReadDeviceUuid(int device) =>
+            UuidFailure is not null
+                ? throw UuidFailure()
+                : UuidByDevice is not null ? UuidByDevice(device) : Uuid;
+
+        public long? TryReadDeviceLuid(int device) => Luid;
+
+        public (long FreeBytes, long TotalBytes)? TryReadMemoryInfo(int device) => Memory;
+    }
+
+    private sealed class StubDedicatedMemoryProbe : IGpuDedicatedMemoryProbe
+    {
+        private readonly Dictionary<long, GpuAdapterMemory> _memoryByLuid = [];
+
+        public StubDedicatedMemoryProbe()
+        {
+        }
+
+        public StubDedicatedMemoryProbe(long luid, GpuAdapterMemory memory) =>
+            _memoryByLuid[luid] = memory;
+
+        public IReadOnlyDictionary<long, GpuAdapterMemory> CaptureAdapterMemoryByLuid() => _memoryByLuid;
+    }
+
+    private sealed class ThrowingDedicatedMemoryProbe : IGpuDedicatedMemoryProbe
+    {
+        public IReadOnlyDictionary<long, GpuAdapterMemory> CaptureAdapterMemoryByLuid() =>
+            throw new InvalidOperationException("DXGI faulted.");
     }
 
     [Theory]

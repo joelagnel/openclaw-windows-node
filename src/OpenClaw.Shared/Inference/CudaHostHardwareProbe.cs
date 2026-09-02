@@ -1,8 +1,43 @@
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace OpenClaw.Shared.Inference;
+
+/// <summary>
+/// The CUDA device facts the host probe needs, as a seam so failure handling can
+/// be covered without NVIDIA hardware.
+/// </summary>
+internal interface ICudaDeviceReader
+{
+    CudaDriverAvailability TryInitialize();
+    int? TryReadDeviceCount();
+    int? TryReadCudaMajorVersion();
+    int? TryReadDeviceHandle(int ordinal);
+    string? TryReadDeviceName(int device);
+    string? TryReadDeviceUuid(int device);
+    long? TryReadDeviceLuid(int device);
+    (long FreeBytes, long TotalBytes)? TryReadMemoryInfo(int device);
+}
+
+/// <summary>Reads device facts from the real NVIDIA driver.</summary>
+internal sealed class NvcudaDeviceReader : ICudaDeviceReader
+{
+    public CudaDriverAvailability TryInitialize() => NvcudaDriver.TryInitialize();
+
+    public int? TryReadDeviceCount() => NvcudaDriver.TryReadDeviceCount();
+
+    public int? TryReadCudaMajorVersion() => NvcudaDriver.TryReadCudaMajorVersion();
+
+    public int? TryReadDeviceHandle(int ordinal) => NvcudaDriver.TryReadDeviceHandle(ordinal);
+
+    public string? TryReadDeviceName(int device) => NvcudaDriver.TryReadDeviceName(device);
+
+    public string? TryReadDeviceUuid(int device) => NvcudaDriver.TryReadDeviceUuid(device);
+
+    public long? TryReadDeviceLuid(int device) => NvcudaDriver.TryReadDeviceLuid(device);
+
+    public (long FreeBytes, long TotalBytes)? TryReadMemoryInfo(int device) =>
+        NvcudaDriver.WithContext(device, NvcudaDriver.TryReadMemoryInfo, null);
+}
 
 public interface IHostHardwareProbe
 {
@@ -10,11 +45,47 @@ public interface IHostHardwareProbe
 }
 
 /// <summary>
-/// Reads the CUDA driver's own device and allocatable-memory view. This is the
-/// sole GPU-memory source for Local AI qualification, including UMA devices.
+/// Reads the CUDA driver's device identity and the memory that actually backs
+/// device allocations on this adapter. This is the sole GPU-memory source for
+/// Local AI qualification, including UMA devices.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Capacity is the CUDA-reported total capped by the adapter's DXGI dedicated
+/// video memory. <c>cuMemGetInfo</c> alone is not a safe WDDM admission bound:
+/// on a DGX Spark it advertised roughly 46 GiB because CUDA surfaces the shared
+/// host pool, while llama-server still failed an approximately 15.81 GiB
+/// allocation against roughly 15.9 GiB of real device memory. Capping never
+/// raises reported capacity, and shared system memory is never added.
+/// </para>
+/// <para>
+/// Only a failed <c>cuInit</c> proves that this machine has no NVIDIA GPU. Once
+/// the driver initializes, every later read failure keeps the device in the list
+/// with the missing facts left null, so qualification reports the retryable
+/// <c>HardwareFactsIncomplete</c> state instead of the definitive
+/// <c>NoNvidiaGpu</c> state that permanently hides Local AI.
+/// </para>
+/// </remarks>
 public sealed class CudaHostHardwareProbe : IHostHardwareProbe
 {
+    internal const string UnidentifiedGpuName = "NVIDIA GPU";
+
+    private readonly ICudaDeviceReader _reader;
+    private readonly IGpuDedicatedMemoryProbe _dedicatedMemoryProbe;
+
+    public CudaHostHardwareProbe()
+        : this(new NvcudaDeviceReader(), new DxgiDedicatedMemoryProbe())
+    {
+    }
+
+    internal CudaHostHardwareProbe(
+        ICudaDeviceReader reader,
+        IGpuDedicatedMemoryProbe? dedicatedMemoryProbe = null)
+    {
+        _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        _dedicatedMemoryProbe = dedicatedMemoryProbe ?? new DxgiDedicatedMemoryProbe();
+    }
+
     public HostHardwareInfo Probe()
     {
         PhysicalMemorySnapshot? physicalMemory = null;
@@ -31,149 +102,120 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
             VulkanAvailable: false);
     }
 
-    private static IReadOnlyList<GpuInfo> CaptureCudaGpus()
+    private IReadOnlyList<GpuInfo> CaptureCudaGpus()
     {
-        if (!OperatingSystem.IsWindows() || CuInit(0) != CudaSuccess ||
-            CuDeviceGetCount(out int count) != CudaSuccess)
+        // Only an absent driver or a driver that reports no device is proof that
+        // this machine has no NVIDIA GPU. A driver that fails to initialize (for
+        // example on a driver/runtime mismatch) leaves presence unknown, so it
+        // must stay retryable instead of permanently hiding Local AI.
+        switch (Read(() => (CudaDriverAvailability?)_reader.TryInitialize()))
         {
-            return [];
+            case CudaDriverAvailability.Absent:
+            case CudaDriverAvailability.NoDevice:
+                return [];
+            case CudaDriverAvailability.Ready:
+                break;
+            default:
+                return [Unidentified()];
         }
 
-        int? cudaMajorVersion =
-            CuDriverGetVersion(out int driverVersion) == CudaSuccess && driverVersion > 0
-                ? driverVersion / 1000
-                : null;
+        // Every failure from here on is a partial read, not an absent GPU.
+        if (Read(() => _reader.TryReadDeviceCount()) is not { } devices)
+            return [Unidentified()];
 
-        return Enumerable.Range(0, count)
-            .Select(ordinal => TryCaptureGpu(ordinal, cudaMajorVersion))
-            .Where(gpu => gpu is not null)
-            .Select(gpu => gpu!)
+        if (devices <= 0)
+            return [];
+
+        int? cudaMajorVersion = Read(() => _reader.TryReadCudaMajorVersion());
+
+        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid;
+        try { adapterMemoryByLuid = _dedicatedMemoryProbe.CaptureAdapterMemoryByLuid(); }
+        catch { adapterMemoryByLuid = new Dictionary<long, GpuAdapterMemory>(); }
+
+        return Enumerable.Range(0, devices)
+            .Select(ordinal => CaptureGpu(ordinal, cudaMajorVersion, adapterMemoryByLuid))
             .ToList();
     }
 
-    private static GpuInfo? TryCaptureGpu(int ordinal, int? cudaMajorVersion)
+    private GpuInfo CaptureGpu(
+        int ordinal,
+        int? cudaMajorVersion,
+        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid)
     {
-        if (CuDeviceGet(out int device, ordinal) != CudaSuccess)
-            return null;
-
-        string? name = ReadDeviceName(device);
-        string? gpuUuid = ReadDeviceUuid(device);
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(gpuUuid))
-            return null;
-
-        var identifiedGpu = new GpuInfo(
-            GpuVendor.Nvidia,
-            name,
-            CudaMajorVersion: cudaMajorVersion,
-            StableId: gpuUuid);
-
-        return WithCudaContext(device, () =>
-        {
-            if (CuMemGetInfo(out nuint freeBytes, out nuint totalBytes) != CudaSuccess ||
-                totalBytes == 0 || totalBytes > long.MaxValue || freeBytes > totalBytes)
-            {
-                return null;
-            }
-
-            return identifiedGpu with
-            {
-                GpuVisibleMemoryBytes = (long)totalBytes,
-                FreeGpuVisibleMemoryBytes = (long)freeBytes,
-            };
-        }) ?? identifiedGpu;
-    }
-
-    private static GpuInfo? WithCudaContext(int device, Func<GpuInfo?> action)
-    {
-        if (CuCtxCreate(out IntPtr context, 0, device) != CudaSuccess)
-            return null;
-
+        // Contained per device so one failing device or entry point cannot
+        // discard the devices that read cleanly.
         try
         {
-            return action();
+            if (_reader.TryReadDeviceHandle(ordinal) is not { } device)
+                return Unidentified(cudaMajorVersion);
+
+            // Every fact is read independently so one failure cannot discard the
+            // others, and a missing UUID keeps the device visible as incomplete
+            // rather than absent.
+            var identifiedGpu = new GpuInfo(
+                GpuVendor.Nvidia,
+                Read(() => _reader.TryReadDeviceName(device)) ?? UnidentifiedGpuName,
+                CudaMajorVersion: cudaMajorVersion,
+                StableId: Read(() => _reader.TryReadDeviceUuid(device)));
+
+            if (Read(() => _reader.TryReadMemoryInfo(device)) is not { } memory ||
+                ResolveAdapterMemory(device, adapterMemoryByLuid) is not { } adapterMemory)
+            {
+                // Without a dedicated-memory bound the CUDA total cannot be
+                // trusted for admission, so capacity stays unknown and
+                // qualification retries instead of over-qualifying this device.
+                return identifiedGpu;
+            }
+
+            long capacityBytes = Math.Min(memory.TotalBytes, adapterMemory.DedicatedVideoMemoryBytes);
+            return identifiedGpu with
+            {
+                GpuVisibleMemoryBytes = capacityBytes,
+                FreeGpuVisibleMemoryBytes = ResolveFreeBytes(memory, adapterMemory, capacityBytes),
+            };
         }
-        finally
+        catch
         {
-            _ = CuCtxDestroy(context);
+            return Unidentified(cudaMajorVersion);
         }
     }
 
-    internal static string ToCudaVisibleDevicesSelector(ReadOnlySpan<byte> uuid)
-    {
-        if (uuid.Length != CudaUuidSize)
-            throw new ArgumentException($"A CUDA GPU UUID must contain {CudaUuidSize} bytes.", nameof(uuid));
+    /// <summary>
+    /// The adapter's local budget is the authority on how much memory this
+    /// process may still use, because CUDA's own free value can also count the
+    /// shared host pool. CUDA's figure is only a fallback, and either way the
+    /// result never exceeds the admission capacity.
+    /// </summary>
+    private static long ResolveFreeBytes(
+        (long FreeBytes, long TotalBytes) memory,
+        GpuAdapterMemory adapterMemory,
+        long capacityBytes) =>
+        Math.Min(adapterMemory.AvailableLocalBytes ?? memory.FreeBytes, capacityBytes);
 
-        string hex = Convert.ToHexString(uuid).ToLowerInvariant();
-        return $"GPU-{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
-    }
-
-    private static string? ReadDeviceName(int device)
+    private GpuAdapterMemory? ResolveAdapterMemory(
+        int device,
+        IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid)
     {
-        var buffer = new byte[DeviceNameCapacity];
-        return CuDeviceGetName(buffer, buffer.Length, device) == CudaSuccess ? DecodeUtf8(buffer) : null;
-    }
-
-    private static string? ReadDeviceUuid(int device)
-    {
-        if (CuDeviceGetUuid(out CudaUuid uuid, device) != CudaSuccess)
+        if (Read(() => _reader.TryReadDeviceLuid(device)) is not { } luid)
             return null;
 
-        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(
-            MemoryMarshal.CreateReadOnlySpan(ref uuid, 1));
-        return ToCudaVisibleDevicesSelector(bytes);
+        return adapterMemoryByLuid.TryGetValue(luid, out GpuAdapterMemory? adapterMemory) &&
+            adapterMemory.DedicatedVideoMemoryBytes > 0
+            ? adapterMemory
+            : null;
     }
 
-    private static string? DecodeUtf8(byte[] buffer)
+    private static T? Read<T>(Func<T?> read)
+        where T : struct
     {
-        int terminator = Array.IndexOf(buffer, (byte)0);
-        string value = Encoding.UTF8.GetString(buffer, 0, terminator >= 0 ? terminator : buffer.Length).Trim();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
+        try { return read(); } catch { return null; }
     }
 
-    private const int CudaSuccess = 0;
-    private const int DeviceNameCapacity = 256;
-    private const int CudaUuidSize = 16;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct CudaUuid
+    private static string? Read(Func<string?> read)
     {
-        public ulong FirstBytes;
-        public ulong LastBytes;
+        try { return read(); } catch { return null; }
     }
 
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuInit", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuInit(uint flags);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuDriverGetVersion", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuDriverGetVersion(out int driverVersion);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuDeviceGetCount", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuDeviceGetCount(out int count);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuDeviceGet", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuDeviceGet(out int device, int ordinal);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuDeviceGetName", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuDeviceGetName([Out] byte[] name, int length, int device);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuDeviceGetUuid_v2", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuDeviceGetUuid(out CudaUuid uuid, int device);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuCtxCreate_v2", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuCtxCreate(out IntPtr context, uint flags, int device);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuCtxDestroy_v2", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuCtxDestroy(IntPtr context);
-
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [DllImport("nvcuda.dll", EntryPoint = "cuMemGetInfo_v2", CallingConvention = CallingConvention.StdCall)]
-    private static extern int CuMemGetInfo(out nuint freeBytes, out nuint totalBytes);
+    private static GpuInfo Unidentified(int? cudaMajorVersion = null) =>
+        new(GpuVendor.Nvidia, UnidentifiedGpuName, CudaMajorVersion: cudaMajorVersion);
 }

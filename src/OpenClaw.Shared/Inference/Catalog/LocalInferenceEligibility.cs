@@ -65,6 +65,7 @@ public static class LocalInferenceEligibility
         CandidateAssessment? selected = hardware.NvidiaGpus
             .Select(gpu => Assess(gpu, plan.Runtime, requiredMemoryBytes))
             .OrderBy(candidate => StatusRank(candidate.Status))
+            .ThenBy(candidate => DefinitivenessRank(candidate.FailureCode))
             .ThenByDescending(candidate => candidate.FreeMemoryBytes.HasValue)
             .ThenByDescending(candidate => candidate.FreeMemoryBytes ?? long.MinValue)
             .ThenByDescending(candidate => candidate.TotalMemoryBytes)
@@ -166,6 +167,15 @@ public static class LocalInferenceEligibility
         LocalInferenceEligibilityStatus.EligibleButBusy => 1,
         _ => 2,
     };
+
+    /// <summary>
+    /// Ranks an inconclusive candidate ahead of a definitively incompatible one.
+    /// A GPU whose facts could not be read might still work, so reporting the
+    /// retryable state keeps recheck available instead of showing a permanent
+    /// "this device cannot run Local AI" verdict from a different adapter.
+    /// </summary>
+    private static int DefinitivenessRank(LocalInferenceEligibilityFailureCode failureCode) =>
+        failureCode == LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete ? 0 : 1;
 
     private sealed record CandidateAssessment(
         GpuInfo Gpu,

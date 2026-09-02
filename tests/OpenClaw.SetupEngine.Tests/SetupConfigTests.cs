@@ -391,6 +391,21 @@ public class SetupConfigTests : IDisposable
         Assert.False(traySettings.NodeSttEnabled);
     }
 
+    /// <summary>
+    /// The install-review card's WSL title/description in CapabilitiesPage.xaml is a design-time
+    /// placeholder that CapabilitiesPage.xaml.cs immediately overwrites at runtime with
+    /// SetupReviewSummaryBuilder's DistroTitle/DistroDescription. This pins the default-config
+    /// runtime text to the same simplified copy so the two cannot drift again.
+    /// </summary>
+    [Fact]
+    public void SetupReviewSummary_DistroTitleAndDescription_MatchSimplifiedReviewCopy()
+    {
+        var summary = SetupReviewSummaryBuilder.Build(new SetupConfig());
+
+        Assert.Equal("Install Ubuntu 24.04 in WSL", summary.DistroTitle);
+        Assert.Equal("Creates a separate OpenClawGateway instance. Uses several GB.", summary.DistroDescription);
+    }
+
     [Fact]
     public void SetupReviewSummary_UsesActiveSetupConfig()
     {

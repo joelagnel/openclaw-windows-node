@@ -644,8 +644,8 @@ public sealed partial class CapabilitiesPage : Page
                 StringComparison.OrdinalIgnoreCase);
             LocalAiModelSelector.Items.Add(new ComboBoxItem
             {
-                Content = $"{model.DisplayName} ({FormatSize(model.Weights.SizeBytes)})" +
-                    (isRecommended ? " - Recommended" : string.Empty),
+                Content = SetupReviewSummaryBuilder.DisplayModelName(model) +
+                    (isRecommended ? " (Recommended)" : string.Empty),
                 Tag = model.Id,
             });
             string? selectedModelId = _config!.LocalAi.SelectedModelId ?? _localAiRecommendedModelId;
@@ -740,21 +740,19 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiHardwareStatusText.Text = eligibility.Status switch
         {
             LocalInferenceEligibilityStatus.Eligible =>
-                $"Detected {gpu.Name} with {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}. " +
-                $"The selected model requires {FormatSize(eligibility.RequiredTotalMemoryBytes)}.",
+                $"{gpu.Name}: {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)} memory; " +
+                $"{FormatSize(eligibility.RequiredTotalMemoryBytes)} required.",
             LocalInferenceEligibilityStatus.EligibleButBusy =>
-                $"Detected {gpu.Name}, but only {FormatOptionalSize(eligibility.AvailableFreeMemoryBytes)} of " +
-                $"{FormatSize(eligibility.RequiredFreeMemoryBytes)} required GPU memory is currently free. " +
-                "Close GPU applications and retry setup.",
+                $"Only {FormatOptionalSize(eligibility.AvailableFreeMemoryBytes)} of " +
+                $"{FormatSize(eligibility.RequiredFreeMemoryBytes)} GPU memory is free. Close GPU apps and retry.",
             _ => DescribeLocalAiUnavailable(eligibility),
         };
         LocalAiEngineDetailText.Text =
-            "llama-server for Windows; " +
-            $"{FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))} verified download";
+            $"llama-server for Windows · {FormatSize(plan.Runtime.Artifacts.Sum(artifact => artifact.SizeBytes))}";
         LocalAiModelDetailText.Text =
-            $"{plan.Model.DisplayName}, {FormatSize(plan.Model.Weights.SizeBytes)} from Hugging Face";
+            $"{SetupReviewSummaryBuilder.DisplayModelName(plan.Model)} · {FormatSize(plan.Model.Weights.SizeBytes)}";
         LocalAiSettingsDetailText.Text =
-            $"{plan.Model.Recipe.ContextTokens / 1024}K context, FP16 KV cache, full CUDA offload, loads on first request";
+            $"{plan.Model.Recipe.ContextTokens / 1024}K context · CUDA enabled · loads when first used";
         UpdatePrimaryButtonState();
     }
 

@@ -103,13 +103,26 @@ public static class SetupReviewSummaryBuilder
         {
             LocalAiEnabled = config.LocalAi.Enabled,
             LocalAiTitle = config.LocalAi.Enabled
-                ? $"Local AI verified with {localAiModel.DisplayName}"
+                ? $"{DisplayModelName(localAiModel)} installed"
                 : null,
             LocalAiDescription = config.LocalAi.Enabled
-                ? "llama-server · " +
-                    $"{localAiModel.Recipe.ContextTokens / 1024}K context · FP16 KV · full CUDA offload · loads on first request"
+                ? "Local AI is ready to use"
                 : null,
         };
+    }
+
+    public static string DisplayModelName(LocalModelInfo model)
+    {
+        string displayName = model.DisplayName;
+        int detailStart = displayName.IndexOf(" (", StringComparison.Ordinal);
+        if (detailStart >= 0)
+            displayName = displayName[..detailStart];
+        if (displayName.StartsWith("Qwen", StringComparison.Ordinal) &&
+            displayName.Length > 4 && char.IsDigit(displayName[4]))
+        {
+            displayName = displayName.Insert(4, " ");
+        }
+        return displayName;
     }
 
     private static string Display(string? value, string fallback)

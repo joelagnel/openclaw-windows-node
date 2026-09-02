@@ -76,7 +76,7 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
     public string Endpoint => _runtimeSnapshot.Endpoint.ToString();
     public string? ProcessId => _runtimeSnapshot.ProcessId?.ToString();
     public string? EngineDetail => _runtimeSnapshot.Detail;
-    public string? ModelName => LocalModelCatalog.Find(_runtimeSnapshot.ModelId)?.DisplayName ??
+    public string? ModelName => LocalModelCatalog.FindInstalled(_runtimeSnapshot.ModelId)?.DisplayName ??
         _runtimeSnapshot.ModelId;
     public string ContextLengthText => _runtimeSnapshot.ContextLength is { } tokens
         ? FormatContext(tokens)

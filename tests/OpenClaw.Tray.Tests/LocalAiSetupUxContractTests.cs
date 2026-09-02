@@ -95,7 +95,7 @@ public sealed class LocalAiSetupUxContractTests
             "Pages",
             "CapabilitiesPage.xaml.cs"));
         string infoBar = ExtractElement(xaml, "LocalAiUnavailablePanel", "</InfoBar>");
-        string networkingInfoBar = ExtractElement(xaml, "LocalAiNetworkingConsentPanel", "/>");
+        string networkingInfoBar = ExtractElement(xaml, "LocalAiNetworkingConsentPanel", "</InfoBar>");
 
         Assert.Contains("Title=\"Local AI is not available\"", xaml);
         Assert.Contains("Severity=\"Informational\"", xaml);
@@ -143,11 +143,19 @@ public sealed class LocalAiSetupUxContractTests
         Assert.Contains("LocalAiOptionContent.Opacity = isAvailable ? 1 : 0.55", source);
         Assert.Contains("LocalAiToggle.IsEnabled = isAvailable", source);
         Assert.Contains("LocalAiModelSelector.IsEnabled = isAvailable", source);
+        Assert.Contains("LocalAiNetworkingConsentCheckBox.IsEnabled = isAvailable", source);
         Assert.Contains("Title=\"WSL networking change required\"", networkingInfoBar);
-        Assert.Contains("Message=\"Setup will enable mirrored WSL networking", networkingInfoBar);
-        Assert.DoesNotContain("<CheckBox", networkingInfoBar);
-        Assert.DoesNotContain("LocalAiNetworkingConsentCheckBox", source);
-        Assert.Contains("config.LocalAi.WslMirroredNetworkingConsent = config.LocalAi.Enabled", source);
+        // Enabling Local AI must never imply consent on its own: the user has to
+        // affirmatively accept the global .wslconfig rewrite and one-time WSL shutdown.
+        Assert.Contains("<CheckBox", networkingInfoBar);
+        Assert.Contains("LocalAiNetworkingConsentCheckBox", networkingInfoBar);
+        Assert.DoesNotContain("config.LocalAi.WslMirroredNetworkingConsent = config.LocalAi.Enabled", source);
+        Assert.DoesNotContain("config.LocalAi.WslMirroredNetworkingConsent = true", source);
+        Assert.Contains(
+            "config.LocalAi.WslMirroredNetworkingConsent =\r\n            config.LocalAi.Enabled &&\r\n" +
+            "            _localAiNetworkingConsentRequired &&\r\n" +
+            "            LocalAiNetworkingConsentCheckBox.IsChecked == true;",
+            source);
         Assert.Contains("bytes / (1024d * 1024d * 1024d)", source);
         Assert.Contains("GiB", source);
         Assert.Contains("loads on first request", source);
@@ -526,11 +534,13 @@ public sealed class LocalAiSetupUxContractTests
             "RestoreLocalAiToggleAsPendingStateEscapeHatch();");
 
         // Continue's gate must not special-case pending availability: it only ever short-circuits
-        // on the toggle being off, or requires a fully resolved, eligible selection.
+        // on the toggle being off, or requires a fully resolved, eligible, consented state.
         string primaryButtonMethod = ExtractMethod(source, "private void UpdatePrimaryButtonState");
         Assert.DoesNotContain("_localAiAvailability", primaryButtonMethod);
         Assert.Contains("LocalAiToggle.IsOn != true ||", primaryButtonMethod);
-        Assert.Contains("_localAiSelectionEligible;", primaryButtonMethod);
+        Assert.Contains(
+            "(_localAiSelectionEligible &&\r\n             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));",
+            primaryButtonMethod);
     }
 
     /// <summary>

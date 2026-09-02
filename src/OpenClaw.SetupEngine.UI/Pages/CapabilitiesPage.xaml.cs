@@ -23,10 +23,11 @@ public sealed partial class CapabilitiesPage : Page
     private bool _suppressProfile;
     private bool _suppressLocalAiToggle;
     private bool _suppressLocalAiSelection;
+    private bool _suppressLocalAiConsent;
     private bool _skipPermissions;
     private bool _skipWizardWithoutLocalAi;
     private bool _localAiSelectionEligible;
-    private bool _localAiNetworkingChangeRequired;
+    private bool _localAiNetworkingConsentRequired;
     private HostHardwareInfo? _localAiHardware;
     private string? _localAiRecommendedModelId;
     private WslGlobalConfigStatus? _localAiNetworkingStatus;
@@ -245,7 +246,10 @@ public sealed partial class CapabilitiesPage : Page
             : null;
         config.LocalAi.Enabled = LocalAiToggle.IsOn == true;
         config.SkipWizard = config.LocalAi.Enabled || _skipWizardWithoutLocalAi;
-        config.LocalAi.WslMirroredNetworkingConsent = config.LocalAi.Enabled;
+        config.LocalAi.WslMirroredNetworkingConsent =
+            config.LocalAi.Enabled &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
     }
 
     private void ApplySetupReviewSummary(SetupConfig config)
@@ -564,6 +568,7 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiOptionContent.Opacity = isAvailable ? 1 : 0.55;
         LocalAiToggle.IsEnabled = isAvailable;
         LocalAiModelSelector.IsEnabled = isAvailable;
+        LocalAiNetworkingConsentCheckBox.IsEnabled = isAvailable;
         AutomationProperties.SetHelpText(
             LocalAiOptionContent,
             isAvailable
@@ -670,6 +675,17 @@ public sealed partial class CapabilitiesPage : Page
         ApplySetupReviewSummary(_config);
     }
 
+    private void LocalAiNetworkingConsent_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressLocalAiConsent || _config is null)
+            return;
+        _config.LocalAi.WslMirroredNetworkingConsent =
+            LocalAiToggle.IsOn == true &&
+            _localAiNetworkingConsentRequired &&
+            LocalAiNetworkingConsentCheckBox.IsChecked == true;
+        UpdatePrimaryButtonState();
+    }
+
     private void UpdateLocalAiOptions(bool forceNetworkingConsent = false)
     {
         var config = _config!;
@@ -678,11 +694,12 @@ public sealed partial class CapabilitiesPage : Page
         config.SkipWizard = enabled || _skipWizardWithoutLocalAi;
         LocalAiDetailsPanel.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         LocalAiNetworkingInspectionError.Visibility = Visibility.Collapsed;
-        _localAiNetworkingChangeRequired = false;
+        _localAiNetworkingConsentRequired = false;
 
         if (!enabled)
         {
             LocalAiNetworkingConsentPanel.Visibility = Visibility.Collapsed;
+            SetLocalAiNetworkingConsent(false);
             config.LocalAi.WslMirroredNetworkingConsent = false;
             UpdatePrimaryButtonState();
             return;
@@ -692,11 +709,12 @@ public sealed partial class CapabilitiesPage : Page
         WslGlobalConfigStatus status = forceNetworkingConsent
             ? new(false, false)
             : _localAiNetworkingStatus ?? new(false, false);
-        _localAiNetworkingChangeRequired = !status.IsMirrored;
-        LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingChangeRequired
+        _localAiNetworkingConsentRequired = !status.IsMirrored;
+        LocalAiNetworkingConsentPanel.Visibility = _localAiNetworkingConsentRequired
             ? Visibility.Visible
             : Visibility.Collapsed;
-        config.LocalAi.WslMirroredNetworkingConsent = true;
+        SetLocalAiNetworkingConsent(false);
+        config.LocalAi.WslMirroredNetworkingConsent = false;
         UpdatePrimaryButtonState();
     }
 
@@ -740,6 +758,13 @@ public sealed partial class CapabilitiesPage : Page
         UpdatePrimaryButtonState();
     }
 
+    private void SetLocalAiNetworkingConsent(bool value)
+    {
+        _suppressLocalAiConsent = true;
+        LocalAiNetworkingConsentCheckBox.IsChecked = value;
+        _suppressLocalAiConsent = false;
+    }
+
     private void UpdatePrimaryButtonState()
     {
         // Local AI availability being merely pending (Checking/ProbeUnknown) must never let
@@ -751,7 +776,8 @@ public sealed partial class CapabilitiesPage : Page
         PrimaryButton.IsEnabled =
             _step != 3 ||
             LocalAiToggle.IsOn != true ||
-            _localAiSelectionEligible;
+            (_localAiSelectionEligible &&
+             (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
     }
 
     private static string FormatSize(long bytes) =>

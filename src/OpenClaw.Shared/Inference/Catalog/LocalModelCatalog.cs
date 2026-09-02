@@ -137,6 +137,11 @@ public static class LocalModelCatalog
     public const string Qwen38_27BModelId = "qwen3.8-27b-mtp-ud-q4-k-m";
     public const string Qwen35BModelId = "qwen3.6-35b-a3b-mtp-q4-k-m";
     public const string Qwen27BModelId = "qwen3.6-27b-mtp-q4-k-m";
+    /// <summary>
+    /// Retired from new installs. Retained only so an already-installed managed
+    /// Qwen3.5 9B receipt keeps resolving and launching across upgrade.
+    /// </summary>
+    public const string Qwen9BModelId = "qwen3.5-9b-mtp-q4-k-m";
     public const int NativeContextTokens = 262_144;
     public const int IntermediateContextTokens = 196_608;
     public const int ReducedContextTokens = 131_072;
@@ -162,6 +167,10 @@ public static class LocalModelCatalog
     private static readonly HuggingFaceRevisionSource s_qwen27BSource = new(
         "unsloth/Qwen3.6-27B-MTP-GGUF",
         "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace");
+
+    private static readonly HuggingFaceRevisionSource s_qwen9BSource = new(
+        "unsloth/Qwen3.5-9B-MTP-GGUF",
+        "9716a636ee4bddc3fed678220b7a33dd2a4160ae");
 
     private static readonly ReadOnlyCollection<LocalModelInfo> s_models = Array.AsReadOnly(
         new[]
@@ -225,11 +234,43 @@ public static class LocalModelCatalog
                 RecommendationPriority: 200),
         });
 
+    // Retired from new installs and never offered, recommended, or selectable.
+    // These entries exist only so an existing managed installation keeps
+    // resolving its own pinned receipt and launching after upgrade. Pins are
+    // reproduced exactly as they were installed; nothing is remapped.
+    private static readonly ReadOnlyCollection<LocalModelInfo> s_legacyModels = Array.AsReadOnly(
+        new[]
+        {
+            new LocalModelInfo(
+                Qwen9BModelId,
+                "Qwen3.5 9B (Q4_K_M)",
+                "Qwen3.5",
+                "Q4_K_M",
+                ModelArtifact(
+                    Qwen9BModelId,
+                    s_qwen9BSource,
+                    "Qwen3.5-9B-Q4_K_M.gguf",
+                    5_868_826_976,
+                    "e8dd94817e95d6c0939102049d068418269978377b13616c4726235e232841fe"),
+                Recipe(
+                    fullAttentionLayerCount: 8,
+                    keyValueHeadCount: 4,
+                    temperature: 1.0),
+                IsDefault: false,
+                IsExplicitAlternative: false,
+                SupportsVision: false,
+                RecommendationPriority: 0),
+        });
+
     private static readonly IReadOnlyDictionary<string, ReadOnlyCollection<LocalInferenceRunProfile>>
-        s_profilesByModel = s_models.ToDictionary(
-            model => model.Id,
-            model => Array.AsReadOnly(CreateProfiles(model)),
-            StringComparer.OrdinalIgnoreCase);
+        s_profilesByModel = s_models
+            .Select(model => (model, profiles: Array.AsReadOnly(CreateProfiles(model))))
+            .Concat(s_legacyModels
+                .Select(model => (model, profiles: Array.AsReadOnly(CreateLegacyProfiles(model)))))
+            .ToDictionary(
+                entry => entry.model.Id,
+                entry => entry.profiles,
+                StringComparer.OrdinalIgnoreCase);
 
     private static readonly ReadOnlyCollection<LocalModelInfo> s_explicitAlternatives =
         Array.AsReadOnly(s_models.Where(model => model.IsExplicitAlternative).ToArray());
@@ -287,6 +328,24 @@ public static class LocalModelCatalog
             ? null
             : s_models.SingleOrDefault(model => string.Equals(model.Id, id, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Resolves a model that an existing installation receipt may reference,
+    /// including retired entries that are no longer offered for new installs.
+    /// Use this only on installed-receipt validation, launch, and display
+    /// paths. Selection, recommendation, and eligibility must keep using
+    /// <see cref="Find"/> and <see cref="Models"/> so retired models are never
+    /// offered again.
+    /// </summary>
+    public static LocalModelInfo? FindInstalled(string? id) =>
+        Find(id) ??
+        (string.IsNullOrWhiteSpace(id)
+            ? null
+            : s_legacyModels.SingleOrDefault(model =>
+                string.Equals(model.Id, id, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>True when the id resolves only to a retired catalog entry.</summary>
+    public static bool IsLegacy(string? id) => Find(id) is null && FindInstalled(id) is not null;
+
     private static LocalInferenceRunProfile[] CreateProfiles(LocalModelInfo model) =>
     [
         Profile(model, NativeContextTokens, KvCachePrecision.F16),
@@ -297,6 +356,15 @@ public static class LocalModelCatalog
         Profile(model, ReducedContextTokens, KvCachePrecision.Q8_0),
         Profile(model, MinimumContextTokens, KvCachePrecision.F16),
         Profile(model, MinimumContextTokens, KvCachePrecision.Q8_0),
+    ];
+
+    // A retired model can only ever have been installed under the single
+    // pre-profile recipe: native context with F16 KV. Exposing exactly that
+    // profile keeps the existing receipt launchable while any other
+    // combination still fails receipt validation instead of being remapped.
+    private static LocalInferenceRunProfile[] CreateLegacyProfiles(LocalModelInfo model) =>
+    [
+        Profile(model, NativeContextTokens, KvCachePrecision.F16),
     ];
 
     private static LocalInferenceRunProfile Profile(

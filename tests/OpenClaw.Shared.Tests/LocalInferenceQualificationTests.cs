@@ -327,17 +327,53 @@ public class LocalInferenceQualificationTests
     [Fact]
     public void CudaProbe_PrefersTheDxgiBoundOverNvmlWhenBothDescribeTheDevice()
     {
-        // Conservative WDDM budget behavior must not regress where DXGI applies.
+        // Two sources answer different questions, so the conservative value wins
+        // and the decision cannot depend on which source resolved.
         var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (15_061L * MiB, 16_375L * MiB) };
         var dxgi = new StubDedicatedMemoryProbe(
             StubCudaDeviceReader.StubLuid,
             new GpuAdapterMemory(16_045L * MiB, 15_277L * MiB));
-        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(16_376L * MiB, 16_000L * MiB));
+        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(16_376L * MiB, 8_889L * MiB));
 
         GpuInfo gpu = Assert.Single(Probe(reader, dxgi, nvml).Gpus);
 
         Assert.Equal(16_045L * MiB, gpu.GpuVisibleMemoryBytes);
-        Assert.Equal(15_277L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+        Assert.Equal(8_889L * MiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_TakesTheSmallerDedicatedBoundWhenSourcesDisagree()
+    {
+        var reader = new StubCudaDeviceReader { DeviceCount = 1, Memory = (40 * GiB, 46 * GiB) };
+        var dxgi = new StubDedicatedMemoryProbe(
+            StubCudaDeviceReader.StubLuid,
+            new GpuAdapterMemory(24 * GiB, 20 * GiB));
+        var nvml = new StubNvmlMemoryProbe("GPU-stub", new GpuAdapterMemory(16 * GiB, 14 * GiB));
+
+        GpuInfo gpu = Assert.Single(Probe(reader, dxgi, nvml).Gpus);
+
+        Assert.Equal(16 * GiB, gpu.GpuVisibleMemoryBytes);
+        Assert.Equal(14 * GiB, gpu.FreeGpuVisibleMemoryBytes);
+    }
+
+    [Fact]
+    public void CudaProbe_JoinsTheNvmlBoundCaseInsensitivelyAcrossMultipleDevices()
+    {
+        var reader = new StubCudaDeviceReader
+        {
+            DeviceCount = 2,
+            UuidByDevice = device => device == 0 ? "GPU-AAAA" : "GPU-BBBB",
+            Memory = (40 * GiB, 46 * GiB),
+            Luid = null,
+        };
+        var nvml = new StubNvmlMemoryProbe(
+            ("gpu-bbbb", new GpuAdapterMemory(20 * GiB, 18 * GiB)),
+            ("gpu-aaaa", new GpuAdapterMemory(12 * GiB, 10 * GiB)));
+
+        HostHardwareInfo hardware = Probe(reader, new StubDedicatedMemoryProbe(), nvml);
+
+        Assert.Equal(12 * GiB, hardware.Gpus[0].GpuVisibleMemoryBytes);
+        Assert.Equal(20 * GiB, hardware.Gpus[1].GpuVisibleMemoryBytes);
     }
 
     [Fact]
@@ -371,13 +407,23 @@ public class LocalInferenceQualificationTests
     [Fact]
     public void NvmlProbe_LoadsOnlyFullyQualifiedDriverOwnedLibraries()
     {
+        string[] allowedRoots =
+        [
+            Path.Combine(Environment.SystemDirectory, "nvml.dll"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "NVIDIA Corporation",
+                "NVSMI",
+                "nvml.dll"),
+        ];
+
         IReadOnlyList<string> candidates = NvmlDedicatedMemoryProbe.GetNvmlLibraryCandidates();
 
         Assert.NotEmpty(candidates);
         Assert.All(candidates, candidate =>
         {
             Assert.True(Path.IsPathFullyQualified(candidate));
-            Assert.Equal("nvml.dll", Path.GetFileName(candidate), ignoreCase: true);
+            Assert.Contains(candidate, allowedRoots, StringComparer.OrdinalIgnoreCase);
         });
     }
 
@@ -523,6 +569,12 @@ public class LocalInferenceQualificationTests
 
         public StubNvmlMemoryProbe(string uuid, GpuAdapterMemory memory) =>
             _memoryByUuid[uuid] = memory;
+
+        public StubNvmlMemoryProbe(params (string Uuid, GpuAdapterMemory Memory)[] entries)
+        {
+            foreach ((string uuid, GpuAdapterMemory memory) in entries)
+                _memoryByUuid[uuid] = memory;
+        }
 
         public IReadOnlyDictionary<string, GpuAdapterMemory> CaptureAdapterMemoryByUuid() => _memoryByUuid;
     }

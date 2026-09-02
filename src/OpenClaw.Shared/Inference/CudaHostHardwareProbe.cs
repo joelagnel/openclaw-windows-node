@@ -190,10 +190,11 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
     }
 
     /// <summary>
-    /// The dedicated-memory bound for one device. DXGI is preferred so the
-    /// conservative WDDM budget behavior is unchanged wherever it applies, and
-    /// NVML covers supported CUDA hosts that DXGI cannot describe. Both are
-    /// joined on device identity, never on adapter name.
+    /// The dedicated-memory bound for one device. Every source that identifies
+    /// this exact device contributes, and the most conservative value wins, so a
+    /// device is never admitted on a larger bound just because one source
+    /// happened to resolve first. Both joins are on device identity, never on
+    /// adapter name.
     /// </summary>
     private GpuAdapterMemory? ResolveAdapterMemory(
         int device,
@@ -201,19 +202,40 @@ public sealed class CudaHostHardwareProbe : IHostHardwareProbe
         IReadOnlyDictionary<long, GpuAdapterMemory> adapterMemoryByLuid,
         IReadOnlyDictionary<string, GpuAdapterMemory> adapterMemoryByUuid)
     {
+        GpuAdapterMemory? dxgiMemory = null;
         if (Read(() => _reader.TryReadDeviceLuid(device)) is { } luid &&
-            adapterMemoryByLuid.TryGetValue(luid, out GpuAdapterMemory? dxgiMemory) &&
-            dxgiMemory.DedicatedVideoMemoryBytes > 0)
+            adapterMemoryByLuid.TryGetValue(luid, out GpuAdapterMemory? byLuid) &&
+            byLuid.DedicatedVideoMemoryBytes > 0)
         {
-            return dxgiMemory;
+            dxgiMemory = byLuid;
         }
 
-        return stableId is { Length: > 0 } &&
-            adapterMemoryByUuid.TryGetValue(stableId, out GpuAdapterMemory? nvmlMemory) &&
-            nvmlMemory.DedicatedVideoMemoryBytes > 0
-            ? nvmlMemory
-            : null;
+        GpuAdapterMemory? nvmlMemory = null;
+        if (stableId is { Length: > 0 } &&
+            adapterMemoryByUuid.TryGetValue(stableId, out GpuAdapterMemory? byUuid) &&
+            byUuid.DedicatedVideoMemoryBytes > 0)
+        {
+            nvmlMemory = byUuid;
+        }
+
+        if (dxgiMemory is null)
+            return nvmlMemory;
+        if (nvmlMemory is null)
+            return dxgiMemory;
+
+        // DXGI reports this process's WDDM budget while NVML reports device-wide
+        // unallocated memory. They answer different questions, so taking the
+        // smaller of the two keeps the admission decision deterministic and
+        // conservative regardless of which sources a host exposes.
+        return new GpuAdapterMemory(
+            Math.Min(dxgiMemory.DedicatedVideoMemoryBytes, nvmlMemory.DedicatedVideoMemoryBytes),
+            MinimumOrNull(dxgiMemory.AvailableLocalBytes, nvmlMemory.AvailableLocalBytes));
     }
+
+    private static long? MinimumOrNull(long? left, long? right) =>
+        left is { } leftValue
+            ? right is { } rightValue ? Math.Min(leftValue, rightValue) : leftValue
+            : right;
 
     /// <summary>
     /// The adapter's own budget is the authority on how much memory this process

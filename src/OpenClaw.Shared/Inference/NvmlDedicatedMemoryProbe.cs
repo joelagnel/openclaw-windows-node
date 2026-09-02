@@ -18,13 +18,17 @@ internal interface INvmlDedicatedMemoryProbe
 /// </summary>
 /// <remarks>
 /// NVML reports dedicated device memory only, never the WDDM shared host pool,
-/// which makes it a safe admission bound. It is the fallback for supported CUDA
-/// hosts that DXGI cannot describe, including unified-memory DGX and Blackwell
-/// parts that report no dedicated video memory, TCC devices, and headless GPUs.
-/// On the DGX Spark recorded in <c>#1237</c> NVML reported 16,320 MiB while CUDA
-/// advertised 46,332 MiB, so this source predicts the allocation that actually
-/// failed there. DXGI stays preferred when present so existing conservative
-/// WDDM budget behavior is unchanged.
+/// which makes it a safe admission bound. It covers supported CUDA hosts that
+/// DXGI cannot describe, including TCC devices and headless GPUs. On the DGX
+/// Spark recorded in <c>#1237</c> NVML reported 16,320 MiB under Windows while
+/// CUDA advertised 46,332 MiB, so this source predicted the allocation that
+/// actually failed there.
+/// <para>
+/// This is a bound source, not a guarantee: a device whose driver returns
+/// <c>NOT_SUPPORTED</c> for memory info contributes nothing and stays retryable
+/// rather than over-qualified. MIG compute instances are out of scope, because
+/// this enumerates physical devices only.
+/// </para>
 /// </remarks>
 internal sealed class NvmlDedicatedMemoryProbe : INvmlDedicatedMemoryProbe
 {
@@ -65,15 +69,25 @@ internal sealed class NvmlDedicatedMemoryProbe : INvmlDedicatedMemoryProbe
                 memoryByUuid[uuid] = new GpuAdapterMemory((long)memory.Total, (long)memory.Free);
             }
         }
-        catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException or DllNotFoundException)
+        catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException or
+            DllNotFoundException or MarshalDirectiveException or SEHException)
         {
             // A driver without the expected NVML exports simply supplies no bound.
         }
         finally
         {
-            if (initialized && shutdown is not null)
+            try
             {
-                try { _ = shutdown(); } catch (EntryPointNotFoundException) { }
+                if (initialized && shutdown is not null)
+                    _ = shutdown();
+            }
+            catch (Exception ex) when (ex is EntryPointNotFoundException or MarshalDirectiveException or SEHException)
+            {
+                // Freeing the loader reference still has to happen.
+            }
+            finally
+            {
+                NativeLibrary.Free(library);
             }
         }
 

@@ -38,9 +38,9 @@ public sealed partial class ProgressPage : Page
     [
         ("preflight", "Check system and Local AI compatibility", ["validate-distro-path", "preflight-os", "preflight-local-ai-hardware", "preflight-wsl", "preflight-windows-tailscale"]),
         ("wsl-platform", "Prepare and verify WSL platform", ["ensure-wsl-platform"]),
-        ("local-ai-engine", "Install verified llama-server", ["acquire-local-ai-runtime"]),
-        ("local-ai-model", "Download verified model from Hugging Face", ["acquire-local-ai-model"]),
-        ("local-ai-verify", "Verify Local AI", ["persist-local-ai-manifest", "start-local-ai-runtime", "capture-local-ai-gpu-baseline", "verify-local-ai-inference", "verify-local-ai-gpu-load"]),
+        ("local-ai-engine", "Install local inference engine (llama-server)", ["acquire-local-ai-runtime"]),
+        ("local-ai-model", "Download model from Hugging Face", ["acquire-local-ai-model"]),
+        ("local-ai-verify", "Verify local inference", ["persist-local-ai-manifest", "start-local-ai-runtime", "capture-local-ai-gpu-baseline", "verify-local-ai-inference", "verify-local-ai-gpu-load"]),
         ("wsl-networking", "Configure WSL access to Local AI", ["configure-local-ai-wsl-networking"]),
         ("cleanup", "Removing existing gateway", ["cleanup-distro", "cleanup-gateway"]),
         ("port", "Checking gateway port", ["preflight-port"]),
@@ -70,7 +70,7 @@ public sealed partial class ProgressPage : Page
         _localDataDir = args?.LocalDataDir ?? SetupContext.ResolveLocalDataDir();
         TitleText.Text = _config.LocalAi.Enabled ? "Setting up OpenClaw and Local AI" : "Setting up OpenClaw";
         SubtitleText.Text = _config.LocalAi.Enabled
-            ? $"Creating {_config.DistroName}, installing llama-server, and preparing the selected model"
+            ? $"Creating {_config.DistroName}, installing the local inference engine, and preparing the selected model"
             : $"Creating {_config.DistroName} WSL instance";
 
         BuildStepRows();

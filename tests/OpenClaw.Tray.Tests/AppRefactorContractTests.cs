@@ -1173,8 +1173,8 @@ public sealed class AppRefactorContractTests
         AssertInOrder(
             code,
             "(\"wsl-platform\", \"Prepare and verify WSL platform\", [\"ensure-wsl-platform\"])",
-            "(\"local-ai-engine\", \"Install verified llama-server\"",
-            "(\"local-ai-model\", \"Download verified model from Hugging Face\"");
+            "(\"local-ai-engine\", \"Install local inference engine (llama-server)\"",
+            "(\"local-ai-model\", \"Download model from Hugging Face\"");
         Assert.Contains(
             "(\"wsl-networking\", \"Configure WSL access to Local AI\", [\"configure-local-ai-wsl-networking\"])",
             code);
@@ -1447,6 +1447,11 @@ public sealed class AppRefactorContractTests
         Assert.Contains("eligibility.RequiredTotalMemoryBytes", diagnostics);
         Assert.Contains("eligibility.DetectedTotalMemoryBytes", diagnostics);
         Assert.Contains("model weights, KV cache, and runtime workspace", resources);
+        Assert.Contains("SetupReviewSummaryBuilder.DisplayModelName(model)", source);
+        Assert.Contains("(isRecommended ? \" (Recommended)\" : string.Empty)", source);
+        Assert.Contains("Your {gpu.Name} has {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)} of memory.", source);
+        Assert.Contains("at full context.", source);
+        Assert.DoesNotContain(" ({FormatSize(model.Weights.SizeBytes)})", source);
         Assert.DoesNotContain("2 GiB runtime margin", source);
         Assert.DoesNotContain("HardwareProfile", source);
         Assert.DoesNotContain("RTX PRO 6000", source);

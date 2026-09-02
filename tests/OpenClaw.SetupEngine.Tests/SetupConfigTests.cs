@@ -426,9 +426,8 @@ public class SetupConfigTests : IDisposable
             Assert.Contains("CustomClaw", summary.ExactCommands);
             Assert.Contains("19999", summary.ExactCommands);
             Assert.Equal("CustomClaw · LAN:19999", summary.CompletionGatewaySummary);
-            Assert.StartsWith("llama-server · ", summary.LocalAiDescription, StringComparison.Ordinal);
-            Assert.DoesNotContain("immutable revision", summary.LocalAiDescription, StringComparison.Ordinal);
-            Assert.DoesNotContain("llama-server b", summary.LocalAiDescription, StringComparison.Ordinal);
+            Assert.Equal("Qwen 3.6 35B-A3B installed", summary.LocalAiTitle);
+            Assert.Equal("Local AI is ready to use", summary.LocalAiDescription);
         }
         finally
         {

@@ -644,8 +644,8 @@ public sealed partial class CapabilitiesPage : Page
                 StringComparison.OrdinalIgnoreCase);
             LocalAiModelSelector.Items.Add(new ComboBoxItem
             {
-                Content = $"{model.DisplayName} ({FormatSize(model.Weights.SizeBytes)})" +
-                    (isRecommended ? " - Recommended" : string.Empty),
+                Content = SetupReviewSummaryBuilder.DisplayModelName(model) +
+                    (isRecommended ? " (Recommended)" : string.Empty),
                 Tag = model.Id,
             });
             string? selectedModelId = _config!.LocalAi.SelectedModelId ?? _localAiRecommendedModelId;
@@ -740,8 +740,8 @@ public sealed partial class CapabilitiesPage : Page
         LocalAiHardwareStatusText.Text = eligibility.Status switch
         {
             LocalInferenceEligibilityStatus.Eligible =>
-                $"Detected {gpu.Name} with {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)}. " +
-                $"The selected model requires {FormatSize(eligibility.RequiredTotalMemoryBytes)}.",
+                $"Your {gpu.Name} has {FormatOptionalSize(eligibility.DetectedTotalMemoryBytes)} of memory. " +
+                $"The selected model requires {FormatSize(eligibility.RequiredTotalMemoryBytes)} at full context.",
             LocalInferenceEligibilityStatus.EligibleButBusy =>
                 $"Detected {gpu.Name}, but only {FormatOptionalSize(eligibility.AvailableFreeMemoryBytes)} of " +
                 $"{FormatSize(eligibility.RequiredFreeMemoryBytes)} required GPU memory is currently free. " +

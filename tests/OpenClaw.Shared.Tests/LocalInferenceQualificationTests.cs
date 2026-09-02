@@ -41,11 +41,6 @@ public class LocalInferenceQualificationTests
                 ContextTokens: LocalModelCatalog.MinimumContextTokens,
                 Precision: KvCachePrecision.F16,
                 RequiredBytes: 25_322_810_272L),
-            (TotalBytes: 16 * GiB, FreeBytes: 16 * GiB,
-                ModelId: LocalModelCatalog.Qwen9BModelId,
-                ContextTokens: LocalModelCatalog.ReducedContextTokens,
-                Precision: KvCachePrecision.F16,
-                RequiredBytes: 16_069_374_304L),
         };
         foreach (var testCase in cases)
         {
@@ -68,14 +63,28 @@ public class LocalInferenceQualificationTests
     }
 
     [Fact]
-    public void Evaluate_UnsetModelRejectsCapacityBelowSmallestCompleteRecipe()
+    public void Evaluate_UnsetModelRejects16GiBCapacity()
     {
         LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
-            Hardware(RuntimeArchitecture.X64, Gpu("NVIDIA arbitrary adapter", "GPU-10", 10, 10)));
+            Hardware(RuntimeArchitecture.X64, Gpu("NVIDIA arbitrary adapter", "GPU-16", 16, 16)));
 
         Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
         Assert.Equal(LocalInferenceEligibilityFailureCode.InsufficientGpuMemory, result.FailureCode);
-        Assert.Equal(LocalModelCatalog.Qwen9BModelId, result.Plan?.Model.Id);
+        Assert.Equal(LocalModelCatalog.Qwen38_27BModelId, result.Plan?.Model.Id);
+        Assert.DoesNotContain(LocalModelCatalog.Models, model => model.Id == "qwen3.5-9b-mtp-q4-k-m");
+    }
+
+    [Fact]
+    public void Evaluate_Removed16GiBModelIdIsUnknown()
+    {
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
+            Hardware(RuntimeArchitecture.X64, Gpu("NVIDIA arbitrary adapter", "GPU-32", 32, 32)),
+            "qwen3.5-9b-mtp-q4-k-m");
+
+        Assert.Equal(LocalInferenceEligibilityStatus.Unsupported, result.Status);
+        Assert.Equal(LocalInferenceEligibilityFailureCode.CatalogSelectionFailed, result.FailureCode);
+        Assert.Equal(LocalInferenceSelectionFailureCode.UnknownModel, result.SelectionFailureCode);
+        Assert.Null(result.Plan);
     }
 
     [Fact]
@@ -95,10 +104,6 @@ public class LocalInferenceQualificationTests
                 Status: LocalInferenceEligibilityStatus.Eligible,
                 ContextTokens: LocalModelCatalog.IntermediateContextTokens,
                 Precision: KvCachePrecision.Q8_0, RequiredBytes: 31_895_889_024L),
-            (ModelId: LocalModelCatalog.Qwen9BModelId, TotalGiB: 32,
-                Status: LocalInferenceEligibilityStatus.Eligible,
-                ContextTokens: LocalModelCatalog.NativeContextTokens,
-                Precision: KvCachePrecision.F16, RequiredBytes: 24_122_437_984L),
             (ModelId: LocalModelCatalog.Qwen35BModelId, TotalGiB: 16,
                 Status: LocalInferenceEligibilityStatus.Unsupported,
                 ContextTokens: LocalModelCatalog.MinimumContextTokens,
@@ -126,7 +131,6 @@ public class LocalInferenceQualificationTests
     [InlineData(LocalModelCatalog.Qwen35BModelId, 5_120, 512, 2_720, 272, 8)]
     [InlineData(LocalModelCatalog.Qwen38_27BModelId, 16_384, 1_024, 8_704, 544, 8)]
     [InlineData(LocalModelCatalog.Qwen27BModelId, 16_384, 1_024, 8_704, 544, 8)]
-    [InlineData(LocalModelCatalog.Qwen9BModelId, 8_192, 1_024, 4_352, 544, 8)]
     public void GetRequiredMemoryBytes_IncludesRecipeKvCacheAndWorkspace(
         string modelId,
         long expectedF16CacheMiB,
@@ -159,11 +163,11 @@ public class LocalInferenceQualificationTests
     {
         GpuInfo unsupported = Gpu("NVIDIA old", "GPU-old", 48, 48) with { DriverVersion = "614.99" };
         GpuInfo busy = Gpu("NVIDIA busy", "GPU-busy", 32, 1);
-        GpuInfo eligible = Gpu("NVIDIA ready", "GPU-ready", 24, 24);
+        GpuInfo eligible = Gpu("NVIDIA ready", "GPU-ready", 32, 32);
 
         LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
             Hardware(RuntimeArchitecture.X64, unsupported, busy, eligible),
-            LocalModelCatalog.Qwen9BModelId);
+            LocalModelCatalog.Qwen38_27BModelId);
 
         Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
         Assert.Equal("GPU-ready", result.SelectedGpu?.StableId);
@@ -190,13 +194,13 @@ public class LocalInferenceQualificationTests
     [Fact]
     public void Evaluate_RanksEligibleAdaptersByFreeThenTotalThenUuid()
     {
-        GpuInfo moreTotal = Gpu("NVIDIA total", "GPU-z", 48, 24);
-        GpuInfo moreFree = Gpu("NVIDIA free", "GPU-b", 32, 26);
-        GpuInfo sameFreeAndTotalLowerUuid = Gpu("NVIDIA tie", "GPU-a", 32, 26);
+        GpuInfo moreTotal = Gpu("NVIDIA total", "GPU-z", 64, 42);
+        GpuInfo moreFree = Gpu("NVIDIA free", "GPU-b", 48, 43);
+        GpuInfo sameFreeAndTotalLowerUuid = Gpu("NVIDIA tie", "GPU-a", 48, 43);
 
         LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
             Hardware(RuntimeArchitecture.X64, moreTotal, moreFree, sameFreeAndTotalLowerUuid),
-            LocalModelCatalog.Qwen9BModelId);
+            LocalModelCatalog.Qwen38_27BModelId);
 
         Assert.Equal("GPU-a", result.SelectedGpu?.StableId);
     }

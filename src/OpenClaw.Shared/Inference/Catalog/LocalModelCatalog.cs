@@ -137,7 +137,6 @@ public static class LocalModelCatalog
     public const string Qwen38_27BModelId = "qwen3.8-27b-mtp-ud-q4-k-m";
     public const string Qwen35BModelId = "qwen3.6-35b-a3b-mtp-q4-k-m";
     public const string Qwen27BModelId = "qwen3.6-27b-mtp-q4-k-m";
-    public const string Qwen9BModelId = "qwen3.5-9b-mtp-q4-k-m";
     public const int NativeContextTokens = 262_144;
     public const int IntermediateContextTokens = 196_608;
     public const int ReducedContextTokens = 131_072;
@@ -163,10 +162,6 @@ public static class LocalModelCatalog
     private static readonly HuggingFaceRevisionSource s_qwen27BSource = new(
         "unsloth/Qwen3.6-27B-MTP-GGUF",
         "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace");
-
-    private static readonly HuggingFaceRevisionSource s_qwen9BSource = new(
-        "unsloth/Qwen3.5-9B-MTP-GGUF",
-        "9716a636ee4bddc3fed678220b7a33dd2a4160ae");
 
     private static readonly ReadOnlyCollection<LocalModelInfo> s_models = Array.AsReadOnly(
         new[]
@@ -228,25 +223,6 @@ public static class LocalModelCatalog
                 IsExplicitAlternative: true,
                 SupportsVision: false,
                 RecommendationPriority: 200),
-            new LocalModelInfo(
-                Qwen9BModelId,
-                "Qwen3.5 9B (Q4_K_M)",
-                "Qwen3.5",
-                "Q4_K_M",
-                ModelArtifact(
-                    Qwen9BModelId,
-                    s_qwen9BSource,
-                    "Qwen3.5-9B-Q4_K_M.gguf",
-                    5_868_826_976,
-                    "e8dd94817e95d6c0939102049d068418269978377b13616c4726235e232841fe"),
-                Recipe(
-                    fullAttentionLayerCount: 8,
-                    keyValueHeadCount: 4,
-                    temperature: 1.0),
-                IsDefault: false,
-                IsExplicitAlternative: true,
-                SupportsVision: false,
-                RecommendationPriority: 100),
         });
 
     private static readonly IReadOnlyDictionary<string, ReadOnlyCollection<LocalInferenceRunProfile>>

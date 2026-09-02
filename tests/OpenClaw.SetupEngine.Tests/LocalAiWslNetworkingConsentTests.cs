@@ -21,7 +21,8 @@ public sealed class LocalAiWslNetworkingConsentTests
         byte[] before = await File.ReadAllBytesAsync(configPath);
 
         var manager = new RecordingManager(configPath);
-        SetupContext context = CreateContext(temp.Path, consent: false);
+        var commands = new RefusingCommandRunner();
+        SetupContext context = CreateContext(temp.Path, consent: false, commands);
         var step = new ConfigureLocalAiWslNetworkingStep(_ => manager);
 
         StepResult result = await step.ExecuteAsync(context, CancellationToken.None);
@@ -29,6 +30,8 @@ public sealed class LocalAiWslNetworkingConsentTests
         Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
         Assert.False(manager.ApplyCalled);
         Assert.False(manager.RestoreCalled);
+        // No process was launched at all, so no global wsl.exe --shutdown was issued.
+        Assert.Empty(commands.Invocations);
         Assert.Equal(before, await File.ReadAllBytesAsync(configPath));
         Assert.Equal(original, await File.ReadAllTextAsync(configPath));
         // Denial must not leave a backup or staged copy behind either.
@@ -43,8 +46,9 @@ public sealed class LocalAiWslNetworkingConsentTests
         await File.WriteAllTextAsync(configPath, "[wsl2]\r\nnetworkingMode=NAT\r\n");
 
         var manager = new RecordingManager(configPath);
+        var commands = new RefusingCommandRunner();
         // Local AI is enabled, but consent was never granted.
-        SetupContext context = CreateContext(temp.Path, consent: false);
+        SetupContext context = CreateContext(temp.Path, consent: false, commands);
         Assert.True(context.Config.LocalAi.Enabled);
         Assert.False(context.Config.LocalAi.WslMirroredNetworkingConsent);
 
@@ -53,9 +57,13 @@ public sealed class LocalAiWslNetworkingConsentTests
 
         Assert.Equal(StepOutcome.FailedTerminal, result.Outcome);
         Assert.False(manager.ApplyCalled);
+        Assert.Empty(commands.Invocations);
     }
 
-    private static SetupContext CreateContext(string localDataDirectory, bool consent)
+    private static SetupContext CreateContext(
+        string localDataDirectory,
+        bool consent,
+        ICommandRunner commands)
     {
         var config = new SetupConfig
         {
@@ -70,9 +78,47 @@ public sealed class LocalAiWslNetworkingConsentTests
             config,
             logger,
             new TransactionJournal(filePath: null),
-            new CommandRunner(logger),
+            commands,
             CancellationToken.None,
             localDataDir: localDataDirectory);
+    }
+
+    /// <summary>
+    /// Fails the test instead of launching a real process. The denied-consent path
+    /// must never reach <c>wsl.exe --shutdown</c>, so any invocation is a defect.
+    /// </summary>
+    private sealed class RefusingCommandRunner : ICommandRunner
+    {
+        public List<string> Invocations { get; } = [];
+
+        public Task<CommandResult> RunAsync(
+            string executable,
+            string[] arguments,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            string? workingDirectory = null,
+            string? stdinInput = null,
+            CancellationToken ct = default,
+            Stream? stdinStream = null)
+        {
+            Invocations.Add($"{executable} {string.Join(' ', arguments)}");
+            throw new InvalidOperationException(
+                $"The step must not run '{executable}' without explicit consent.");
+        }
+
+        public Task<CommandResult> RunInWslAsync(
+            string distroName,
+            string command,
+            TimeSpan timeout,
+            IReadOnlyDictionary<string, string>? environment = null,
+            CancellationToken ct = default,
+            string? user = null,
+            bool inputViaStdin = false)
+        {
+            Invocations.Add($"wsl:{distroName} {command}");
+            throw new InvalidOperationException(
+                "The step must not run WSL commands without explicit consent.");
+        }
     }
 
     private sealed class RecordingManager(string configPath) : IWslGlobalConfigManager

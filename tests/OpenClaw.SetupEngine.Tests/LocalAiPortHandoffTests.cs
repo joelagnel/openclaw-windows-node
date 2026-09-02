@@ -66,7 +66,7 @@ public sealed class LocalAiPortHandoffTests
             {
                 Enabled = true,
                 Port = 0,
-                SelectedModelId = LocalModelCatalog.Qwen9BModelId,
+                SelectedModelId = LocalModelCatalog.Qwen38_27BModelId,
             },
             temp.Path);
         context.LocalAiEligibility = LocalInferenceEligibility.Evaluate(

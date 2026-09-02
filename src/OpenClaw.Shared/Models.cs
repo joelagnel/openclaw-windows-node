@@ -1003,6 +1003,7 @@ public class NodeCapabilityHealthInfo
                 .ToList(),
             Permissions = new Dictionary<string, bool>(node.Permissions, StringComparer.OrdinalIgnoreCase),
             SafeApprovedCommands = CommandCenterCommandGroups.SafeCompanionCommands
+                .Concat(OllamaNodeCommandPolicy.ReadOnlyCommands)
                 .Where(commandSet.Contains)
                 .ToList(),
             PrivacySensitiveApprovedCommands = CommandCenterCommandGroups.DangerousCommands
@@ -1022,7 +1023,8 @@ public class NodeCapabilityHealthInfo
                 continue;
 
             info.PermissionBlockedCommands.Add(command);
-            if (CommandCenterCommandGroups.SafeCompanionCommandSet.Contains(command))
+            if (CommandCenterCommandGroups.SafeCompanionCommandSet.Contains(command) ||
+                OllamaNodeCommandPolicy.ReadOnlyCommandSet.Contains(command))
                 info.MissingSafeAllowlistCommands.Add(command);
             else if (CommandCenterCommandGroups.DangerousCommandSet.Contains(command))
                 info.MissingDangerousAllowlistCommands.Add(command);
@@ -1182,7 +1184,8 @@ public static class CommandCenterCommandGroups
         "tts.status",
         "stt.transcribe",
         "stt.listen",
-        "stt.status"
+        "stt.status",
+        .. OllamaNodeCommandPolicy.SensitiveCommands
     ];
 
     public static readonly FrozenSet<string> DangerousCommandSet =

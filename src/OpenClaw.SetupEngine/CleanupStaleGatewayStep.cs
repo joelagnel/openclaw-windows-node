@@ -40,6 +40,7 @@ public sealed class CleanupStaleGatewayStep : SetupStep
         // can exist when an older unmarked record sorts before managed records.
         var registry = new GatewayRegistry(ctx.DataDir, logger: new SetupOpenClawLogger(ctx.Logger));
         registry.Load();
+        var staleRecords = new List<GatewayRecord>();
         foreach (var existing in registry.FindAllByUrl(ctx.GatewayUrl!))
         {
             // Preserve non-local records and SSH-tunneled gateways — they may be
@@ -51,17 +52,31 @@ public sealed class CleanupStaleGatewayStep : SetupStep
             }
             else
             {
-                // Clean identity directory
-                var identityDir = registry.GetIdentityDirectory(existing.Id);
+                staleRecords.Add(existing);
+            }
+        }
+
+        if (staleRecords.Count > 0)
+        {
+            foreach (var staleRecord in staleRecords)
+                registry.Remove(staleRecord.Id);
+
+            // Persist the complete record and active-ID transition before deleting
+            // identities so the durable registry never references a missing identity.
+            registry.Save();
+
+            foreach (var staleRecord in staleRecords)
+            {
+                var identityDir = registry.GetIdentityDirectory(staleRecord.Id);
                 if (Directory.Exists(identityDir))
                 {
                     Directory.Delete(identityDir, recursive: true);
                     ctx.Logger.Info($"Deleted stale identity directory: {identityDir}");
                 }
-                registry.Remove(existing.Id);
-                registry.Save();
-                ctx.Logger.Info($"Removed stale gateway record for {ctx.GatewayUrl}");
             }
+
+            ctx.Logger.Info(
+                $"Removed {staleRecords.Count} stale gateway record(s) for {ctx.GatewayUrl}");
         }
 
         await Task.CompletedTask;

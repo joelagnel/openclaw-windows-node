@@ -1640,6 +1640,7 @@ public class SetupStepsTests : IDisposable
             IsLocal = true,
             SetupManagedDistroName = ctx.DistroName,
         });
+        registry.SetActive("local-gw-with-identity");
         registry.Save();
 
         // Create an identity directory
@@ -1650,7 +1651,107 @@ public class SetupStepsTests : IDisposable
         var step = new CleanupStaleGatewayStep();
         await step.ExecuteAsync(ctx, CancellationToken.None);
 
+        var reloaded = new GatewayRegistry(_tempDir);
+        reloaded.Load();
+        Assert.Null(reloaded.GetById("local-gw-with-identity"));
+        Assert.Null(reloaded.ActiveGatewayId);
         Assert.False(Directory.Exists(identityDir));
+    }
+
+    [Fact]
+    public async Task CleanupStaleGateway_MixedRecords_RemovesAllManagedDuplicatesAndPreservesProtectedRecords()
+    {
+        var ctx = CreateContext();
+        var gatewayUrl = ctx.GatewayUrl!;
+        var registry = new GatewayRegistry(_tempDir);
+        registry.Load();
+
+        var preservedRecords = new[]
+        {
+            new GatewayRecord
+            {
+                Id = "00-unmanaged-active",
+                Url = gatewayUrl,
+                FriendlyName = "Manual localhost",
+                IsLocal = true,
+            },
+            new GatewayRecord
+            {
+                Id = "01-other-distro",
+                Url = "ws://127.0.0.1:18789",
+                IsLocal = true,
+                SetupManagedDistroName = "ProtectedGateway",
+            },
+            new GatewayRecord
+            {
+                Id = "02-remote",
+                Url = gatewayUrl,
+                IsLocal = false,
+                SetupManagedDistroName = ctx.DistroName,
+            },
+            new GatewayRecord
+            {
+                Id = "03-ssh-tunneled",
+                Url = gatewayUrl,
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+                SshTunnel = new SshTunnelConfig("user", "remote.host", 18789, 18789),
+            },
+            new GatewayRecord
+            {
+                Id = "04-non-equivalent",
+                Url = "ws://localhost:18790",
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+            },
+        };
+        var staleRecords = new[]
+        {
+            new GatewayRecord
+            {
+                Id = "10-managed-localhost",
+                Url = gatewayUrl,
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+            },
+            new GatewayRecord
+            {
+                Id = "20-managed-loopback-alias",
+                Url = "http://127.0.0.1:18789",
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+            },
+        };
+
+        foreach (var record in preservedRecords.Concat(staleRecords))
+        {
+            registry.AddOrUpdate(record);
+            var identityDir = registry.GetIdentityDirectory(record.Id);
+            Directory.CreateDirectory(identityDir);
+            File.WriteAllText(Path.Combine(identityDir, "identity.marker"), record.Id);
+        }
+        registry.SetActive(preservedRecords[0].Id);
+        registry.Save();
+
+        var result = await new CleanupStaleGatewayStep().ExecuteAsync(ctx, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var reloaded = new GatewayRegistry(_tempDir);
+        reloaded.Load();
+        Assert.Equal(
+            preservedRecords.Select(record => record.Id),
+            reloaded.GetAll().Select(record => record.Id));
+        Assert.Equal(preservedRecords[0].Id, reloaded.ActiveGatewayId);
+        foreach (var record in preservedRecords)
+        {
+            Assert.Equal(
+                record.Id,
+                File.ReadAllText(Path.Combine(
+                    reloaded.GetIdentityDirectory(record.Id),
+                    "identity.marker")));
+        }
+        foreach (var record in staleRecords)
+            Assert.False(Directory.Exists(reloaded.GetIdentityDirectory(record.Id)));
     }
 
     [Fact]

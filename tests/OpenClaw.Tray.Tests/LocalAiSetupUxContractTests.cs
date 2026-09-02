@@ -168,6 +168,31 @@ public sealed class LocalAiSetupUxContractTests
     }
 
     /// <summary>
+    /// CapabilitiesPage.xaml.cs overwrites InstallDistroTitleText/InstallDistroDetailText at
+    /// runtime with SetupReviewSummaryBuilder's DistroTitle/DistroDescription
+    /// (src/OpenClaw.SetupEngine/SetupReviewSummary.cs), so the XAML values below are only a
+    /// design-time placeholder. A prior revision of this PR updated only the XAML text without
+    /// updating the builder, so the app kept rendering the old copy despite the source diff
+    /// looking correct. This pins the placeholder text so it stays a visible, reviewable
+    /// reminder to keep both in sync; SetupConfigTests.SetupReviewSummary_DistroTitleAndDescription_MatchSimplifiedReviewCopy
+    /// pins the runtime/builder side to the same literal values.
+    /// </summary>
+    [Fact]
+    public void CapabilitiesReview_InstallDistroCard_UsesSimplifiedCopy()
+    {
+        string root = TestRepositoryPaths.GetRepositoryRoot();
+        string xaml = File.ReadAllText(Path.Combine(
+            root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml"));
+
+        Assert.Contains(
+            "<TextBlock x:Name=\"InstallDistroTitleText\" Text=\"Install Ubuntu 24.04 in WSL\"",
+            xaml);
+        Assert.Contains("Text=\"Creates a separate OpenClawGateway instance. Uses several GB.\"", xaml);
+        Assert.DoesNotContain("Install an isolated", xaml);
+        Assert.DoesNotContain("Separate from any Linux distributions you already have", xaml);
+    }
+
+    /// <summary>
     /// The "is Local AI unavailable" gate and the recommended/selected model must be decided
     /// from device-level eligibility (the best catalog model this hardware can run), not from
     /// the currently configured SelectedModelId. A stale/removed model, or one that exists but

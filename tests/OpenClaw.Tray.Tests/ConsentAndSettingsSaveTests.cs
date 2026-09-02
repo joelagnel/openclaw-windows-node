@@ -68,14 +68,17 @@ public class ConsentAndSettingsSaveTests
             var settings = new SettingsManager(tempDir);
             Assert.False(settings.ScreenRecordingConsentGiven);
             Assert.False(settings.CameraRecordingConsentGiven);
+            Assert.False(settings.LocationConsentGiven);
 
             settings.ScreenRecordingConsentGiven = true;
             settings.CameraRecordingConsentGiven = true;
+            settings.LocationConsentGiven = true;
             settings.Save();
 
             var reloaded = new SettingsManager(tempDir);
             Assert.True(reloaded.ScreenRecordingConsentGiven);
             Assert.True(reloaded.CameraRecordingConsentGiven);
+            Assert.True(reloaded.LocationConsentGiven);
         }
         finally
         {

@@ -52,6 +52,7 @@ public record class SettingsData
     public bool ScreenRecordingConsentGiven { get; set; } = false;
     public bool CameraRecordingConsentGiven { get; set; } = false;
     public bool NodeLocationEnabled { get; set; } = true;
+    public bool LocationConsentGiven { get; set; } = false;
     public bool NodeBrowserProxyEnabled { get; set; } = true;
 
     /// <summary>

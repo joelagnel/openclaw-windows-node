@@ -1755,6 +1755,70 @@ public class SetupStepsTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanupStaleGateway_IdentityDeleteFailure_RestoresOnlyFailedRecordForRetry()
+    {
+        var ctx = CreateContext();
+        var registry = new GatewayRegistry(_tempDir);
+        registry.Load();
+        foreach (var id in new[] { "blocked-managed", "clean-managed" })
+        {
+            registry.AddOrUpdate(new GatewayRecord
+            {
+                Id = id,
+                Url = ctx.GatewayUrl!,
+                IsLocal = true,
+                SetupManagedDistroName = ctx.DistroName,
+            });
+            var identityDir = registry.GetIdentityDirectory(id);
+            Directory.CreateDirectory(identityDir);
+            File.WriteAllText(Path.Combine(identityDir, "identity.marker"), id);
+        }
+        registry.SetActive("blocked-managed");
+        registry.Save();
+
+        var blockedIdentityPath = Path.Combine(
+            registry.GetIdentityDirectory("blocked-managed"),
+            "identity.marker");
+        await using (File.Open(
+            blockedIdentityPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.None))
+        {
+            var error = await Assert.ThrowsAsync<AggregateException>(
+                () => new CleanupStaleGatewayStep().ExecuteAsync(
+                    ctx,
+                    CancellationToken.None));
+
+            Assert.Contains(
+                "registry records were restored",
+                error.Message,
+                StringComparison.Ordinal);
+            var afterFailure = new GatewayRegistry(_tempDir);
+            afterFailure.Load();
+            Assert.NotNull(afterFailure.GetById("blocked-managed"));
+            Assert.Null(afterFailure.GetById("clean-managed"));
+            Assert.Equal("blocked-managed", afterFailure.ActiveGatewayId);
+            Assert.True(Directory.Exists(
+                afterFailure.GetIdentityDirectory("blocked-managed")));
+            Assert.False(Directory.Exists(
+                afterFailure.GetIdentityDirectory("clean-managed")));
+        }
+
+        var retry = await new CleanupStaleGatewayStep().ExecuteAsync(
+            ctx,
+            CancellationToken.None);
+
+        Assert.True(retry.IsSuccess);
+        var afterRetry = new GatewayRegistry(_tempDir);
+        afterRetry.Load();
+        Assert.Empty(afterRetry.GetAll());
+        Assert.Null(afterRetry.ActiveGatewayId);
+        Assert.False(Directory.Exists(
+            afterRetry.GetIdentityDirectory("blocked-managed")));
+    }
+
+    [Fact]
     public async Task CleanupStaleGateway_SkippedWhenCleanBeforeRunFalse()
     {
         var ctx = CreateContext(new SetupConfig { CleanBeforeRun = false });

@@ -58,6 +58,7 @@ public sealed class CleanupStaleGatewayStep : SetupStep
 
         if (staleRecords.Count > 0)
         {
+            var originalActiveId = registry.ActiveGatewayId;
             foreach (var staleRecord in staleRecords)
                 registry.Remove(staleRecord.Id);
 
@@ -65,14 +66,45 @@ public sealed class CleanupStaleGatewayStep : SetupStep
             // identities so the durable registry never references a missing identity.
             registry.Save();
 
+            var cleanupFailures = new List<(GatewayRecord Record, Exception Error)>();
             foreach (var staleRecord in staleRecords)
             {
                 var identityDir = registry.GetIdentityDirectory(staleRecord.Id);
                 if (Directory.Exists(identityDir))
                 {
-                    Directory.Delete(identityDir, recursive: true);
-                    ctx.Logger.Info($"Deleted stale identity directory: {identityDir}");
+                    try
+                    {
+                        Directory.Delete(identityDir, recursive: true);
+                        ctx.Logger.Info($"Deleted stale identity directory: {identityDir}");
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        cleanupFailures.Add((staleRecord, ex));
+                        ctx.Logger.Warn(
+                            $"Failed to delete stale identity directory {identityDir}: {ex.Message}");
+                    }
                 }
+            }
+
+            if (cleanupFailures.Count > 0)
+            {
+                foreach (var (record, _) in cleanupFailures)
+                    registry.AddOrUpdate(record);
+
+                if (cleanupFailures.Any(failure =>
+                    string.Equals(
+                        failure.Record.Id,
+                        originalActiveId,
+                        StringComparison.Ordinal)))
+                {
+                    registry.SetActive(originalActiveId);
+                }
+
+                registry.Save();
+                throw new AggregateException(
+                    "One or more stale gateway identities could not be removed. " +
+                    "Their registry records were restored so cleanup can be retried.",
+                    cleanupFailures.Select(failure => failure.Error));
             }
 
             ctx.Logger.Info(

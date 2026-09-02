@@ -133,7 +133,6 @@ internal static class LocalInferenceQualificationPolicy
     public static bool HasCompleteFacts(GpuInfo gpu) =>
         IsStableGpuId(gpu.StableId) &&
         gpu.GpuVisibleMemoryBytes is > 0 &&
-        !string.IsNullOrWhiteSpace(gpu.DriverVersion) &&
         gpu.CudaMajorVersion is not null;
 
     public static bool HasRuntimePrerequisites(GpuInfo gpu, LlamaRuntimeVariant runtime)
@@ -141,8 +140,6 @@ internal static class LocalInferenceQualificationPolicy
         ArgumentNullException.ThrowIfNull(gpu);
         ArgumentNullException.ThrowIfNull(runtime);
         return HasCompleteFacts(gpu) &&
-            Version.TryParse(gpu.DriverVersion, out Version? driverVersion) &&
-            driverVersion >= LocalInferenceEligibility.MinimumNvidiaDriverVersion &&
             gpu.CudaMajorVersion >= runtime.CudaVersion.Major;
     }
 
@@ -198,26 +195,10 @@ internal static class LocalInferenceQualificationPolicy
     }
 
     public static long GetEffectiveTotalMemoryBytes(GpuInfo gpu) =>
-        gpu.GpuVisibleMemoryBytes is not > 0
-            ? 0
-            : SaturatingAdd(
-                gpu.GpuVisibleMemoryBytes.Value,
-                gpu.SharedGpuMemoryBytes is > 0 ? gpu.SharedGpuMemoryBytes.Value : 0);
+        gpu.GpuVisibleMemoryBytes is > 0 ? gpu.GpuVisibleMemoryBytes.Value : 0;
 
-    public static long? GetEffectiveFreeMemoryBytes(GpuInfo gpu)
-    {
-        if (gpu.FreeGpuVisibleMemoryBytes is not >= 0)
-            return null;
-
-        if (gpu.SharedGpuMemoryBytes is > 0 && gpu.FreeSharedGpuMemoryBytes is null)
-            return null;
-
-        return SaturatingAdd(
-            gpu.FreeGpuVisibleMemoryBytes.Value,
-            gpu.SharedGpuMemoryBytes is > 0 && gpu.FreeSharedGpuMemoryBytes is > 0
-                ? gpu.FreeSharedGpuMemoryBytes.Value
-                : 0);
-    }
+    public static long? GetEffectiveFreeMemoryBytes(GpuInfo gpu) =>
+        gpu.FreeGpuVisibleMemoryBytes is >= 0 ? gpu.FreeGpuVisibleMemoryBytes.Value : null;
 
     private static bool IsStableGpuId(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&

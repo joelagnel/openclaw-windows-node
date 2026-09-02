@@ -278,7 +278,7 @@ public sealed partial class CapabilitiesPage : Page
         SetupWindow? setupWindow = _setupWindow;
         Task<HostHardwareInfo> hardwareTask = setupWindow is not null
             ? setupWindow.GetLocalAiHardwareAsync(forceRefresh: refreshHardwareProbe)
-            : Task.Run(() => new NvmlHostHardwareProbe().Probe());
+            : Task.Run(() => new CudaHostHardwareProbe().Probe());
 
         string? hardwareReason = null;
         LocalInferenceEligibilityResult? eligibility = null;
@@ -296,7 +296,7 @@ public sealed partial class CapabilitiesPage : Page
             LocalInferenceEligibilityResult deviceEligibility = LocalInferenceEligibility.Evaluate(_localAiHardware);
             if (deviceEligibility.FailureCode == LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete)
             {
-                // Incomplete facts from a partial or transient hardware read are inconclusive, not a
+                // Incomplete facts (a partial/transient CUDA read) are inconclusive, not a
                 // definitive "this device cannot run Local AI". Report it the same way as a
                 // thrown probe failure so recheck stays available instead of the option being
                 // permanently disabled.

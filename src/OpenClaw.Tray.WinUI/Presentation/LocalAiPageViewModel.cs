@@ -290,7 +290,7 @@ internal sealed class LocalAiPageViewModel : INavigationAware, IDisposable, INot
             LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(hardware);
             if (eligibility.FailureCode == LocalInferenceEligibilityFailureCode.HardwareFactsIncomplete)
             {
-                // Incomplete facts (a driver/NVML read that came back partial or transient) are
+                // Incomplete facts (a CUDA read that came back partial or transient) are
                 // inconclusive, not a definitive "this device cannot run Local AI". Report it the
                 // same way as a thrown probe failure below so recheck stays available instead of
                 // permanently disabling Local AI on this device.

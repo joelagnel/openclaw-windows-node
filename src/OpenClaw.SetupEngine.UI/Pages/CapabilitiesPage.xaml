@@ -188,9 +188,6 @@
                                                 <TextBlock x:Name="LocalAiModelDetailText"
                                                            Style="{StaticResource CaptionTextBlockStyle}"
                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                                <TextBlock x:Name="LocalAiSettingsDetailText"
-                                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                                 <InfoBar x:Name="LocalAiNetworkingConsentPanel"
                                                          AutomationProperties.AutomationId="LocalAiNetworkingConsentPanel"
                                                          AutomationProperties.LiveSetting="Assertive"

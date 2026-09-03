@@ -62,6 +62,8 @@ public static class SetupReviewSummaryBuilder
             $"curl -fsSL --proto '=https' --tlsv1.2 <install-url> | bash -s -- --version {release.Version}{runtimeArgument}";
         LocalModelInfo localAiModel =
             LocalModelCatalog.Find(config.LocalAi.SelectedModelId) ?? LocalModelCatalog.Default;
+        LocalInferenceRunProfile? localAiProfile =
+            LocalModelCatalog.FindProfile(localAiModel, config.LocalAi.SelectedProfileId);
         string[] localAiCommands = config.LocalAi.Enabled
             ?
             [
@@ -106,7 +108,12 @@ public static class SetupReviewSummaryBuilder
                 ? $"{DisplayModelName(localAiModel)} installed"
                 : null,
             LocalAiDescription = config.LocalAi.Enabled
-                ? "Local AI is ready to use"
+                ? localAiProfile is null
+                    ? "llama-server for Windows · loads on first request · " +
+                        "context and KV profile selected from detected GPU"
+                    : "llama-server for Windows · loads on first request · " +
+                        $"{FormatContext(localAiProfile.ContextTokens)} context · " +
+                        $"{FormatKvCache(localAiProfile)}"
                 : null,
         };
     }
@@ -123,6 +130,22 @@ public static class SetupReviewSummaryBuilder
             displayName = displayName.Insert(4, " ");
         }
         return displayName;
+    }
+
+    private static string FormatContext(int tokens) =>
+        tokens % 1024 == 0
+            ? $"{tokens / 1024}K"
+            : tokens % 1000 == 0
+                ? $"{tokens / 1000}K"
+                : $"{tokens:N0} tokens";
+
+    private static string FormatKvCache(LocalInferenceRunProfile profile)
+    {
+        string target = LocalModelCatalog.ToDisplayCacheType(profile.KeyCachePrecision);
+        string draft = LocalModelCatalog.ToDisplayCacheType(profile.DraftKeyCachePrecision);
+        return target == draft
+            ? $"{target} target and MTP draft KV"
+            : $"{target} target KV and {draft} MTP draft KV";
     }
 
     private static string Display(string? value, string fallback)

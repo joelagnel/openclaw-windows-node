@@ -97,6 +97,7 @@ public sealed class LocalAiSetupUxContractTests
             "Pages",
             "CapabilitiesPage.xaml.cs"));
         string infoBar = ExtractElement(xaml, "LocalAiUnavailablePanel", "</InfoBar>");
+        string networkingInfoBar = ExtractElement(xaml, "LocalAiNetworkingConsentPanel", "</InfoBar>");
 
         Assert.Contains("Title=\"Local AI is not available\"", xaml);
         Assert.Contains("Severity=\"Informational\"", xaml);
@@ -145,6 +146,23 @@ public sealed class LocalAiSetupUxContractTests
         Assert.Contains("LocalAiToggle.IsEnabled = isAvailable", source);
         Assert.Contains("LocalAiModelSelector.IsEnabled = isAvailable", source);
         Assert.Contains("LocalAiNetworkingConsentCheckBox.IsEnabled = isAvailable", source);
+        Assert.Contains("Title=\"WSL networking change required\"", networkingInfoBar);
+        // Enabling Local AI must never imply consent on its own: the user has to
+        // affirmatively accept the global .wslconfig rewrite and one-time WSL shutdown.
+        Assert.Contains("<CheckBox", networkingInfoBar);
+        Assert.Contains("LocalAiNetworkingConsentCheckBox", networkingInfoBar);
+        Assert.DoesNotContain("config.LocalAi.WslMirroredNetworkingConsent = config.LocalAi.Enabled", source);
+        Assert.DoesNotContain("config.LocalAi.WslMirroredNetworkingConsent = true", source);
+        Assert.Contains(
+            "config.LocalAi.WslMirroredNetworkingConsent =\r\n            config.LocalAi.Enabled &&\r\n" +
+            "            _localAiNetworkingConsentRequired &&\r\n" +
+            "            LocalAiNetworkingConsentCheckBox.IsChecked == true;",
+            source);
+        Assert.Contains("bytes / (1024d * 1024d * 1024d)", source);
+        Assert.Contains("GiB", source);
+        Assert.Contains("loads on first request", source);
+        Assert.DoesNotContain("full CUDA offload", source);
+        Assert.DoesNotContain("LocalAiSettingsDetailText", xaml);
         Assert.Contains("SetLocalAiOptionAvailability(isAvailable: false)", source);
         Assert.Contains("SetLocalAiOptionAvailability(isAvailable: true)", source);
         string checkingMethod = ExtractMethod(source, "private void ShowLocalAiAvailabilityChecking");

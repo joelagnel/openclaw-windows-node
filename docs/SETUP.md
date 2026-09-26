@@ -58,7 +58,7 @@ On first launch, Molty opens the onboarding wizard when there is no usable saved
 
    For the role split behind these choices, see [Operator and node concepts](OPERATOR_NODE_CONCEPTS.md).
 
-3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and see exactly what setup will install before anything runs.
+3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and review your setup before anything runs. The review groups your choices by where OpenClaw runs, what it can do, AI setup, and optional connections, with a **Change** link for earlier choices. Exact commands, files, and install targets stay under **Technical details**.
 
 4. **Local setup progress** - Installs a fresh app-owned `OpenClawGateway` WSL instance and connects Molty to it. This does not modify an existing user Ubuntu distro.
 

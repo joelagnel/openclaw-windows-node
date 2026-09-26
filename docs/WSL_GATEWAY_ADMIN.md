@@ -96,7 +96,7 @@ Do not run `systemctl --user` as `root`; that checks root's user service manager
 
 ## Inspect an optional Tailscale Serve endpoint
 
-When the setup review enabled **Tailnet access with Tailscale Serve**, the generated distro runs its own Tailscale daemon. The Windows Companion intentionally uses the generated `wss://<node>.<tailnet>.ts.net` endpoint; it does not silently fall back to localhost.
+When the setup review enabled **Use OpenClaw from other devices** (Tailscale Serve), the generated distro runs its own Tailscale daemon. The Windows Companion intentionally uses the generated `wss://<node>.<tailnet>.ts.net` endpoint; it does not silently fall back to localhost.
 
 Windows must also have Tailscale installed and signed in to the same tailnet. These checks do not print credentials:
 

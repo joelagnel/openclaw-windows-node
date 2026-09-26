@@ -362,7 +362,9 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 **CapabilitiesPage**
 - Capability profile defaults to Standard
 - Inline Windows permission status for selected capabilities
-- Install review showing WSL distro, OpenClaw CLI, local gateway service, and possible UAC
+- Plain-language install review grouped by where OpenClaw runs, what it can do, AI setup, and optional connections, with **Change** links back to the Welcome and capability steps
+- Network exposure, custom or insecure installer warnings, and the Local AI WSL networking consent stay visible outside **Technical details**
+- **Technical details** holds the WSL distro, OpenClaw CLI, local gateway service, UAC cards, and exact commands
 
 **ProgressPage**
 - Step rows with spinning ProgressRing → ✓/✗ badges

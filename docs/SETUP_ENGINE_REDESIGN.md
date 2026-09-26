@@ -70,7 +70,7 @@ src/OpenClaw.SetupEngine.UI/
     ├── SecurityNoticePage.xaml / .cs # Device-trust warning
     ├── WelcomePage.xaml / .cs        # Install WSL gateway vs connect existing
     ├── CapabilitiesPage.xaml / .cs   # Profile, inline permissions, install review
-    ├── ProgressPage.xaml / .cs       # Live step rows + gateway-installed handoff
+    ├── ProgressPage.xaml / .cs       # Three setup stages, step Details + gateway-installed handoff
     ├── WizardPage.xaml / .cs         # OpenClaw onboard transcript
     └── CompletePage.xaml / .cs       # Mascot status badge, summary, startup toggle
 ```
@@ -365,8 +365,8 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 - Install review showing WSL distro, OpenClaw CLI, local gateway service, and possible UAC
 
 **ProgressPage**
-- Step rows with spinning ProgressRing → ✓/✗ badges
-- Live activity ledger collapsed by default
+- Three stage rows (Check your PC, Install OpenClaw, Finish setup) with the current activity; a stage is done only when its steps finish, a failed step fails its stage, and the last stage is done only when the whole run succeeds (`SetupStageTracker`); a failed step also updates and announces the status line, and Local AI recovery names its install stage **Set up Local AI**
+- Collapsed Details section with the per-step rows (spinning ProgressRing → ✓/✗ badges) and the live activity ledger
 - On success → gateway-installed milestone with explicit OpenClaw onboard CTA
 - On failure → navigates to Complete(success=false)
 

@@ -60,7 +60,7 @@ On first launch, Molty opens the onboarding wizard when there is no usable saved
 
 3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and see exactly what setup will install before anything runs.
 
-4. **Local setup progress** - Installs a fresh app-owned `OpenClawGateway` WSL instance and connects Molty to it. This does not modify an existing user Ubuntu distro.
+4. **Local setup progress** - Installs a fresh app-owned `OpenClawGateway` WSL instance and connects Molty to it. This does not modify an existing user Ubuntu distro. Progress shows three stages, **Check your PC**, **Install OpenClaw**, and **Finish setup**, with what the current stage is doing; each installation step and the live log are under **Details**. If a step fails, the status line says so right away, while setup undoes its changes, before showing what went wrong.
 
 5. **Gateway installed** - Confirms the private gateway is running and offers **Start OpenClaw onboard**.
 

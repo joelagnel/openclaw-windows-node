@@ -16,9 +16,9 @@
                        Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center" />
         </StackPanel>
 
-        <!-- Fixed-width content column keeps transcript rows and the active card aligned across steps. -->
-        <Grid Grid.Row="1" Margin="0,24,0,16" ColumnDefinitions="*,Auto,*">
-            <ScrollViewer x:Name="Scroller" Grid.Column="1" Width="600"
+        <!-- Capped content column keeps transcript rows and the active card aligned across steps and shrinks in narrow windows. -->
+        <Grid Grid.Row="1" Margin="0,24,0,16">
+            <ScrollViewer x:Name="Scroller" MaxWidth="600"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="12" HorizontalAlignment="Stretch">
 
@@ -104,173 +104,246 @@
                                 <StackPanel x:Name="PermRows" Spacing="4" />
                             </StackPanel>
 
-                            <StackPanel x:Name="Step3Content" Spacing="4" Visibility="Collapsed">
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                        <FontIcon Grid.Column="0" Glyph="&#xE756;" FontSize="18" VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock x:Name="InstallDistroTitleText" Text="Install Ubuntu 24.04 in WSL" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock x:Name="InstallDistroDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Creates a separate OpenClawGateway instance. Uses several GB." />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="Several GB" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <InfoBar x:Name="LocalAiUnavailablePanel"
-                                         AutomationProperties.AutomationId="LocalAiUnavailablePanel"
-                                         AutomationProperties.LiveSetting="Polite"
-                                         IsOpen="True" IsClosable="False" Severity="Informational"
-                                         Title="Local AI is not available"
-                                         Message="This PC does not meet one or more Local AI requirements."
-                                         Visibility="Collapsed">
-                                    <InfoBar.ActionButton>
-                                        <HyperlinkButton x:Name="LocalAiUnavailableDetailsButton"
-                                                         setup:SetupText.Uid="Onboarding_LocalAi_UnavailableDetailsButton"
-                                                         AutomationProperties.AutomationId="LocalAiUnavailableDetailsButton"
-                                                         Content="See why"
-                                                         Click="LocalAiUnavailableDetails_Click" />
-                                    </InfoBar.ActionButton>
-                                </InfoBar>
-                                <StackPanel x:Name="LocalAiAvailabilityRecoveryPanel"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center"
-                                            Visibility="Collapsed">
-                                    <ProgressRing x:Name="LocalAiAvailabilityProgressRing"
-                                                  Width="16"
-                                                  Height="16"
-                                                  IsActive="False"
-                                                  AutomationProperties.AccessibilityView="Raw" />
-                                    <HyperlinkButton x:Name="LocalAiRecheckAvailabilityButton"
-                                                     setup:SetupText.Uid="Onboarding_LocalAi_RecheckAvailabilityButton"
-                                                     AutomationProperties.AutomationId="LocalAiRecheckAvailabilityButton"
-                                                     Content="Recheck"
-                                                     Click="LocalAiRecheckAvailability_Click" />
-                                </StackPanel>
-                                <Border x:Name="LocalAiInstallReviewCard"
-                                        AutomationProperties.AutomationId="LocalAiInstallReviewCard"
-                                        Visibility="Collapsed"
-                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <StackPanel Spacing="10">
-                                        <StackPanel x:Name="LocalAiOptionContent"
-                                                    AutomationProperties.Name="Local AI setup options"
-                                                    Spacing="10">
-                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                                <FontIcon Grid.Column="0" Glyph="&#xE950;" FontSize="18" VerticalAlignment="Center" />
-                                                <StackPanel Grid.Column="1" Spacing="2">
-                                                    <TextBlock Text="Local AI" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                                    <TextBlock Text="Install Local AI and an optimized model."
-                                                               TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
-                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                </StackPanel>
-                                                <ToggleSwitch x:Name="LocalAiToggle" Grid.Column="2"
-                                                              AutomationProperties.AutomationId="LocalAiSetupToggle"
-                                                              AutomationProperties.Name="Set up Local AI"
-                                                              OnContent="" OffContent="" MinWidth="0"
-                                                              Toggled="LocalAiToggle_Toggled" VerticalAlignment="Center" />
-                                            </Grid>
-                                            <StackPanel x:Name="LocalAiDetailsPanel" Spacing="6" Margin="32,0,0,0" Visibility="Collapsed">
-                                                <TextBlock x:Name="LocalAiHardwareStatusText"
-                                                           AutomationProperties.AutomationId="LocalAiHardwareStatus"
-                                                           AutomationProperties.LiveSetting="Polite"
-                                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                                <TextBlock Text="Model" Style="{StaticResource CaptionTextBlockStyle}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                <ComboBox x:Name="LocalAiModelSelector"
-                                                          AutomationProperties.AutomationId="LocalAiModelSelector"
-                                                          AutomationProperties.Name="Local AI model"
-                                                          HorizontalAlignment="Stretch"
-                                                          SelectionChanged="LocalAiModelSelector_SelectionChanged" />
-                                                <TextBlock x:Name="LocalAiEngineDetailText"
-                                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                                <TextBlock x:Name="LocalAiModelDetailText"
-                                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                                <InfoBar x:Name="LocalAiNetworkingConsentPanel"
-                                                         AutomationProperties.AutomationId="LocalAiNetworkingConsentPanel"
-                                                         AutomationProperties.LiveSetting="Assertive"
-                                                         IsOpen="True" IsClosable="False" Severity="Warning"
-                                                         Title="WSL networking change required" Visibility="Collapsed">
-                                                    <StackPanel Spacing="6" Margin="0,0,0,12">
-                                                        <TextBlock Text="Local AI needs mirrored WSL networking. Setup will update your global .wslconfig and stop all running WSL distributions once. No distributions are deleted. Save any work in WSL first."
-                                                                   Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                                        <CheckBox x:Name="LocalAiNetworkingConsentCheckBox"
-                                                                  AutomationProperties.AutomationId="LocalAiNetworkingConsentCheckBox"
-                                                                  AutomationProperties.Name="Allow the global WSL networking change and one-time WSL shutdown"
-                                                                  Content="I understand and allow this global WSL change and one-time shutdown."
-                                                                  Checked="LocalAiNetworkingConsent_Changed"
-                                                                  Unchecked="LocalAiNetworkingConsent_Changed" />
-                                                    </StackPanel>
-                                                </InfoBar>
-                                                <InfoBar x:Name="LocalAiNetworkingInspectionError"
-                                                         AutomationProperties.AutomationId="LocalAiNetworkingInspectionError"
-                                                         AutomationProperties.LiveSetting="Assertive"
-                                                         IsOpen="True" IsClosable="False" Severity="Error"
-                                                         Title="Could not check WSL networking" Visibility="Collapsed" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <StackPanel Spacing="8">
-                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                            <FontIcon Grid.Column="0" Glyph="&#xE701;" FontSize="18" VerticalAlignment="Center" />
-                                            <StackPanel Grid.Column="1" Spacing="2">
-                                                <TextBlock Text="Tailnet access with Tailscale Serve" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                                <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Publish this private gateway as HTTPS/WSS to your Tailscale tailnet. Windows Tailscale must already be signed in; setup root owns Serve." />
-                                            </StackPanel>
-                                            <ToggleSwitch x:Name="TailscaleToggle" Grid.Column="2" OnContent="" OffContent="" Toggled="TailscaleToggle_Toggled" VerticalAlignment="Center" />
-                                        </Grid>
-                                        <StackPanel x:Name="TailscaleOptions" Visibility="Collapsed" Spacing="6" Margin="32,0,0,0">
-                                            <TextBlock x:Name="TailscaleStatusText" Text="Check Windows Tailscale before continuing." Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                            <RadioButtons x:Name="TailscaleAuthModeSelector" SelectedIndex="0" SelectionChanged="TailscaleAuthMode_SelectionChanged">
-                                                <x:String>Sign in in browser</x:String>
-                                                <x:String>Use one-off auth key</x:String>
-                                            </RadioButtons>
-                                            <PasswordBox x:Name="TailscaleAuthKeyBox" Visibility="Collapsed" PlaceholderText="Tailscale auth key (not saved)" />
-                                            <ToggleSwitch x:Name="TailscaleTrustAuthToggle" Header="Trust Tailscale identities for gateway authentication" OnContent="Enabled" OffContent="Disabled" Toggled="TailscaleTrustAuthToggle_Toggled" />
-                                            <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Off by default. Enable only when your Tailscale ACLs should be part of the gateway access-control boundary; OpenClaw receives only a restricted identity lookup, not Tailscale operator control." />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                        <FontIcon Grid.Column="0" Glyph="&#xE896;" FontSize="18" VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="Download &amp; install the OpenClaw CLI" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock x:Name="InstallCliDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Fetched over HTTPS; runs as a non-root openclaw user inside the instance." />
-                                        </StackPanel>
-                                        <TextBlock x:Name="InstallCliBadgeText" Grid.Column="2" Text="HTTPS" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                        <FontIcon Grid.Column="0" Glyph="&#xE968;" FontSize="18" VerticalAlignment="Center" />
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="Run a local gateway service" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock x:Name="GatewayServiceDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Loopback only. It is not reachable from your network or the internet." />
-                                        </StackPanel>
-                                        <TextBlock x:Name="GatewayEndpointText" Grid.Column="2" Text="127.0.0.1:18789" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                                        <FontIcon Grid.Column="0" Glyph="&#xE7BA;" FontSize="18" VerticalAlignment="Center" IsTextScaleFactorEnabled="False" />
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="May ask for admin once" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Only if the Windows WSL platform isn't installed yet. One-time per machine." />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="UAC?" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
+                            <StackPanel x:Name="Step3Content" Spacing="16" Visibility="Collapsed">
+                                <TextBlock setup:SetupText.Uid="Onboarding_Review_Intro" TextWrapping="Wrap"
+                                           Style="{StaticResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           Text="Nothing is installed until you select Install &amp; set up." />
 
-                                <Expander Margin="0,8,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                                          Header="Show the exact commands &amp; files">
-                                    <TextBlock x:Name="ExactCommandsText" FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,4" />
+                                <StackPanel x:Name="ReviewWhereGroup" Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock setup:SetupText.Uid="Onboarding_Review_WhereTitle" Text="Where OpenClaw runs" VerticalAlignment="Center"
+                                                   Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                                   AutomationProperties.HeadingLevel="Level2" />
+                                        <HyperlinkButton x:Name="ChangeWhereLink" setup:SetupText.Uid="Onboarding_Review_ChangeWhere" Grid.Column="1"
+                                                         Content="Change" Padding="6,2"
+                                                         AutomationProperties.AutomationId="ReviewChangeWhereLink"
+                                                         Click="ChangeWhere_Click" />
+                                    </Grid>
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock setup:SetupText.Uid="Onboarding_Review_WhereSummary" TextWrapping="Wrap"
+                                                       Text="OpenClaw will be installed on this PC in its own private space. It needs several GB of disk space." />
+                                            <TextBlock x:Name="ReviewExposureText" TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock setup:SetupText.Uid="Onboarding_Review_AdminNote" TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       Text="Windows may ask for administrator permission once." />
+                                        </StackPanel>
+                                    </Border>
+                                    <InfoBar x:Name="ReviewInstallerWarning" setup:SetupText.Uid="Onboarding_Review_InstallerWarning"
+                                             Title="Check the download source" Severity="Warning"
+                                             IsOpen="True" IsClosable="False" Visibility="Collapsed" />
+                                </StackPanel>
+
+                                <StackPanel x:Name="ReviewCapabilitiesGroup" Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock setup:SetupText.Uid="Onboarding_Review_CapabilitiesTitle" Text="What OpenClaw can do" VerticalAlignment="Center"
+                                                   Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                                   AutomationProperties.HeadingLevel="Level2" />
+                                        <HyperlinkButton x:Name="ChangeCapabilitiesLink" setup:SetupText.Uid="Onboarding_Review_ChangeCapabilities" Grid.Column="1"
+                                                         Content="Change" Padding="6,2"
+                                                         AutomationProperties.AutomationId="ReviewChangeCapabilitiesLink"
+                                                         Click="ChangeCapabilities_Click" />
+                                    </Grid>
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock x:Name="ReviewCapabilitiesText" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="ReviewPermissionsText" TextWrapping="Wrap"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel x:Name="ReviewAiGroup" Spacing="6">
+                                    <TextBlock setup:SetupText.Uid="Onboarding_Review_AiTitle" Text="AI setup"
+                                               Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                               AutomationProperties.HeadingLevel="Level2" />
+                                    <TextBlock x:Name="ReviewAiText" TextWrapping="Wrap"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <InfoBar x:Name="LocalAiUnavailablePanel"
+                                             AutomationProperties.AutomationId="LocalAiUnavailablePanel"
+                                             AutomationProperties.LiveSetting="Polite"
+                                             IsOpen="True" IsClosable="False" Severity="Informational"
+                                             Title="Local AI is not available"
+                                             Message="This PC does not meet one or more Local AI requirements."
+                                             Visibility="Collapsed">
+                                        <InfoBar.ActionButton>
+                                            <HyperlinkButton x:Name="LocalAiUnavailableDetailsButton"
+                                                             setup:SetupText.Uid="Onboarding_LocalAi_UnavailableDetailsButton"
+                                                             AutomationProperties.AutomationId="LocalAiUnavailableDetailsButton"
+                                                             Content="See why"
+                                                             Click="LocalAiUnavailableDetails_Click" />
+                                        </InfoBar.ActionButton>
+                                    </InfoBar>
+                                    <StackPanel x:Name="LocalAiAvailabilityRecoveryPanel"
+                                                Orientation="Horizontal"
+                                                Spacing="8"
+                                                VerticalAlignment="Center"
+                                                Visibility="Collapsed">
+                                        <ProgressRing x:Name="LocalAiAvailabilityProgressRing"
+                                                      Width="16"
+                                                      Height="16"
+                                                      IsActive="False"
+                                                      AutomationProperties.AccessibilityView="Raw" />
+                                        <HyperlinkButton x:Name="LocalAiRecheckAvailabilityButton"
+                                                         setup:SetupText.Uid="Onboarding_LocalAi_RecheckAvailabilityButton"
+                                                         AutomationProperties.AutomationId="LocalAiRecheckAvailabilityButton"
+                                                         Content="Recheck"
+                                                         Click="LocalAiRecheckAvailability_Click" />
+                                    </StackPanel>
+                                    <Border x:Name="LocalAiInstallReviewCard"
+                                            AutomationProperties.AutomationId="LocalAiInstallReviewCard"
+                                            Visibility="Collapsed"
+                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                        <StackPanel Spacing="10">
+                                            <StackPanel x:Name="LocalAiOptionContent"
+                                                        AutomationProperties.Name="Local AI setup options"
+                                                        Spacing="10">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                    <FontIcon Grid.Column="0" Glyph="&#xE950;" FontSize="18" VerticalAlignment="Center" />
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <TextBlock Text="Local AI" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                                        <TextBlock Text="Install Local AI and an optimized model."
+                                                                   TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    </StackPanel>
+                                                    <ToggleSwitch x:Name="LocalAiToggle" Grid.Column="2"
+                                                                  AutomationProperties.AutomationId="LocalAiSetupToggle"
+                                                                  AutomationProperties.Name="Set up Local AI"
+                                                                  OnContent="" OffContent="" MinWidth="0"
+                                                                  Toggled="LocalAiToggle_Toggled" VerticalAlignment="Center" />
+                                                </Grid>
+                                                <StackPanel x:Name="LocalAiDetailsPanel" Spacing="6" Margin="32,0,0,0" Visibility="Collapsed">
+                                                    <TextBlock x:Name="LocalAiHardwareStatusText"
+                                                               AutomationProperties.AutomationId="LocalAiHardwareStatus"
+                                                               AutomationProperties.LiveSetting="Polite"
+                                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="Model" Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <ComboBox x:Name="LocalAiModelSelector"
+                                                              AutomationProperties.AutomationId="LocalAiModelSelector"
+                                                              AutomationProperties.Name="Local AI model"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="LocalAiModelSelector_SelectionChanged" />
+                                                    <TextBlock x:Name="LocalAiEngineDetailText"
+                                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="LocalAiModelDetailText"
+                                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                    <InfoBar x:Name="LocalAiNetworkingConsentPanel"
+                                                             AutomationProperties.AutomationId="LocalAiNetworkingConsentPanel"
+                                                             AutomationProperties.LiveSetting="Assertive"
+                                                             IsOpen="True" IsClosable="False" Severity="Warning"
+                                                             Title="WSL networking change required" Visibility="Collapsed">
+                                                        <StackPanel Spacing="6" Margin="0,0,0,12">
+                                                            <TextBlock Text="Local AI needs mirrored WSL networking. Setup will update your global .wslconfig and stop all running WSL distributions once. No distributions are deleted. Save any work in WSL first."
+                                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                                            <CheckBox x:Name="LocalAiNetworkingConsentCheckBox"
+                                                                      AutomationProperties.AutomationId="LocalAiNetworkingConsentCheckBox"
+                                                                      AutomationProperties.Name="Allow the global WSL networking change and one-time WSL shutdown"
+                                                                      Content="I understand and allow this global WSL change and one-time shutdown."
+                                                                      Checked="LocalAiNetworkingConsent_Changed"
+                                                                      Unchecked="LocalAiNetworkingConsent_Changed" />
+                                                        </StackPanel>
+                                                    </InfoBar>
+                                                    <InfoBar x:Name="LocalAiNetworkingInspectionError"
+                                                             AutomationProperties.AutomationId="LocalAiNetworkingInspectionError"
+                                                             AutomationProperties.LiveSetting="Assertive"
+                                                             IsOpen="True" IsClosable="False" Severity="Error"
+                                                             Title="Could not check WSL networking" Visibility="Collapsed" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel x:Name="ReviewConnectionsGroup" Spacing="6">
+                                    <TextBlock setup:SetupText.Uid="Onboarding_Review_ConnectionsTitle" Text="Optional connections"
+                                               Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                               AutomationProperties.HeadingLevel="Level2" />
+                                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                        <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                <FontIcon Grid.Column="0" Glyph="&#xE701;" FontSize="18" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Spacing="2">
+                                                    <TextBlock setup:SetupText.Uid="Onboarding_Review_TailscaleTitle" Text="Use OpenClaw from other devices" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                                    <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" setup:SetupText.Uid="Onboarding_Review_TailscaleDescription" Text="Lets devices on your Tailscale network reach OpenClaw, as allowed by your Tailscale access rules. Tailscale must already be installed and signed in on this PC." />
+                                                </StackPanel>
+                                                <ToggleSwitch x:Name="TailscaleToggle" Grid.Column="2" setup:SetupText.Uid="Onboarding_Review_TailscaleToggle" AutomationProperties.Name="Use OpenClaw from other devices" AutomationProperties.AutomationId="TailscaleToggle" OnContent="" OffContent="" Toggled="TailscaleToggle_Toggled" VerticalAlignment="Center" />
+                                            </Grid>
+                                            <StackPanel x:Name="TailscaleOptions" Visibility="Collapsed" Spacing="6" Margin="32,0,0,0">
+                                                <TextBlock x:Name="TailscaleStatusText" Text="Check Windows Tailscale before continuing." Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                <RadioButtons x:Name="TailscaleAuthModeSelector" SelectedIndex="0" SelectionChanged="TailscaleAuthMode_SelectionChanged">
+                                                    <x:String>Sign in in browser</x:String>
+                                                    <x:String>Use one-off auth key</x:String>
+                                                </RadioButtons>
+                                                <PasswordBox x:Name="TailscaleAuthKeyBox" Visibility="Collapsed" PlaceholderText="Tailscale auth key (not saved)" />
+                                                <ToggleSwitch x:Name="TailscaleTrustAuthToggle" Header="Trust Tailscale identities for gateway authentication" OnContent="Enabled" OffContent="Disabled" Toggled="TailscaleTrustAuthToggle_Toggled" />
+                                                <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Off by default. Enable only when your Tailscale ACLs should be part of the gateway access-control boundary; OpenClaw receives only a restricted identity lookup, not Tailscale operator control." />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <Expander x:Name="ReviewDetailsExpander" setup:SetupText.Uid="Onboarding_Review_DetailsExpander"
+                                          Header="Technical details"
+                                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <StackPanel Spacing="4">
+                                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                <FontIcon Grid.Column="0" Glyph="&#xE756;" FontSize="18" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Spacing="2">
+                                                    <TextBlock x:Name="InstallDistroTitleText" Text="Install Ubuntu 24.04 in WSL" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                                    <TextBlock x:Name="InstallDistroDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Creates a separate OpenClawGateway instance. Uses several GB." />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="Several GB" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                <FontIcon Grid.Column="0" Glyph="&#xE896;" FontSize="18" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Spacing="2">
+                                                    <TextBlock Text="Download &amp; install the OpenClaw CLI" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                                    <TextBlock x:Name="InstallCliDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Fetched over HTTPS; runs as a non-root openclaw user inside the instance." />
+                                                </StackPanel>
+                                                <TextBlock x:Name="InstallCliBadgeText" Grid.Column="2" Text="HTTPS" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                <FontIcon Grid.Column="0" Glyph="&#xE968;" FontSize="18" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Spacing="2">
+                                                    <TextBlock Text="Run a local gateway service" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                                    <TextBlock x:Name="GatewayServiceDetailText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Loopback only. It is not reachable from your network or the internet." />
+                                                </StackPanel>
+                                                <TextBlock x:Name="GatewayEndpointText" Grid.Column="2" Text="127.0.0.1:18789" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4" Padding="14,12">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                                <FontIcon Grid.Column="0" Glyph="&#xE7BA;" FontSize="18" VerticalAlignment="Center" IsTextScaleFactorEnabled="False" />
+                                                <StackPanel Grid.Column="1" Spacing="2">
+                                                    <TextBlock Text="May ask for admin once" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                                    <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Only if the Windows WSL platform isn't installed yet. One-time per machine." />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="UAC?" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock setup:SetupText.Uid="Onboarding_Review_CommandsLabel" Text="Commands and files"
+                                                   Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="ExactCommandsText" FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"
+                                                   IsTextSelectionEnabled="True"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,4" />
+                                    </StackPanel>
                                 </Expander>
                             </StackPanel>
                         </StackPanel>

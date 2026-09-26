@@ -7264,4 +7264,37 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Faster</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Smarter</value></data>
+  <data name="Onboarding_Review_Title" xml:space="preserve"><value>Review your setup</value></data>
+  <data name="Onboarding_Review_InstallButton" xml:space="preserve"><value>Install &amp; set up</value></data>
+  <data name="Onboarding_Review_Intro.Text" xml:space="preserve"><value>Nothing is installed until you select Install &amp; set up.</value></data>
+  <data name="Onboarding_Review_WhereTitle.Text" xml:space="preserve"><value>Where OpenClaw runs</value></data>
+  <data name="Onboarding_Review_ChangeWhere.Content" xml:space="preserve"><value>Change</value></data>
+  <data name="Onboarding_Review_ChangeWhere.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Change where OpenClaw runs</value></data>
+  <data name="Onboarding_Review_WhereSummary.Text" xml:space="preserve"><value>OpenClaw will be installed on this PC in its own private space. It needs several GB of disk space.</value></data>
+  <data name="Onboarding_Review_AdminNote.Text" xml:space="preserve"><value>Windows may ask for administrator permission once.</value></data>
+  <data name="Onboarding_Review_InstallerWarning.Title" xml:space="preserve"><value>Check the download source</value></data>
+  <data name="Onboarding_Review_CapabilitiesTitle.Text" xml:space="preserve"><value>What OpenClaw can do</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.Content" xml:space="preserve"><value>Change</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Change what OpenClaw can do</value></data>
+  <data name="Onboarding_Review_AiTitle.Text" xml:space="preserve"><value>AI setup</value></data>
+  <data name="Onboarding_Review_ConnectionsTitle.Text" xml:space="preserve"><value>Optional connections</value></data>
+  <data name="Onboarding_Review_TailscaleTitle.Text" xml:space="preserve"><value>Use OpenClaw from other devices</value></data>
+  <data name="Onboarding_Review_TailscaleDescription.Text" xml:space="preserve"><value>Lets devices on your Tailscale network reach OpenClaw, as allowed by your Tailscale access rules. Tailscale must already be installed and signed in on this PC.</value></data>
+  <data name="Onboarding_Review_DetailsExpander.Header" xml:space="preserve"><value>Technical details</value></data>
+  <data name="Onboarding_Review_CommandsLabel.Text" xml:space="preserve"><value>Commands and files</value></data>
+  <data name="Onboarding_Review_Exposure_ThisPc" xml:space="preserve"><value>Only this PC can connect to it.</value></data>
+  <data name="Onboarding_Review_Exposure_LocalNetwork" xml:space="preserve"><value>Other devices on your local network can also connect to it.</value></data>
+  <data name="Onboarding_Review_Exposure_Tailnet" xml:space="preserve"><value>Devices on your Tailscale network can also connect to it.</value></data>
+  <data name="Onboarding_Review_InstallerCustom" xml:space="preserve"><value>OpenClaw will be downloaded from {0}, a source that OpenClaw has not verified. Continue only if you trust it.</value></data>
+  <data name="Onboarding_Review_InstallerInsecure" xml:space="preserve"><value>Setup can't install OpenClaw from this download address because it doesn't use a secure (HTTPS) connection. Fix the address before you install.</value></data>
+  <data name="Onboarding_Review_AiLocal" xml:space="preserve"><value>OpenClaw will use an AI model that runs on this PC.</value></data>
+  <data name="Onboarding_Review_AiLater" xml:space="preserve"><value>After installation, you'll choose an AI service and sign in to it.</value></data>
+  <data name="Onboarding_Review_Profile_ReadOnly" xml:space="preserve"><value>Read-only: can see your screen and show content, but can't run programs.</value></data>
+  <data name="Onboarding_Review_Profile_Standard" xml:space="preserve"><value>Standard: can run programs, edit files, see your screen, and use voice.</value></data>
+  <data name="Onboarding_Review_Profile_Full" xml:space="preserve"><value>Full access: everything in Standard, plus your camera, location, and web browser.</value></data>
+  <data name="Onboarding_Review_Profile_Custom" xml:space="preserve"><value>Custom: {0} of {1} capabilities turned on.</value></data>
+  <data name="Onboarding_Review_PermissionsAll" xml:space="preserve"><value>Windows permissions: all {0} allowed.</value></data>
+  <data name="Onboarding_Review_PermissionsSome" xml:space="preserve"><value>Windows permissions: {0} of {1} allowed. You can allow the rest later in Settings.</value></data>
+  <data name="Onboarding_Review_AiSkipped" xml:space="preserve"><value>Setup won't ask you to choose an AI service. You can set one up later from the OpenClaw tray menu.</value></data>
+  <data name="Onboarding_Review_TailscaleToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Use OpenClaw from other devices</value></data>
 </root>

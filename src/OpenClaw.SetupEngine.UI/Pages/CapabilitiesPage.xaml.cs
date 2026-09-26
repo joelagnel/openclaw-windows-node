@@ -37,6 +37,7 @@ public sealed partial class CapabilitiesPage : Page
     private bool _treatBundledAllOnAsPlaceholder;
     private bool _forceLocalAiNetworkingConsent;
     private bool _localAiRecoveryOnly;
+    private bool _installerUrlInsecure;
     private bool _localAiRecoveryModelPinned;
     private CancellationTokenSource? _tailscaleStatusCancellation;
     private int _tailscaleStatusGeneration;
@@ -106,12 +107,21 @@ public sealed partial class CapabilitiesPage : Page
         TailscaleToggle.IsOn = _config.Tailscale.Enabled;
         TailscaleTrustAuthToggle.IsOn = _config.Tailscale.TrustTailscaleAuth;
         TailscaleAuthModeSelector.SelectedIndex = _config.Tailscale.AuthMode == TailscaleAuthMode.AuthKey ? 1 : 0;
+        TailscaleAuthKeyBox.Password = _config.Tailscale.AuthKey ?? string.Empty;
         UpdateTailscaleOptions();
         var previewPage = SetupPreview.RequestedPage;
         var localAiReviewPreview =
             args?.StartAtLocalAiReview == true ||
             previewPage is "capabilities-review" or "capabilities-review-consent";
         _localAiRecoveryOnly = args?.StartAtLocalAiReview == true;
+        // Local AI recovery installs nothing else and keeps the existing capabilities and
+        // connections, so it only reviews Local AI. The technical details describe a full
+        // install, and the Local AI card already lists what recovery downloads.
+        var otherGroups = _localAiRecoveryOnly ? Visibility.Collapsed : Visibility.Visible;
+        ReviewWhereGroup.Visibility = otherGroups;
+        ReviewCapabilitiesGroup.Visibility = otherGroups;
+        ReviewConnectionsGroup.Visibility = otherGroups;
+        ReviewDetailsExpander.Visibility = otherGroups;
         _localAiRecoveryModelPinned = args?.PinLocalAiModel == true;
         _forceLocalAiNetworkingConsent = previewPage == "capabilities-review-consent";
         if (localAiReviewPreview)
@@ -173,9 +183,13 @@ public sealed partial class CapabilitiesPage : Page
         {
             1 => "What should your agent be able to do?",
             2 => "Windows permissions",
-            _ => "What setup will install on this PC",
+            _ => SetupLocalization.GetString("Onboarding_Review_Title"),
         };
-        PrimaryButton.Content = step == 3 ? "Install & set up" : "Next";
+        PrimaryButton.Content = step == 3 ? SetupLocalization.GetString("Onboarding_Review_InstallButton") : "Next";
+        // The review groups restate earlier answers, so the running transcript is hidden there.
+        Transcript.Visibility = step == 3 ? Visibility.Collapsed : Visibility.Visible;
+        if (step == 3)
+            UpdateReviewChoicesText();
         // Back is always available — from step 1 it returns to the Welcome screen.
         BackButton.Visibility = Visibility.Visible;
         UpdatePrimaryButtonState();
@@ -240,6 +254,23 @@ public sealed partial class CapabilitiesPage : Page
         GoToStep(previous);
     }
 
+    private void ChangeWhere_Click(object sender, RoutedEventArgs e)
+    {
+        // Welcome rebuilds this page from the config. Save the current choices first, and stop
+        // treating them as the bundled all-on placeholder that would reset them to Standard.
+        WriteCapabilities();
+        _config!.UsesBundledDefaultConfig = false;
+        SetupWindow.Active?.NavigateToWelcome(back: true);
+    }
+
+    private void ChangeCapabilities_Click(object sender, RoutedEventArgs e)
+    {
+        // Step 1 is the first answer, so every transcript row is answered again from here.
+        Transcript.Children.Clear();
+        GoToStep(1);
+        ProfileRadio.Focus(FocusState.Programmatic);
+    }
+
     private void WriteCapabilities()
     {
         var config = _config!;
@@ -282,6 +313,63 @@ public sealed partial class CapabilitiesPage : Page
         GatewayServiceDetailText.Text = summary.GatewayDescription;
         GatewayEndpointText.Text = summary.GatewayEndpoint;
         ExactCommandsText.Text = summary.ExactCommands;
+        UpdateReviewSummaryText(summary);
+    }
+
+    // Plain-language review lines. Exposure and installer trust stay outside Technical details
+    // because they change who can reach OpenClaw and what code setup will run.
+    private void UpdateReviewSummaryText(SetupReviewSummary summary)
+    {
+        ReviewExposureText.Text = summary.Exposure switch
+        {
+            SetupGatewayExposure.LocalNetwork => SetupLocalization.GetString("Onboarding_Review_Exposure_LocalNetwork"),
+            SetupGatewayExposure.Tailnet => SetupLocalization.GetString("Onboarding_Review_Exposure_Tailnet"),
+            _ => SetupLocalization.GetString("Onboarding_Review_Exposure_ThisPc"),
+        };
+        ReviewInstallerWarning.Message = summary.InstallerTrust switch
+        {
+            SetupInstallerTrust.Custom => SetupLocalization.Format("Onboarding_Review_InstallerCustom", summary.InstallerHost),
+            SetupInstallerTrust.InsecureUrl => SetupLocalization.GetString("Onboarding_Review_InstallerInsecure"),
+            _ => string.Empty,
+        };
+        ReviewInstallerWarning.Visibility = summary.InstallerTrust == SetupInstallerTrust.Official
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        ReviewInstallerWarning.Severity = summary.InstallerTrust == SetupInstallerTrust.InsecureUrl
+            ? InfoBarSeverity.Error
+            : InfoBarSeverity.Warning;
+        // The CLI install step rejects a non-HTTPS installer only after earlier steps may have
+        // replaced the distro and downloaded gigabytes, so don't let installation start.
+        _installerUrlInsecure = !_localAiRecoveryOnly && summary.InstallerTrust == SetupInstallerTrust.InsecureUrl;
+        UpdatePrimaryButtonState();
+        ReviewAiText.Text = summary.LocalAiEnabled
+            ? SetupLocalization.GetString("Onboarding_Review_AiLocal")
+            : _skipWizardWithoutLocalAi
+                ? SetupLocalization.GetString("Onboarding_Review_AiSkipped")
+                : SetupLocalization.GetString("Onboarding_Review_AiLater");
+    }
+
+    private void UpdateReviewChoicesText()
+    {
+        ReviewCapabilitiesText.Text = DetectProfileIndex() switch
+        {
+            0 => SetupLocalization.GetString("Onboarding_Review_Profile_ReadOnly"),
+            1 => SetupLocalization.GetString("Onboarding_Review_Profile_Standard"),
+            2 => SetupLocalization.GetString("Onboarding_Review_Profile_Full"),
+            _ => SetupLocalization.Format(
+                "Onboarding_Review_Profile_Custom",
+                _toggles.Values.Count(toggle => toggle.IsOn),
+                Capabilities.Length),
+        };
+
+        // An empty status map means the permission read failed; say nothing rather than "0 allowed".
+        ReviewPermissionsText.Visibility = _skipPermissions || _permGranted.Count == 0
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        var (granted, visible) = CountPermissions();
+        ReviewPermissionsText.Text = granted == visible
+            ? SetupLocalization.Format("Onboarding_Review_PermissionsAll", visible)
+            : SetupLocalization.Format("Onboarding_Review_PermissionsSome", granted, visible);
     }
 
     private async Task InitializeLocalAiReviewAsync(
@@ -805,6 +893,8 @@ public sealed partial class CapabilitiesPage : Page
             (LocalAiToggle.IsOn == true &&
              _localAiSelectionEligible &&
              (!_localAiNetworkingConsentRequired || LocalAiNetworkingConsentCheckBox.IsChecked == true));
+        if (_step == 3 && _installerUrlInsecure)
+            PrimaryButton.IsEnabled = false;
     }
 
     private static string FormatSize(long bytes) =>
@@ -970,6 +1060,12 @@ public sealed partial class CapabilitiesPage : Page
 
     private string PermissionSummary()
     {
+        var (granted, visible) = CountPermissions();
+        return granted == visible ? $"All {visible} granted" : $"{granted} of {visible} granted";
+    }
+
+    private (int Granted, int Visible) CountPermissions()
+    {
         var visible = 1; // Notifications always shown
         var granted = _permGranted.TryGetValue("Notifications", out var ng) && ng ? 1 : 0;
         foreach (var (capKey, permId) in CapPermMap)
@@ -980,7 +1076,7 @@ public sealed partial class CapabilitiesPage : Page
             if (_permGranted.TryGetValue(permId, out var g) && g)
                 granted++;
         }
-        return granted == visible ? $"All {visible} granted" : $"{granted} of {visible} granted";
+        return (granted, visible);
     }
 
     private void AppendTranscript(string question, string? answer)
@@ -1034,6 +1130,24 @@ public sealed partial class CapabilitiesPage : Page
     private void ScrollActiveIntoView()
     {
         Scroller.UpdateLayout();
+        // Scroll the transcript away but never past the active card's top: jumping to the very
+        // bottom opened long steps such as the review past their first section.
+        if (Scroller.Content is FrameworkElement content)
+        {
+            try
+            {
+                var cardTop = ActiveCard.TransformToVisual(content)
+                    .TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+                // Leave a little room so the last answered step stays visible for continuity.
+                var target = Math.Max(0, cardTop - 44);
+                Scroller.ChangeView(null, target, null);
+                return;
+            }
+            catch
+            {
+                // Fall back to the previous behaviour if the transform fails.
+            }
+        }
         Scroller.ChangeView(null, Scroller.ScrollableHeight, null);
     }
 
@@ -1207,6 +1321,8 @@ public sealed partial class CapabilitiesPage : Page
                 PermRows.Children.Add(row);
             }
             UpdatePermissionVisibility();
+            if (_step == 3)
+                UpdateReviewChoicesText();
         }
         catch (Exception ex)
         {
@@ -1221,6 +1337,8 @@ public sealed partial class CapabilitiesPage : Page
                 Title = "Couldn't read Windows permission status",
                 Message = $"You can continue setup. Review permissions later in Settings. Details: {ex.Message}",
             });
+            if (_step == 3)
+                UpdateReviewChoicesText();
         }
     }
 

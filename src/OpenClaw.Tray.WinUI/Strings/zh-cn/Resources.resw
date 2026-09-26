@@ -7200,4 +7200,37 @@
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>推理强度</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>更快</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>更深入</value></data>
+  <data name="Onboarding_Review_Title" xml:space="preserve"><value>检查您的设置</value></data>
+  <data name="Onboarding_Review_InstallButton" xml:space="preserve"><value>安装并设置</value></data>
+  <data name="Onboarding_Review_Intro.Text" xml:space="preserve"><value>在您选择“安装并设置”之前，不会安装任何内容。</value></data>
+  <data name="Onboarding_Review_WhereTitle.Text" xml:space="preserve"><value>OpenClaw 的运行位置</value></data>
+  <data name="Onboarding_Review_ChangeWhere.Content" xml:space="preserve"><value>更改</value></data>
+  <data name="Onboarding_Review_ChangeWhere.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>更改 OpenClaw 的运行位置</value></data>
+  <data name="Onboarding_Review_WhereSummary.Text" xml:space="preserve"><value>OpenClaw 将安装在这台电脑上一个独立的私有空间中，需要数 GB 的磁盘空间。</value></data>
+  <data name="Onboarding_Review_AdminNote.Text" xml:space="preserve"><value>Windows 可能会请求一次管理员权限。</value></data>
+  <data name="Onboarding_Review_InstallerWarning.Title" xml:space="preserve"><value>请检查下载来源</value></data>
+  <data name="Onboarding_Review_CapabilitiesTitle.Text" xml:space="preserve"><value>OpenClaw 可以做什么</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.Content" xml:space="preserve"><value>更改</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>更改 OpenClaw 可以做的事情</value></data>
+  <data name="Onboarding_Review_AiTitle.Text" xml:space="preserve"><value>AI 设置</value></data>
+  <data name="Onboarding_Review_ConnectionsTitle.Text" xml:space="preserve"><value>可选连接</value></data>
+  <data name="Onboarding_Review_TailscaleTitle.Text" xml:space="preserve"><value>在其他设备上使用 OpenClaw</value></data>
+  <data name="Onboarding_Review_TailscaleDescription.Text" xml:space="preserve"><value>允许您 Tailscale 网络中的设备按照您的 Tailscale 访问规则访问 OpenClaw。这台电脑上必须已安装并登录 Tailscale。</value></data>
+  <data name="Onboarding_Review_DetailsExpander.Header" xml:space="preserve"><value>技术详细信息</value></data>
+  <data name="Onboarding_Review_CommandsLabel.Text" xml:space="preserve"><value>命令和文件</value></data>
+  <data name="Onboarding_Review_Exposure_ThisPc" xml:space="preserve"><value>只有这台电脑可以连接到它。</value></data>
+  <data name="Onboarding_Review_Exposure_LocalNetwork" xml:space="preserve"><value>您本地网络中的其他设备也可以连接到它。</value></data>
+  <data name="Onboarding_Review_Exposure_Tailnet" xml:space="preserve"><value>您 Tailscale 网络中的设备也可以连接到它。</value></data>
+  <data name="Onboarding_Review_InstallerCustom" xml:space="preserve"><value>OpenClaw 将从 {0} 下载，这是 OpenClaw 未验证的来源。请仅在您信任该来源时继续。</value></data>
+  <data name="Onboarding_Review_InstallerInsecure" xml:space="preserve"><value>下载地址未使用安全 (HTTPS) 连接，因此安装程序无法从该地址安装 OpenClaw。请在安装前修正该地址。</value></data>
+  <data name="Onboarding_Review_AiLocal" xml:space="preserve"><value>OpenClaw 将使用在这台电脑上运行的 AI 模型。</value></data>
+  <data name="Onboarding_Review_AiLater" xml:space="preserve"><value>安装完成后，您将选择一个 AI 服务并登录。</value></data>
+  <data name="Onboarding_Review_Profile_ReadOnly" xml:space="preserve"><value>只读：可以查看您的屏幕并显示内容，但不能运行程序。</value></data>
+  <data name="Onboarding_Review_Profile_Standard" xml:space="preserve"><value>标准：可以运行程序、编辑文件、查看您的屏幕并使用语音。</value></data>
+  <data name="Onboarding_Review_Profile_Full" xml:space="preserve"><value>完全访问：包括标准的所有内容，以及您的摄像头、位置和网页浏览器。</value></data>
+  <data name="Onboarding_Review_Profile_Custom" xml:space="preserve"><value>自定义：已开启 {1} 项能力中的 {0} 项。</value></data>
+  <data name="Onboarding_Review_PermissionsAll" xml:space="preserve"><value>Windows 权限：全部 {0} 项已允许。</value></data>
+  <data name="Onboarding_Review_PermissionsSome" xml:space="preserve"><value>Windows 权限：已允许 {1} 项中的 {0} 项。您可以稍后在设置中允许其余权限。</value></data>
+  <data name="Onboarding_Review_AiSkipped" xml:space="preserve"><value>安装程序不会要求您选择 AI 服务。您稍后可以从 OpenClaw 托盘菜单进行设置。</value></data>
+  <data name="Onboarding_Review_TailscaleToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>在其他设备上使用 OpenClaw</value></data>
 </root>

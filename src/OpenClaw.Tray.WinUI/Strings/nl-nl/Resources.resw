@@ -7201,4 +7201,37 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Denkinspanning</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Sneller</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Grondiger</value></data>
+  <data name="Onboarding_Review_Title" xml:space="preserve"><value>Controleer uw installatie</value></data>
+  <data name="Onboarding_Review_InstallButton" xml:space="preserve"><value>Installeren en instellen</value></data>
+  <data name="Onboarding_Review_Intro.Text" xml:space="preserve"><value>Er wordt niets geïnstalleerd totdat u Installeren en instellen selecteert.</value></data>
+  <data name="Onboarding_Review_WhereTitle.Text" xml:space="preserve"><value>Waar OpenClaw wordt uitgevoerd</value></data>
+  <data name="Onboarding_Review_ChangeWhere.Content" xml:space="preserve"><value>Wijzigen</value></data>
+  <data name="Onboarding_Review_ChangeWhere.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Wijzigen waar OpenClaw wordt uitgevoerd</value></data>
+  <data name="Onboarding_Review_WhereSummary.Text" xml:space="preserve"><value>OpenClaw wordt op deze pc geïnstalleerd in een eigen, afgeschermde ruimte. Hiervoor is enkele GB schijfruimte nodig.</value></data>
+  <data name="Onboarding_Review_AdminNote.Text" xml:space="preserve"><value>Windows kan één keer om beheerdersrechten vragen.</value></data>
+  <data name="Onboarding_Review_InstallerWarning.Title" xml:space="preserve"><value>Controleer de downloadbron</value></data>
+  <data name="Onboarding_Review_CapabilitiesTitle.Text" xml:space="preserve"><value>Wat OpenClaw kan doen</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.Content" xml:space="preserve"><value>Wijzigen</value></data>
+  <data name="Onboarding_Review_ChangeCapabilities.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Wijzigen wat OpenClaw kan doen</value></data>
+  <data name="Onboarding_Review_AiTitle.Text" xml:space="preserve"><value>AI-instellingen</value></data>
+  <data name="Onboarding_Review_ConnectionsTitle.Text" xml:space="preserve"><value>Optionele verbindingen</value></data>
+  <data name="Onboarding_Review_TailscaleTitle.Text" xml:space="preserve"><value>OpenClaw gebruiken vanaf andere apparaten</value></data>
+  <data name="Onboarding_Review_TailscaleDescription.Text" xml:space="preserve"><value>Hiermee kunnen apparaten in uw Tailscale-netwerk OpenClaw bereiken, voor zover uw Tailscale-toegangsregels dat toestaan. Tailscale moet al op deze pc zijn geïnstalleerd en aangemeld.</value></data>
+  <data name="Onboarding_Review_DetailsExpander.Header" xml:space="preserve"><value>Technische details</value></data>
+  <data name="Onboarding_Review_CommandsLabel.Text" xml:space="preserve"><value>Opdrachten en bestanden</value></data>
+  <data name="Onboarding_Review_Exposure_ThisPc" xml:space="preserve"><value>Alleen deze pc kan er verbinding mee maken.</value></data>
+  <data name="Onboarding_Review_Exposure_LocalNetwork" xml:space="preserve"><value>Andere apparaten in uw lokale netwerk kunnen er ook verbinding mee maken.</value></data>
+  <data name="Onboarding_Review_Exposure_Tailnet" xml:space="preserve"><value>Apparaten in uw Tailscale-netwerk kunnen er ook verbinding mee maken.</value></data>
+  <data name="Onboarding_Review_InstallerCustom" xml:space="preserve"><value>OpenClaw wordt gedownload van {0}, een bron die OpenClaw niet heeft geverifieerd. Ga alleen verder als u deze bron vertrouwt.</value></data>
+  <data name="Onboarding_Review_InstallerInsecure" xml:space="preserve"><value>De installatie kan OpenClaw niet vanaf dit downloadadres installeren, omdat het geen beveiligde (HTTPS-)verbinding gebruikt. Corrigeer het adres voordat u installeert.</value></data>
+  <data name="Onboarding_Review_AiLocal" xml:space="preserve"><value>OpenClaw gebruikt een AI-model dat op deze pc wordt uitgevoerd.</value></data>
+  <data name="Onboarding_Review_AiLater" xml:space="preserve"><value>Na de installatie kiest u een AI-dienst en meldt u zich daarbij aan.</value></data>
+  <data name="Onboarding_Review_Profile_ReadOnly" xml:space="preserve"><value>Alleen-lezen: kan uw scherm zien en inhoud weergeven, maar kan geen programma's uitvoeren.</value></data>
+  <data name="Onboarding_Review_Profile_Standard" xml:space="preserve"><value>Standaard: kan programma's uitvoeren, bestanden bewerken, uw scherm zien en spraak gebruiken.</value></data>
+  <data name="Onboarding_Review_Profile_Full" xml:space="preserve"><value>Volledige toegang: alles van Standaard, plus uw camera, locatie en webbrowser.</value></data>
+  <data name="Onboarding_Review_Profile_Custom" xml:space="preserve"><value>Aangepast: {0} van {1} mogelijkheden ingeschakeld.</value></data>
+  <data name="Onboarding_Review_PermissionsAll" xml:space="preserve"><value>Windows-machtigingen: alle {0} toegestaan.</value></data>
+  <data name="Onboarding_Review_PermissionsSome" xml:space="preserve"><value>Windows-machtigingen: {0} van {1} toegestaan. U kunt de rest later toestaan in Instellingen.</value></data>
+  <data name="Onboarding_Review_AiSkipped" xml:space="preserve"><value>De installatie vraagt u niet om een AI-dienst te kiezen. U kunt er later een instellen via het OpenClaw-menu in het systeemvak.</value></data>
+  <data name="Onboarding_Review_TailscaleToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>OpenClaw gebruiken vanaf andere apparaten</value></data>
 </root>

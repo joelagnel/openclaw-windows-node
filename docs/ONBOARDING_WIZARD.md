@@ -8,7 +8,7 @@ On first launch, the wizard appears only when there is no usable saved gateway c
 
 The setup flow walks users through:
 
-1. **Security notice** - Device-trust warning before setup choices
+1. **Introduction** - Benefits-first welcome, brief risk notice, and links to security and architecture docs
 2. **Welcome / Advanced** - Install app-owned WSL gateway or connect existing gateway from Settings
 3. **Capabilities** - Recommended profile, inline Windows permission status, and install review
 4. **Local setup progress** - Fresh app-owned `OpenClawGateway` WSL installation
@@ -106,7 +106,7 @@ clean directory and checks every setup PNG, including nested assets.
 | Path | Purpose |
 |------|---------|
 | `src/OpenClaw.SetupEngine.UI/SetupWindow.xaml(.cs)` | Tray-hosted setup shell, run lock, preview routing, and page navigation |
-| `src/OpenClaw.SetupEngine.UI/Pages/SecurityNoticePage.xaml(.cs)` | First-run device-trust warning before setup choices |
+| `src/OpenClaw.SetupEngine.UI/Pages/SecurityNoticePage.xaml(.cs)` | First-run introduction and risk notice before setup choices |
 | `src/OpenClaw.SetupEngine.UI/Pages/WelcomePage.xaml(.cs)` | Install-new-WSL vs connect-existing choice and existing-gateway replacement prompt |
 | `src/OpenClaw.SetupEngine.UI/Pages/AdvancedSetupPage.xaml(.cs)` | Connect-existing handoff to Connection settings |
 | `src/OpenClaw.SetupEngine.UI/Pages/CapabilitiesPage.xaml(.cs)` | Capability profile, inline Windows permission status, and install review |

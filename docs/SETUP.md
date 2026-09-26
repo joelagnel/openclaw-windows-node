@@ -52,7 +52,7 @@ The installer also creates a Start Menu group with shortcuts for **OpenClaw Comp
 
 On first launch, Molty opens the onboarding wizard when there is no usable saved gateway connection. The default flow installs and configures a dedicated app-owned local WSL gateway:
 
-1. **Security notice** - Confirms this is a trusted PC before local setup starts.
+1. **Introduction** - Explains what OpenClaw can do, notes that AI assistants can make mistakes and can see and change things on this PC when allowed, asks you to set it up only on your own PC, and links to the security and architecture docs before local setup starts.
 
 2. **Welcome** - Choose **Install a local gateway (WSL)** to install the app-owned WSL gateway, or **Connect to an existing gateway** to open the tray app's Connections tab.
 

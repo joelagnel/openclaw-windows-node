@@ -67,7 +67,7 @@ src/OpenClaw.SetupEngine.UI/
 ├── OpenClaw.SetupEngine.UI.csproj # WinAppSDK library referenced by tray
 ├── SetupWindow.xaml / .xaml.cs    # 720×820 window, Mica, title bar, navigation, setup events
 └── Pages/
-    ├── SecurityNoticePage.xaml / .cs # Device-trust warning
+    ├── SecurityNoticePage.xaml / .cs # First-run introduction and risk notice
     ├── WelcomePage.xaml / .cs        # Install WSL gateway vs connect existing
     ├── CapabilitiesPage.xaml / .cs   # Profile, inline permissions, install review
     ├── ProgressPage.xaml / .cs       # Live step rows + gateway-installed handoff
@@ -352,7 +352,8 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 ### Page Flow: Security → Welcome → WSL readiness gate → Capabilities → Progress → OpenClaw onboard → Complete
 
 **SecurityNoticePage**
-- Native warning InfoBar for device-trust and setup transparency
+- Benefits-first introduction with a brief, model-neutral risk InfoBar and links to the security and architecture docs
+- Copy is localized through the `Onboarding_Intro_*` resources
 
 **WelcomePage**
 - OpenClaw icon + "OpenClaw Setup" title bar

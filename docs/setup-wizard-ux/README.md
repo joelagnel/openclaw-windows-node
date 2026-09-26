@@ -9,7 +9,7 @@ against the live process - the same engine Accessibility Insights uses.
 
 | # | Screen | Notes |
 |---|--------|-------|
-| 01 | Welcome + security notice | Selectable RichTextBlock body |
+| 01 | Welcome + security notice | Selectable RichTextBlock body. Since replaced by a benefits-first introduction with a brief risk notice; this capture shows the earlier screen |
 | 02 | Setup mode | Single-selection `ListView` (ItemContainer), first item selected by default |
 | 03 | Config handling | Single-selection list, standardized bottom bar |
 | 04 | Model/auth provider (collapsed) | "Skip for now" pinned to top, subtle **More ▾** expander |

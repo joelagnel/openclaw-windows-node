@@ -60,6 +60,8 @@ Elements with `x:Uid` attributes are automatically matched to resource keys:
 ```
 Maps to resource key `SettingsSaveButton.Content`.
 
+Setup wizard pages (`src/OpenClaw.SetupEngine.UI`) are the exception. They live in a library whose resource map holds no strings, so `x:Uid` never finds these keys there. Use `setup:SetupText.Uid` (with `xmlns:setup="using:OpenClaw.SetupEngine.UI"`) instead. It reads the same `Key.Property` entries, but only for `TextBlock.Text`, `InfoBar.Title` and `Message`, `Expander.Header`, `ContentControl.Content` (buttons, radio buttons, and so on), and `AutomationProperties.Name`. It applies them when the element first loads, so code-behind must not set those properties on the same element. Setup code-behind uses `SetupLocalization.GetString(...)`.
+
 ### C# runtime strings (via LocalizationHelper)
 Code uses `LocalizationHelper.GetString("key")` to load strings at runtime:
 ```csharp
@@ -78,7 +80,7 @@ $env:OPENCLAW_LANGUAGE = "fr-fr"  # or nl-nl, pt-br, zh-cn, zh-tw
 .\run-app-local.ps1 -NoBuild
 ```
 
-This overrides `LocalizationHelper.GetString()` calls for menus, toasts, dialogs, and the onboarding wizard. The language is validated against the supported locale list.
+This overrides `LocalizationHelper.GetString()` calls for menus, toasts, and dialogs. The language is validated against the supported locale list. Setup wizard pages (`SetupLocalization` and `SetupText`) ignore it and follow the OS display language.
 
 > **Note:** XAML `x:Uid` bindings follow the OS display language. For full localization testing including XAML elements, change your Windows display language in Settings → Time & Language.
 

@@ -9,9 +9,9 @@ namespace OpenClaw.SetupEngine.UI;
 /// this project, so the reverse would be circular). There is no standalone Setup UI executable in
 /// Release builds: this project is always hosted inside the Tray app process, so string keys
 /// resolve against the same merged app resource map that the Tray app's own localization helper
-/// reads, using keys defined in the Tray app's <c>Strings\*\Resources.resw</c> files (the existing
-/// <c>x:Uid="Onboarding_LocalAi_RecheckAvailabilityButton"</c> binding already relies on the same
-/// mechanism for XAML-declared strings).
+/// reads, using keys defined in the Tray app's <c>Strings\*\Resources.resw</c> files. XAML in this
+/// project reaches the same entries through <see cref="SetupText"/>, because <c>x:Uid</c> only
+/// searches this library's resource map.
 /// </summary>
 internal static class SetupLocalization
 {
@@ -21,36 +21,40 @@ internal static class SetupLocalization
 
     public static string GetString(string resourceKey)
     {
-        string? value = TryGetValueAsString(resourceKey);
+        string? value = TryGetString(resourceKey);
         if (!string.IsNullOrEmpty(value))
             return value;
 
-        // XAML property resources (the ones an x:Uid="Key" binding resolves for a "Key.Property"
-        // entry, e.g. "Onboarding_Welcome_LocalAiAvailableBadge.Text") are stored under a
-        // "Key/Property" path, not a literal dot. Retry that shape so code-behind can share the
-        // same resw entry an x:Uid binding already uses, instead of duplicating the string under
-        // a second key.
+        // XAML property resources (the ones a SetupText.Uid="Key" binding resolves for a
+        // "Key.Property" entry, e.g. "Onboarding_Welcome_LocalAiAvailableBadge.Text") are stored
+        // under a "Key/Property" path, not a literal dot. Retry that shape so code-behind can share
+        // the same resw entry a SetupText.Uid binding already uses, instead of duplicating the
+        // string under a second key.
         int propertySeparator = resourceKey.LastIndexOf('.');
         if (propertySeparator > 0 && propertySeparator < resourceKey.Length - 1)
         {
             string propertyResourcePath =
                 $"{resourceKey[..propertySeparator]}/{resourceKey[(propertySeparator + 1)..]}";
-            value = TryGetValueAsString(propertyResourcePath);
+            value = TryGetString(propertyResourcePath);
             if (!string.IsNullOrEmpty(value))
                 return value;
         }
 
+        Trace.TraceWarning($"SetupLocalization: no resource for '{resourceKey}'");
         return resourceKey;
     }
 
-    private static string? TryGetValueAsString(string resourceKey)
+    /// <summary>
+    /// The value at a resource path such as <c>Key/Text</c>, or <c>null</c> when it is missing.
+    /// Unlike <see cref="GetString"/>, a miss is expected and neither traced nor replaced by the key.
+    /// </summary>
+    internal static string? TryGetString(string resourcePath)
     {
         try
         {
-            ResourceCandidate? candidate = Manager.MainResourceMap.GetValue(
-                $"Resources/{resourceKey}",
-                Manager.CreateResourceContext());
-            return candidate?.ValueAsString;
+            return Manager.MainResourceMap.TryGetValue(
+                $"Resources/{resourcePath}",
+                Manager.CreateResourceContext())?.ValueAsString;
         }
         catch (Exception ex)
         {
@@ -58,7 +62,7 @@ internal static class SetupLocalization
             // TRACE constant is defined in both build configurations by default, and the
             // default trace listener forwards to OutputDebugString, so this remains visible via
             // DebugView/ETW in a packaged Release build instead of silently disappearing.
-            Trace.TraceWarning($"SetupLocalization: resource lookup failed for '{resourceKey}': {ex.Message}");
+            Trace.TraceWarning($"SetupLocalization: resource lookup failed for '{resourcePath}': {ex.Message}");
             return null;
         }
     }

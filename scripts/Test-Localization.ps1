@@ -147,7 +147,7 @@ function Get-XamlLocalizationFindings {
 
 if (-not $SkipDotNetTests) {
     $env:OPENCLAW_REPO_ROOT = $repoRoot
-    dotnet test (Join-Path $repoRoot 'tests\OpenClaw.Tray.Tests\OpenClaw.Tray.Tests.csproj') --filter 'FullyQualifiedName~LocalizationValidationTests|FullyQualifiedName~CapabilitiesPageLocalizationCoverageTests' --no-restore
+    dotnet test (Join-Path $repoRoot 'tests\OpenClaw.Tray.Tests\OpenClaw.Tray.Tests.csproj') --filter 'FullyQualifiedName~LocalizationValidationTests|FullyQualifiedName~CapabilitiesPageLocalizationCoverageTests|FullyQualifiedName~SetupTextLocalizationTests' --no-restore
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }

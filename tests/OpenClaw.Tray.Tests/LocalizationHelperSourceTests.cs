@@ -18,7 +18,7 @@ public sealed class LocalizationHelperSourceTests
     /// <summary>
     /// SetupEngine.UI's own resource helper (it cannot reference LocalizationHelper directly,
     /// see SetupLocalization.cs) must resolve the same "Key.Property" -> "Key/Property" XAML
-    /// property resource shape, so code-behind can share one resw entry with an x:Uid binding
+    /// property resource shape, so code-behind can share one resw entry with a SetupText.Uid binding
     /// instead of duplicating the string under a second key.
     /// </summary>
     [Fact]

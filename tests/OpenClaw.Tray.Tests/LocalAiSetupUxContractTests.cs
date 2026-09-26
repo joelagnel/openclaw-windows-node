@@ -60,7 +60,7 @@ public sealed class LocalAiSetupUxContractTests
             "WelcomePage.xaml.cs"));
         Assert.Contains("WelcomeLocalAiAvailable", xaml);
         Assert.Contains("Glyph=\"&#xE73E;\"", xaml);
-        Assert.Contains("x:Uid=\"Onboarding_Welcome_LocalAiAvailableBadge\"", xaml);
+        Assert.Contains("setup:SetupText.Uid=\"Onboarding_Welcome_LocalAiAvailableBadge\"", xaml);
         Assert.Contains("Local AI supported", xaml);
         Assert.Contains("AutomationProperties.AccessibilityView=\"Raw\"", xaml);
         AssertInOrder(
@@ -147,7 +147,7 @@ public sealed class LocalAiSetupUxContractTests
         Assert.Contains("x:Name=\"LocalAiAvailabilityRecoveryPanel\"", xaml);
         Assert.Contains("x:Name=\"LocalAiAvailabilityProgressRing\"", xaml);
         Assert.Contains("x:Name=\"LocalAiRecheckAvailabilityButton\"", xaml);
-        Assert.Contains("x:Uid=\"Onboarding_LocalAi_RecheckAvailabilityButton\"", xaml);
+        Assert.Contains("setup:SetupText.Uid=\"Onboarding_LocalAi_RecheckAvailabilityButton\"", xaml);
         Assert.Contains("AutomationProperties.AutomationId=\"LocalAiRecheckAvailabilityButton\"", xaml);
         AssertInOrder(
             xaml,
@@ -296,7 +296,7 @@ public sealed class LocalAiSetupUxContractTests
             "Pages",
             "CapabilitiesPage.xaml"));
 
-        Assert.Contains("x:Uid=\"Onboarding_LocalAi_RecheckAvailabilityButton\"", xaml);
+        Assert.Contains("setup:SetupText.Uid=\"Onboarding_LocalAi_RecheckAvailabilityButton\"", xaml);
 
         foreach (string locale in new[] { "en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br" })
         {
@@ -326,7 +326,7 @@ public sealed class LocalAiSetupUxContractTests
         string source = File.ReadAllText(Path.Combine(
             root, "src", "OpenClaw.SetupEngine.UI", "Pages", "CapabilitiesPage.xaml.cs"));
 
-        Assert.Contains("x:Uid=\"Onboarding_LocalAi_UnavailableDetailsButton\"", xaml);
+        Assert.Contains("setup:SetupText.Uid=\"Onboarding_LocalAi_UnavailableDetailsButton\"", xaml);
 
         string[] setupResourceCalls =
         [

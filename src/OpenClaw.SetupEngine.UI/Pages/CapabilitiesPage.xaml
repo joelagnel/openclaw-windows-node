@@ -3,6 +3,7 @@
     x:Class="OpenClaw.SetupEngine.UI.Pages.CapabilitiesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:setup="using:OpenClaw.SetupEngine.UI"
     NavigationCacheMode="Disabled">
 
     <Grid RowDefinitions="Auto,*,Auto" Padding="48,28,48,24">
@@ -123,7 +124,7 @@
                                          Visibility="Collapsed">
                                     <InfoBar.ActionButton>
                                         <HyperlinkButton x:Name="LocalAiUnavailableDetailsButton"
-                                                         x:Uid="Onboarding_LocalAi_UnavailableDetailsButton"
+                                                         setup:SetupText.Uid="Onboarding_LocalAi_UnavailableDetailsButton"
                                                          AutomationProperties.AutomationId="LocalAiUnavailableDetailsButton"
                                                          Content="See why"
                                                          Click="LocalAiUnavailableDetails_Click" />
@@ -140,7 +141,7 @@
                                                   IsActive="False"
                                                   AutomationProperties.AccessibilityView="Raw" />
                                     <HyperlinkButton x:Name="LocalAiRecheckAvailabilityButton"
-                                                     x:Uid="Onboarding_LocalAi_RecheckAvailabilityButton"
+                                                     setup:SetupText.Uid="Onboarding_LocalAi_RecheckAvailabilityButton"
                                                      AutomationProperties.AutomationId="LocalAiRecheckAvailabilityButton"
                                                      Content="Recheck"
                                                      Click="LocalAiRecheckAvailability_Click" />

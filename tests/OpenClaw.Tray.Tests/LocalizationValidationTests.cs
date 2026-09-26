@@ -380,10 +380,10 @@ public class LocalizationValidationTests
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
-    private static string GetStringsDirectory() =>
+    internal static string GetStringsDirectory() =>
         Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), "src", "OpenClaw.Tray.WinUI", "Strings");
 
-    private static Dictionary<string, string> LoadResw(string path)
+    internal static Dictionary<string, string> LoadResw(string path)
     {
         var doc = XDocument.Load(path);
         return doc.Descendants("data")
@@ -729,7 +729,7 @@ public class LocalizationValidationTests
             string.Join("; ", missing.Take(50)));
     }
 
-    private static bool IsSourceXaml(string path)
+    internal static bool IsSourceXaml(string path)
     {
         var relative = Path.GetRelativePath(TestRepositoryPaths.GetRepositoryRoot(), path);
         var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

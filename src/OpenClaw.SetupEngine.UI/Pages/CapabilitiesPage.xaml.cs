@@ -1,6 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
@@ -41,16 +42,12 @@ public sealed partial class CapabilitiesPage : Page
     private CancellationTokenSource? _tailscaleStatusCancellation;
     private int _tailscaleStatusGeneration;
     private int _step = 1;
-
-    // Capability profiles preset only runtime-gated settings. Device info/status
-    // stays available whenever Node Mode is enabled, so it is disclosed but not selectable.
-    private static readonly string[] ProfileReadOnly = ["Canvas", "Screen"];
-    private static readonly string[] ProfileStandard = ["System", "Canvas", "Screen", "Tts", "Stt"];
+    private readonly Dictionary<string, (FontIcon Icon, TextBlock Label)> _levelRows = new();
 
     // (config property, display name, description, fluent icon glyph)
     private static readonly (string Key, string Name, string Desc, string Glyph)[] Capabilities =
     [
-        ("System", "System", "Shell commands, files, clipboard", "\uE756"),
+        ("System", "System", "Shell commands and files", "\uE756"),
         ("Canvas", "Canvas", "Whiteboard and annotations", "\uE790"),
         ("Screen", "Screen capture", "Screenshots and recording", "\uE7F4"),
         ("Camera", "Camera", "Webcam photos and video", "\uE722"),
@@ -85,18 +82,21 @@ public sealed partial class CapabilitiesPage : Page
         _skipWizardWithoutLocalAi = _config.SkipWizard;
         _treatBundledAllOnAsPlaceholder = _config.UsesBundledDefaultConfig;
         BuildToggles();
+        BuildLevelDisclosureRows();
         _suppressProfile = true;
         var profileIndex = DetectProfileIndex();
         ProfileRadio.SelectedIndex = profileIndex;
         UpdateCapabilityProfilePresentation(profileIndex);
         // BuildToggles() seeded the toggles from the config. The bundled
         // default-config.json still ships with every capability on as a
-        // placeholder, so default that implicit case to Standard. Explicit
+        // placeholder, so default that implicit case to Balanced. Explicit
         // custom configs are preserved even when they do not match a preset.
-        if (_config.UsesBundledDefaultConfig && profileIndex == 1 && !MatchesProfile(ProfileStandard))
-            ApplyProfile(1);
+        if (_config.UsesBundledDefaultConfig && profileIndex == (int)SetupSecurityLevel.Balanced &&
+            CurrentLevel() != SetupSecurityLevel.Balanced)
+            ApplyProfile((int)SetupSecurityLevel.Balanced);
         _suppressProfile = false;
         _treatBundledAllOnAsPlaceholder = false;
+        UpdateLevelDisclosure();
         // Only probe OS permissions when the permissions step will actually be shown.
         if (!_skipPermissions)
             _permissionsTask = BuildPermissionRows();
@@ -171,7 +171,7 @@ public sealed partial class CapabilitiesPage : Page
 
         StepTitle.Text = step switch
         {
-            1 => "What should your agent be able to do?",
+            1 => SetupLocalization.GetString("Onboarding_SecurityLevel_Title"),
             2 => "Windows permissions",
             _ => "What setup will install on this PC",
         };
@@ -205,7 +205,7 @@ public sealed partial class CapabilitiesPage : Page
         switch (_step)
         {
             case 1:
-                AppendTranscript("What your agent can do", ProfileSummary());
+                AppendTranscript(SetupLocalization.GetString("Onboarding_SecurityLevel_TranscriptQuestion"), ProfileSummary());
                 GoToStep(_skipPermissions ? 3 : 2);
                 break;
             case 2:
@@ -959,14 +959,14 @@ public sealed partial class CapabilitiesPage : Page
         ReferenceEquals(_tailscaleStatusCancellation, cancellation) &&
         !cancellation.IsCancellationRequested;
 
-    private string ProfileSummary()
+    private string ProfileSummary() => CurrentLevel() switch
     {
-        if (MatchesProfile(ProfileReadOnly)) return "Read-only";
-        if (MatchesProfile(ProfileStandard)) return "Standard";
-        if (MatchesProfile(Capabilities.Select(c => c.Key).ToArray())) return "Full access";
-        var n = _toggles.Values.Count(t => t.IsOn);
-        return $"{n} of {Capabilities.Length} capabilities";
-    }
+        SetupSecurityLevel.LookOnly => SetupLocalization.GetString("Onboarding_SecurityLevel_LookOnlyTitle.Text"),
+        SetupSecurityLevel.Balanced => SetupLocalization.GetString("Onboarding_SecurityLevel_BalancedTitle.Text"),
+        SetupSecurityLevel.FullAccess => SetupLocalization.GetString("Onboarding_SecurityLevel_FullAccessTitle.Text"),
+        _ => SetupLocalization.Format(
+            "Onboarding_SecurityLevel_Custom", _toggles.Values.Count(t => t.IsOn), Capabilities.Length),
+    };
 
     private string PermissionSummary()
     {
@@ -1034,6 +1034,24 @@ public sealed partial class CapabilitiesPage : Page
     private void ScrollActiveIntoView()
     {
         Scroller.UpdateLayout();
+        // Scroll the transcript away but never past the active card's top: jumping to the very
+        // bottom opened long steps such as the security levels past their heading.
+        if (Scroller.Content is FrameworkElement content)
+        {
+            try
+            {
+                var cardTop = ActiveCard.TransformToVisual(content)
+                    .TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+                // Leave a little room so the last answered step stays visible for continuity.
+                var target = Math.Max(0, cardTop - 44);
+                Scroller.ChangeView(null, target, null);
+                return;
+            }
+            catch
+            {
+                // Fall back to the previous behaviour if the transform fails.
+            }
+        }
         Scroller.ChangeView(null, Scroller.ScrollableHeight, null);
     }
 
@@ -1105,7 +1123,7 @@ public sealed partial class CapabilitiesPage : Page
 
     private void Profile_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressProfile || _toggles.Count == 0)
+        if (_suppressProfile || _toggles.Count == 0 || ProfileRadio.SelectedIndex < 0)
             return;
 
         _suppressProfile = true;
@@ -1123,6 +1141,7 @@ public sealed partial class CapabilitiesPage : Page
     private void Capability_Toggled(object sender, RoutedEventArgs e)
     {
         UpdatePermissionVisibility();
+        UpdateLevelDisclosure();
         if (_suppressProfile)
             return;
 
@@ -1141,52 +1160,94 @@ public sealed partial class CapabilitiesPage : Page
 
     private void UpdateCapabilityProfilePresentation(int profileIndex)
     {
-        CapabilityExpander.Header = profileIndex < 0
-            ? "Custom capabilities (review)"
-            : "Fine-tune individual capabilities (optional)";
+        CapabilityExpander.Header = SetupLocalization.GetString(profileIndex < 0
+            ? "Onboarding_SecurityLevel_CustomExpander"
+            : "Onboarding_SecurityLevel_AdvancedExpander");
         if (profileIndex < 0)
             CapabilityExpander.IsExpanded = true;
     }
 
-    // Turns the capability toggles on/off to match a profile index (0=Read-only,
-    // 1=Standard, 2=Full access). Shared by the radio handler and the default-on-entry path.
+    // Turns the capability toggles on/off to match a security level; radio indexes follow
+    // SetupSecurityLevel order. Shared by the radio handler and the default-on-entry path.
     private void ApplyProfile(int index)
     {
-        var on = index switch
-        {
-            0 => ProfileReadOnly,
-            1 => ProfileStandard,
-            _ => Capabilities.Select(c => c.Key).ToArray(), // Full access
-        };
-        var onSet = new HashSet<string>(on);
+        var onSet = SetupSecurityLevels.EnabledCapabilities((SetupSecurityLevel)index).ToHashSet();
         foreach (var (key, _, _, _) in Capabilities)
             if (_toggles.TryGetValue(key, out var toggle))
                 toggle.IsOn = onSet.Contains(key);
     }
 
+    // An "all capabilities on" bundled config is the shipped placeholder default, not a
+    // deliberate Full-access choice, so new users default to Balanced (recommended). Every other
+    // non-preset set is explicit and must remain visibly custom, including edits made during
+    // bundled setup.
     private int DetectProfileIndex()
     {
-        if (MatchesProfile(ProfileReadOnly)) return 0;
-        if (MatchesProfile(ProfileStandard)) return 1;
-        if (MatchesProfile(Capabilities.Select(c => c.Key).ToArray()))
-            return _treatBundledAllOnAsPlaceholder ? 1 : 2;
-
-        // An "all capabilities on" bundled config is the shipped placeholder
-        // default, not a deliberate Full-access choice, so new users default to
-        // Standard (recommended). Every other non-preset set is explicit and must
-        // remain visibly custom, including edits made during bundled setup.
-        return -1;
+        return SetupSecurityLevels.Detect(EnabledCapabilityKeys(), _treatBundledAllOnAsPlaceholder) is { } level
+            ? (int)level
+            : -1;
     }
 
-    private bool MatchesProfile(string[] onKeys)
+    private SetupSecurityLevel? CurrentLevel() => SetupSecurityLevels.Match(EnabledCapabilityKeys());
+
+    private IEnumerable<string> EnabledCapabilityKeys() => _toggles.Where(t => t.Value.IsOn).Select(t => t.Key);
+
+    // ── Security level disclosure ──
+
+    private void BuildLevelDisclosureRows()
     {
-        var onSet = new HashSet<string>(onKeys);
-        foreach (var (key, _, _, _) in Capabilities)
+        var keys = SetupSecurityLevels.Capabilities;
+        for (int i = 0; i < (keys.Count + 1) / 2; i++)
+            LevelAllowsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        for (int i = 0; i < keys.Count; i++)
         {
-            if (!_toggles.TryGetValue(key, out var toggle) || toggle.IsOn != onSet.Contains(key))
-                return false;
+            var key = keys[i];
+            var icon = new FontIcon { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetAccessibilityView(icon, AccessibilityView.Raw);
+            var label = new TextBlock
+            {
+                Text = SetupLocalization.GetString("Onboarding_SecurityLevel_Cap_" + key),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var item = new Grid { ColumnSpacing = 8 };
+            item.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            item.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(label, 1);
+            item.Children.Add(icon);
+            item.Children.Add(label);
+            Grid.SetRow(item, i / 2);
+            Grid.SetColumn(item, i % 2);
+            LevelAllowsGrid.Children.Add(item);
+            _levelRows[key] = (icon, label);
         }
-        return true;
+    }
+
+    // Describes the toggles as they are, so custom choices are disclosed as accurately as levels.
+    private void UpdateLevelDisclosure()
+    {
+        foreach (var (key, (icon, label)) in _levelRows)
+        {
+            var on = IsCapOn(key);
+            icon.Glyph = on ? "\uE73E" : "\uE711";
+            icon.Foreground = SetupPermissionHelper.Res(on ? "SystemFillColorSuccessBrush" : "TextFillColorTertiaryBrush");
+            label.Foreground = SetupPermissionHelper.Res(on ? "TextFillColorPrimaryBrush" : "TextFillColorSecondaryBrush");
+            AutomationProperties.SetName(label, SetupLocalization.Format(
+                on ? "Onboarding_SecurityLevel_AllowedItem" : "Onboarding_SecurityLevel_NotAllowedItem",
+                label.Text));
+        }
+
+        var runsCommands = IsCapOn("System");
+        // The device line covers both the capabilities that ask first and those that don't.
+        var capturesDevices = IsCapOn("Screen") || IsCapOn("Camera") || IsCapOn("Location") ||
+                              IsCapOn("Stt") || IsCapOn("Browser");
+        LevelAsksCommandsText.Visibility = runsCommands ? Visibility.Visible : Visibility.Collapsed;
+        LevelAsksDevicesText.Visibility = capturesDevices ? Visibility.Visible : Visibility.Collapsed;
+        LevelAsksFirstPanel.Visibility = runsCommands || capturesDevices ? Visibility.Visible : Visibility.Collapsed;
+        LevelSandboxPanel.Visibility = runsCommands ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── Windows permissions (merged inline from the old standalone step) ──

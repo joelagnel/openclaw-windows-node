@@ -7264,4 +7264,38 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Faster</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Smarter</value></data>
+  <data name="Onboarding_SecurityLevel_Title" xml:space="preserve"><value>Choose an access level</value></data>
+  <data name="Onboarding_SecurityLevel_Intro.Text" xml:space="preserve"><value>This controls what OpenClaw can do on this PC. You can change it later on the Permissions page.</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnly.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Look only</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyTitle.Text" xml:space="preserve"><value>Look only</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyDetail.Text" xml:space="preserve"><value>Sees your screen and shows content in a canvas window. Can't run commands or programs.</value></data>
+  <data name="Onboarding_SecurityLevel_Balanced.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Balanced (Recommended)</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedTitle.Text" xml:space="preserve"><value>Balanced</value></data>
+  <data name="Onboarding_SecurityLevel_RecommendedBadge.Text" xml:space="preserve"><value>Recommended</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedDetail.Text" xml:space="preserve"><value>Also runs commands and programs, and can speak and listen. Commands ask you first unless you've allowed them.</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccess.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Full access</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessTitle.Text" xml:space="preserve"><value>Full access</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessDetail.Text" xml:space="preserve"><value>Everything in Balanced, plus your camera, your location, and control of a web browser.</value></data>
+  <data name="Onboarding_SecurityLevel_DisclosureTitle.Text" xml:space="preserve"><value>What this level allows</value></data>
+  <data name="Onboarding_SecurityLevel_AsksFirstTitle.Text" xml:space="preserve"><value>Asks you first</value></data>
+  <data name="Onboarding_SecurityLevel_AsksCommands.Text" xml:space="preserve"><value>Commands that aren't on your allowed list ask you to Deny, Allow Once, or Allow Always. If you don't answer, the command is denied.</value></data>
+  <data name="Onboarding_SecurityLevel_AsksDevices.Text" xml:space="preserve"><value>Screen capture, camera, and location ask for your permission the first time they're used. Listening through your microphone and controlling a web browser don't ask first.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxTitle.Text" xml:space="preserve"><value>Where commands run</value></data>
+  <data name="Onboarding_SecurityLevel_Sandbox.Text" xml:space="preserve"><value>By default, commands run in a sandbox with no internet or clipboard access. They can read the folder they run in and folders you allow on the Sandbox page. The sandbox also blocks the usual folders for OpenClaw's settings, SSH keys, browser profiles (Chrome, Edge, Brave, Firefox), and PowerShell history.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxFallback.Text" xml:space="preserve"><value>If this PC can't run the sandbox, commands run with your normal access instead.</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_System" xml:space="preserve"><value>Run commands and programs</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Canvas" xml:space="preserve"><value>Show a canvas window</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Screen" xml:space="preserve"><value>Capture your screen</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Camera" xml:space="preserve"><value>Use your camera</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Location" xml:space="preserve"><value>See your location</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Browser" xml:space="preserve"><value>Control a web browser</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Tts" xml:space="preserve"><value>Speak out loud</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Stt" xml:space="preserve"><value>Listen through your microphone</value></data>
+  <data name="Onboarding_SecurityLevel_AllowedItem" xml:space="preserve"><value>Allowed: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_NotAllowedItem" xml:space="preserve"><value>Not allowed: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_AdvancedExpander" xml:space="preserve"><value>Advanced: choose individual capabilities</value></data>
+  <data name="Onboarding_SecurityLevel_CustomExpander" xml:space="preserve"><value>Custom: review individual capabilities</value></data>
+  <data name="Onboarding_SecurityLevel_TranscriptQuestion" xml:space="preserve"><value>Access level</value></data>
+  <data name="Onboarding_SecurityLevel_Custom" xml:space="preserve"><value>Custom ({0} of {1} capabilities)</value></data>
+  <data name="Onboarding_SecurityLevel_Group.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Access level</value></data>
 </root>

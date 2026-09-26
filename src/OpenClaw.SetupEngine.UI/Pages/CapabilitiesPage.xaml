@@ -16,9 +16,9 @@
                        Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center" />
         </StackPanel>
 
-        <!-- Fixed-width content column keeps transcript rows and the active card aligned across steps. -->
-        <Grid Grid.Row="1" Margin="0,24,0,16" ColumnDefinitions="*,Auto,*">
-            <ScrollViewer x:Name="Scroller" Grid.Column="1" Width="600"
+        <!-- Capped content column keeps transcript rows and the active card aligned across steps and shrinks in narrow windows. -->
+        <Grid Grid.Row="1" Margin="0,24,0,16">
+            <ScrollViewer x:Name="Scroller" MaxWidth="600"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="12" HorizontalAlignment="Stretch">
 
@@ -32,47 +32,96 @@
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
                         <StackPanel Spacing="14">
-                            <TextBlock x:Name="StepTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="StepTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                       AutomationProperties.HeadingLevel="Level2" />
 
                             <StackPanel x:Name="Step1Content" Spacing="8">
-                                <TextBlock TextWrapping="Wrap"
+                                <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_Intro" TextWrapping="Wrap"
                                            Style="{StaticResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           Text="OpenClaw runs your agent in a private, self-hosted gateway on this PC. Pick what it's allowed to do. You can change this later in Companion Settings." />
-                                <RadioButtons x:Name="ProfileRadio" SelectionChanged="Profile_Changed" MaxColumns="1">
-                                    <RadioButton AutomationProperties.Name="Read-only">
+                                           Text="This controls what OpenClaw can do on this PC. You can change it later on the Permissions page." />
+                                <RadioButtons x:Name="ProfileRadio" SelectionChanged="Profile_Changed" MaxColumns="1"
+                                              setup:SetupText.Uid="Onboarding_SecurityLevel_Group" AutomationProperties.Name="Access level">
+                                    <RadioButton setup:SetupText.Uid="Onboarding_SecurityLevel_LookOnly" AutomationProperties.Name="Look only">
                                         <StackPanel Spacing="1">
-                                            <TextBlock Text="Read-only" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock Text="See your screen, render on canvas, read device info. No commands."
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_LookOnlyTitle" Text="Look only"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_LookOnlyDetail"
+                                                       Text="Sees your screen and shows content in a canvas window. Can't run commands or programs."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </RadioButton>
-                                    <RadioButton AutomationProperties.Name="Standard (Recommended)">
+                                    <RadioButton setup:SetupText.Uid="Onboarding_SecurityLevel_Balanced" AutomationProperties.Name="Balanced (Recommended)">
                                         <StackPanel Spacing="1">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="Standard" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                                <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_BalancedTitle" Text="Balanced"
+                                                           Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                                                 <Border CornerRadius="4" Padding="7,1" VerticalAlignment="Center"
                                                         BorderBrush="{ThemeResource AccentTextFillColorPrimaryBrush}" BorderThickness="1">
-                                                    <TextBlock Text="Recommended"
+                                                    <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_RecommendedBadge" Text="Recommended"
                                                                Style="{StaticResource CaptionTextBlockStyle}"
                                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                                 </Border>
                                             </StackPanel>
-                                            <TextBlock Text="Read-only plus run commands, edit files, and use text-to-speech and speech-to-text."
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_BalancedDetail"
+                                                       Text="Also runs commands and programs, and can speak and listen. Commands ask you first unless you've allowed them."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </RadioButton>
-                                    <RadioButton AutomationProperties.Name="Full access">
+                                    <RadioButton setup:SetupText.Uid="Onboarding_SecurityLevel_FullAccess" AutomationProperties.Name="Full access">
                                         <StackPanel Spacing="1">
-                                            <TextBlock Text="Full access" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                            <TextBlock Text="Everything, plus camera, location, and browser control."
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_FullAccessTitle" Text="Full access"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_FullAccessDetail"
+                                                       Text="Everything in Balanced, plus your camera, your location, and control of a web browser."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </RadioButton>
                                 </RadioButtons>
+
+                                <!-- Follows the capability toggles, so it also describes custom choices. -->
+                                <Border x:Name="LevelDisclosure" CornerRadius="4" Padding="12,10" BorderThickness="1"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_DisclosureTitle" Text="What this level allows"
+                                                   Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
+                                                   AutomationProperties.HeadingLevel="Level3" />
+                                        <Grid x:Name="LevelAllowsGrid" ColumnSpacing="16" RowSpacing="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Rows added in code-behind -->
+                                        </Grid>
+                                        <StackPanel x:Name="LevelAsksFirstPanel" Spacing="2">
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_AsksFirstTitle" Text="Asks you first"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="Level4" />
+                                            <TextBlock x:Name="LevelAsksCommandsText" setup:SetupText.Uid="Onboarding_SecurityLevel_AsksCommands"
+                                                       Text="Commands that aren't on your allowed list ask you to Deny, Allow Once, or Allow Always. If you don't answer, the command is denied."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock x:Name="LevelAsksDevicesText" setup:SetupText.Uid="Onboarding_SecurityLevel_AsksDevices"
+                                                       Text="Screen capture, camera, and location ask for your permission the first time they're used. Listening through your microphone and controlling a web browser don't ask first."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <StackPanel x:Name="LevelSandboxPanel" Spacing="2">
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_SandboxTitle" Text="Where commands run"
+                                                       Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="Level4" />
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_Sandbox"
+                                                       Text="By default, commands run in a sandbox with no internet or clipboard access. They can read the folder they run in and folders you allow on the Sandbox page. The sandbox also blocks the usual folders for OpenClaw's settings, SSH keys, browser profiles (Chrome, Edge, Brave, Firefox), and PowerShell history."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock setup:SetupText.Uid="Onboarding_SecurityLevel_SandboxFallback"
+                                                       Text="If this PC can't run the sandbox, commands run with your normal access instead."
+                                                       Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
 
                                 <TextBlock Text="Local AI setup is independent of this choice and does not require Full access."
                                            Style="{StaticResource CaptionTextBlockStyle}"
@@ -81,7 +130,7 @@
 
                                 <Expander x:Name="CapabilityExpander" Margin="0,4,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                           Background="Transparent" BorderThickness="0"
-                                          Header="Fine-tune individual capabilities (optional)">
+                                          Header="Advanced: choose individual capabilities">
                                     <Grid x:Name="CapGrid" ColumnSpacing="16" RowSpacing="4" Margin="0,4,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

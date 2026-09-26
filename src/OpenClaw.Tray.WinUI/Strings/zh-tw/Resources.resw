@@ -7200,4 +7200,38 @@
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>推理強度</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>更快</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>更深入</value></data>
+  <data name="Onboarding_SecurityLevel_Title" xml:space="preserve"><value>選擇存取層級</value></data>
+  <data name="Onboarding_SecurityLevel_Intro.Text" xml:space="preserve"><value>這決定 OpenClaw 可以在此電腦上執行的操作。您稍後可以在「權限」頁面中變更。</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnly.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>僅檢視</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyTitle.Text" xml:space="preserve"><value>僅檢視</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyDetail.Text" xml:space="preserve"><value>可以檢視您的螢幕並在畫布視窗中顯示內容。無法執行命令或程式。</value></data>
+  <data name="Onboarding_SecurityLevel_Balanced.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>平衡（建議）</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedTitle.Text" xml:space="preserve"><value>平衡</value></data>
+  <data name="Onboarding_SecurityLevel_RecommendedBadge.Text" xml:space="preserve"><value>建議</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedDetail.Text" xml:space="preserve"><value>還可以執行命令和程式，並能朗讀和聆聽。除非您已允許，否則命令會先徵求您的同意。</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccess.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>完整存取</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessTitle.Text" xml:space="preserve"><value>完整存取</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessDetail.Text" xml:space="preserve"><value>包含「平衡」的所有功能，另外還可以使用您的相機和位置，並控制網頁瀏覽器。</value></data>
+  <data name="Onboarding_SecurityLevel_DisclosureTitle.Text" xml:space="preserve"><value>此層級允許的操作</value></data>
+  <data name="Onboarding_SecurityLevel_AsksFirstTitle.Text" xml:space="preserve"><value>先徵求您的同意</value></data>
+  <data name="Onboarding_SecurityLevel_AsksCommands.Text" xml:space="preserve"><value>不在允許清單中的命令會請您選擇「拒絕」「允許一次」或「一律允許」。如果您未回應，該命令將被拒絕。</value></data>
+  <data name="Onboarding_SecurityLevel_AsksDevices.Text" xml:space="preserve"><value>螢幕擷取、相機和位置在首次使用時會要求您的許可。透過麥克風聆聽和控制網頁瀏覽器不會事先要求許可。</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxTitle.Text" xml:space="preserve"><value>命令的執行位置</value></data>
+  <data name="Onboarding_SecurityLevel_Sandbox.Text" xml:space="preserve"><value>預設情況下，命令在沙盒中執行，無法存取網際網路或剪貼簿。命令可以讀取其執行所在的資料夾，以及您在「沙盒」頁面中允許的資料夾。沙盒還會封鎖存取 OpenClaw 設定、SSH 金鑰、瀏覽器設定檔（Chrome、Edge、Brave、Firefox）和 PowerShell 歷程記錄所在的預設資料夾。</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxFallback.Text" xml:space="preserve"><value>如果此電腦無法執行沙盒，命令將改為以您的一般存取權限執行。</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_System" xml:space="preserve"><value>執行命令和程式</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Canvas" xml:space="preserve"><value>顯示畫布視窗</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Screen" xml:space="preserve"><value>擷取您的螢幕</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Camera" xml:space="preserve"><value>使用您的相機</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Location" xml:space="preserve"><value>查看您的位置</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Browser" xml:space="preserve"><value>控制網頁瀏覽器</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Tts" xml:space="preserve"><value>朗讀</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Stt" xml:space="preserve"><value>透過麥克風聆聽</value></data>
+  <data name="Onboarding_SecurityLevel_AllowedItem" xml:space="preserve"><value>允許：{0}</value></data>
+  <data name="Onboarding_SecurityLevel_NotAllowedItem" xml:space="preserve"><value>不允許：{0}</value></data>
+  <data name="Onboarding_SecurityLevel_AdvancedExpander" xml:space="preserve"><value>進階：選擇個別功能</value></data>
+  <data name="Onboarding_SecurityLevel_CustomExpander" xml:space="preserve"><value>自訂：檢查個別功能</value></data>
+  <data name="Onboarding_SecurityLevel_TranscriptQuestion" xml:space="preserve"><value>存取層級</value></data>
+  <data name="Onboarding_SecurityLevel_Custom" xml:space="preserve"><value>自訂（已開啟 {0}/{1} 項功能）</value></data>
+  <data name="Onboarding_SecurityLevel_Group.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>存取層級</value></data>
 </root>

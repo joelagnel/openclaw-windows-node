@@ -7201,4 +7201,38 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Denkinspanning</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Sneller</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Grondiger</value></data>
+  <data name="Onboarding_SecurityLevel_Title" xml:space="preserve"><value>Kies een toegangsniveau</value></data>
+  <data name="Onboarding_SecurityLevel_Intro.Text" xml:space="preserve"><value>Hiermee bepaalt u wat OpenClaw op deze pc mag doen. U kunt dit later wijzigen op de pagina Machtigingen.</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnly.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Alleen kijken</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyTitle.Text" xml:space="preserve"><value>Alleen kijken</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyDetail.Text" xml:space="preserve"><value>Ziet uw scherm en toont inhoud in een canvasvenster. Kan geen opdrachten of programma's uitvoeren.</value></data>
+  <data name="Onboarding_SecurityLevel_Balanced.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Gebalanceerd (aanbevolen)</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedTitle.Text" xml:space="preserve"><value>Gebalanceerd</value></data>
+  <data name="Onboarding_SecurityLevel_RecommendedBadge.Text" xml:space="preserve"><value>Aanbevolen</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedDetail.Text" xml:space="preserve"><value>Voert ook opdrachten en programma's uit en kan spreken en luisteren. Opdrachten vragen u eerst om toestemming, tenzij u ze al hebt toegestaan.</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccess.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Volledige toegang</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessTitle.Text" xml:space="preserve"><value>Volledige toegang</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessDetail.Text" xml:space="preserve"><value>Alles van Gebalanceerd, plus uw camera, uw locatie en het besturen van een webbrowser.</value></data>
+  <data name="Onboarding_SecurityLevel_DisclosureTitle.Text" xml:space="preserve"><value>Wat dit niveau toestaat</value></data>
+  <data name="Onboarding_SecurityLevel_AsksFirstTitle.Text" xml:space="preserve"><value>Vraagt u eerst</value></data>
+  <data name="Onboarding_SecurityLevel_AsksCommands.Text" xml:space="preserve"><value>Opdrachten die niet op uw lijst met toegestane opdrachten staan, vragen u te kiezen uit Weigeren, Eén keer toestaan of Altijd toestaan. Als u niet antwoordt, wordt de opdracht geweigerd.</value></data>
+  <data name="Onboarding_SecurityLevel_AsksDevices.Text" xml:space="preserve"><value>Schermopname, camera en locatie vragen de eerste keer dat ze worden gebruikt om uw toestemming. Luisteren via uw microfoon en het besturen van een webbrowser vragen niet eerst om toestemming.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxTitle.Text" xml:space="preserve"><value>Waar opdrachten worden uitgevoerd</value></data>
+  <data name="Onboarding_SecurityLevel_Sandbox.Text" xml:space="preserve"><value>Standaard worden opdrachten uitgevoerd in een sandbox zonder internet of klembord. Ze kunnen de map lezen waarin ze worden uitgevoerd en de mappen die u toestaat op de pagina Sandboxomgeving. De sandbox blokkeert ook de gebruikelijke mappen van de instellingen van OpenClaw, SSH-sleutels, browserprofielen (Chrome, Edge, Brave, Firefox) en de PowerShell-geschiedenis.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxFallback.Text" xml:space="preserve"><value>Als deze pc de sandbox niet kan uitvoeren, worden opdrachten in plaats daarvan uitgevoerd met uw normale toegang.</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_System" xml:space="preserve"><value>Opdrachten en programma's uitvoeren</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Canvas" xml:space="preserve"><value>Een canvasvenster tonen</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Screen" xml:space="preserve"><value>Uw scherm vastleggen</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Camera" xml:space="preserve"><value>Uw camera gebruiken</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Location" xml:space="preserve"><value>Uw locatie zien</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Browser" xml:space="preserve"><value>Een webbrowser besturen</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Tts" xml:space="preserve"><value>Hardop spreken</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Stt" xml:space="preserve"><value>Luisteren via uw microfoon</value></data>
+  <data name="Onboarding_SecurityLevel_AllowedItem" xml:space="preserve"><value>Toegestaan: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_NotAllowedItem" xml:space="preserve"><value>Niet toegestaan: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_AdvancedExpander" xml:space="preserve"><value>Geavanceerd: afzonderlijke mogelijkheden kiezen</value></data>
+  <data name="Onboarding_SecurityLevel_CustomExpander" xml:space="preserve"><value>Aangepast: afzonderlijke mogelijkheden controleren</value></data>
+  <data name="Onboarding_SecurityLevel_TranscriptQuestion" xml:space="preserve"><value>Toegangsniveau</value></data>
+  <data name="Onboarding_SecurityLevel_Custom" xml:space="preserve"><value>Aangepast ({0} van {1} mogelijkheden)</value></data>
+  <data name="Onboarding_SecurityLevel_Group.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Toegangsniveau</value></data>
 </root>

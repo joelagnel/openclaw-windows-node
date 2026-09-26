@@ -26,6 +26,8 @@ public sealed class SetupTextLocalizationTests
         ["Expander"] = ["Header"],
         ["Button"] = ["Content"],
         ["HyperlinkButton"] = ["Content"],
+        ["RadioButton"] = ["Content"],
+        ["RadioButtons"] = [],
     };
 
     [Fact]

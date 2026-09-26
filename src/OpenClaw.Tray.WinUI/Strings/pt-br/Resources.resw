@@ -7254,4 +7254,38 @@ Escolha {1} para sair desta prévia sem iniciar a migração e continuar usando 
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Esforço</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Mais rápido</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Mais detalhado</value></data>
+  <data name="Onboarding_SecurityLevel_Title" xml:space="preserve"><value>Escolha um nível de acesso</value></data>
+  <data name="Onboarding_SecurityLevel_Intro.Text" xml:space="preserve"><value>Isso controla o que o OpenClaw pode fazer neste PC. Você pode alterar isso depois na página Permissões.</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnly.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Somente visualização</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyTitle.Text" xml:space="preserve"><value>Somente visualização</value></data>
+  <data name="Onboarding_SecurityLevel_LookOnlyDetail.Text" xml:space="preserve"><value>Vê sua tela e mostra conteúdo em uma janela do Canvas. Não pode executar comandos nem programas.</value></data>
+  <data name="Onboarding_SecurityLevel_Balanced.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Equilibrado (recomendado)</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedTitle.Text" xml:space="preserve"><value>Equilibrado</value></data>
+  <data name="Onboarding_SecurityLevel_RecommendedBadge.Text" xml:space="preserve"><value>Recomendado</value></data>
+  <data name="Onboarding_SecurityLevel_BalancedDetail.Text" xml:space="preserve"><value>Também executa comandos e programas e pode falar e ouvir. Os comandos pedem sua permissão, a menos que você já os tenha permitido.</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccess.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Acesso total</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessTitle.Text" xml:space="preserve"><value>Acesso total</value></data>
+  <data name="Onboarding_SecurityLevel_FullAccessDetail.Text" xml:space="preserve"><value>Tudo do Equilibrado, mais sua câmera, sua localização e o controle de um navegador da web.</value></data>
+  <data name="Onboarding_SecurityLevel_DisclosureTitle.Text" xml:space="preserve"><value>O que este nível permite</value></data>
+  <data name="Onboarding_SecurityLevel_AsksFirstTitle.Text" xml:space="preserve"><value>Pergunta a você primeiro</value></data>
+  <data name="Onboarding_SecurityLevel_AsksCommands.Text" xml:space="preserve"><value>Comandos que não estão na sua lista de permitidos pedem que você escolha Negar, Permitir uma vez ou Permitir sempre. Se você não responder, o comando será negado.</value></data>
+  <data name="Onboarding_SecurityLevel_AsksDevices.Text" xml:space="preserve"><value>Captura de tela, câmera e localização pedem sua permissão na primeira vez em que são usadas. Ouvir pelo seu microfone e controlar um navegador da web não pedem permissão antes.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxTitle.Text" xml:space="preserve"><value>Onde os comandos são executados</value></data>
+  <data name="Onboarding_SecurityLevel_Sandbox.Text" xml:space="preserve"><value>Por padrão, os comandos são executados em um ambiente restrito, sem internet nem área de transferência. Eles podem ler a pasta em que são executados e as pastas que você permitir na página Ambiente restrito. O ambiente restrito também bloqueia as pastas habituais das configurações do OpenClaw, das chaves SSH, dos perfis de navegador (Chrome, Edge, Brave, Firefox) e do histórico do PowerShell.</value></data>
+  <data name="Onboarding_SecurityLevel_SandboxFallback.Text" xml:space="preserve"><value>Se este PC não puder executar o ambiente restrito, os comandos serão executados com seu acesso normal.</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_System" xml:space="preserve"><value>Executar comandos e programas</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Canvas" xml:space="preserve"><value>Mostrar uma janela do Canvas</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Screen" xml:space="preserve"><value>Capturar sua tela</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Camera" xml:space="preserve"><value>Usar sua câmera</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Location" xml:space="preserve"><value>Ver sua localização</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Browser" xml:space="preserve"><value>Controlar um navegador da web</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Tts" xml:space="preserve"><value>Falar em voz alta</value></data>
+  <data name="Onboarding_SecurityLevel_Cap_Stt" xml:space="preserve"><value>Ouvir pelo seu microfone</value></data>
+  <data name="Onboarding_SecurityLevel_AllowedItem" xml:space="preserve"><value>Permitido: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_NotAllowedItem" xml:space="preserve"><value>Não permitido: {0}</value></data>
+  <data name="Onboarding_SecurityLevel_AdvancedExpander" xml:space="preserve"><value>Avançado: escolher recursos individuais</value></data>
+  <data name="Onboarding_SecurityLevel_CustomExpander" xml:space="preserve"><value>Personalizado: revisar recursos individuais</value></data>
+  <data name="Onboarding_SecurityLevel_TranscriptQuestion" xml:space="preserve"><value>Nível de acesso</value></data>
+  <data name="Onboarding_SecurityLevel_Custom" xml:space="preserve"><value>Personalizado ({0} de {1} recursos)</value></data>
+  <data name="Onboarding_SecurityLevel_Group.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Nível de acesso</value></data>
 </root>

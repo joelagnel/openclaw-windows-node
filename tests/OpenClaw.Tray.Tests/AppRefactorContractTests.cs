@@ -1399,8 +1399,8 @@ public sealed class AppRefactorContractTests
             "prop?.SetValue(caps, toggle.IsOn)",
             "config.Settings.ApplyCapabilities(caps)");
         Assert.Contains("_config.UsesBundledDefaultConfig", source);
-        Assert.Contains("_treatBundledAllOnAsPlaceholder ? 1 : 2", source);
-        Assert.Contains("return -1", source);
+        Assert.Contains("SetupSecurityLevels.Detect(EnabledCapabilityKeys(), _treatBundledAllOnAsPlaceholder)", source);
+        Assert.Contains(": -1;", source);
     }
 
     [Fact]
@@ -1458,16 +1458,16 @@ public sealed class AppRefactorContractTests
         var detectProfile = ExtractMethod(source, "DetectProfileIndex");
 
         Assert.Contains("x:Name=\"CapabilityExpander\"", xaml);
-        Assert.Contains("\"Custom capabilities (review)\"", source);
+        Assert.Contains("\"Onboarding_SecurityLevel_CustomExpander\"", source);
         Assert.Contains("CapabilityExpander.IsExpanded = true", source);
-        Assert.Contains("_treatBundledAllOnAsPlaceholder ? 1 : 2", detectProfile);
-        Assert.Contains("return -1", detectProfile);
+        Assert.Contains("SetupSecurityLevels.Detect(EnabledCapabilityKeys(), _treatBundledAllOnAsPlaceholder)", detectProfile);
+        Assert.Contains(": -1;", detectProfile);
         Assert.Contains("toggle.Toggled += Capability_Toggled", source);
         AssertInOrder(
             source,
             "_treatBundledAllOnAsPlaceholder = _config.UsesBundledDefaultConfig",
             "_suppressProfile = true",
-            "ApplyProfile(1)",
+            "ApplyProfile((int)SetupSecurityLevel.Balanced)",
             "_suppressProfile = false",
             "_treatBundledAllOnAsPlaceholder = false");
         AssertInOrder(

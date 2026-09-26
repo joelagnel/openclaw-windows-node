@@ -7200,4 +7200,34 @@ Choisissez {1} pour quitter cet aperçu sans démarrer la migration et continuer
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Niveau d'effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Plus rapide</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Plus approfondi</value></data>
+  <data name="Onboarding_Progress_Stage_CheckPc" xml:space="preserve"><value>Vérifier votre PC</value></data>
+  <data name="Onboarding_Progress_Stage_Install" xml:space="preserve"><value>Installer OpenClaw</value></data>
+  <data name="Onboarding_Progress_Stage_Finish" xml:space="preserve"><value>Terminer la configuration</value></data>
+  <data name="Onboarding_Progress_Details.Header" xml:space="preserve"><value>Détails</value></data>
+  <data name="Onboarding_Progress_LiveActivity.Text" xml:space="preserve"><value>Activité en direct</value></data>
+  <data name="Onboarding_Progress_StageState_Pending" xml:space="preserve"><value>{0} : pas encore commencé</value></data>
+  <data name="Onboarding_Progress_StageState_Active" xml:space="preserve"><value>{0} : en cours</value></data>
+  <data name="Onboarding_Progress_StageState_Done" xml:space="preserve"><value>{0} : terminé</value></data>
+  <data name="Onboarding_Progress_StageState_Failed" xml:space="preserve"><value>{0} : échec</value></data>
+  <data name="Onboarding_Progress_Group_Preflight" xml:space="preserve"><value>Vérifier la compatibilité</value></data>
+  <data name="Onboarding_Progress_Group_WslPlatform" xml:space="preserve"><value>Préparer WSL</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiEngine" xml:space="preserve"><value>Installer l'IA locale</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiModel" xml:space="preserve"><value>Télécharger le modèle d'IA</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiVerify" xml:space="preserve"><value>Préparer le routeur de l'IA locale</value></data>
+  <data name="Onboarding_Progress_Group_WslNetworking" xml:space="preserve"><value>Connecter WSL à l'IA locale</value></data>
+  <data name="Onboarding_Progress_Group_Cleanup" xml:space="preserve"><value>Supprimer la passerelle existante</value></data>
+  <data name="Onboarding_Progress_Group_Port" xml:space="preserve"><value>Vérifier le port de la passerelle</value></data>
+  <data name="Onboarding_Progress_Group_WslCreate" xml:space="preserve"><value>Installer la passerelle WSL</value></data>
+  <data name="Onboarding_Progress_Group_WslConfigure" xml:space="preserve"><value>Configurer WSL</value></data>
+  <data name="Onboarding_Progress_Group_InstallCli" xml:space="preserve"><value>Installer OpenClaw</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiWsl" xml:space="preserve"><value>Vérifier l'accès à l'IA locale</value></data>
+  <data name="Onboarding_Progress_Group_TailscaleAuth" xml:space="preserve"><value>Connecter Tailscale</value></data>
+  <data name="Onboarding_Progress_Group_Configure" xml:space="preserve"><value>Configurer la passerelle</value></data>
+  <data name="Onboarding_Progress_Group_Start" xml:space="preserve"><value>Démarrer la passerelle</value></data>
+  <data name="Onboarding_Progress_Group_TailscaleServe" xml:space="preserve"><value>Publier avec Tailscale</value></data>
+  <data name="Onboarding_Progress_Group_Pairing" xml:space="preserve"><value>Associer l'appareil</value></data>
+  <data name="Onboarding_Progress_Group_Finish" xml:space="preserve"><value>Terminer la configuration</value></data>
+  <data name="Onboarding_Progress_Stage_InstallLocalAi" xml:space="preserve"><value>Configurer l'IA locale</value></data>
+  <data name="Onboarding_Progress_Failed" xml:space="preserve"><value>La configuration a rencontré un problème. Affichage de la cause.</value></data>
+  <data name="Onboarding_Progress_FailedUndoing" xml:space="preserve"><value>La configuration a rencontré un problème. Annulation de ses modifications, puis affichage de la cause.</value></data>
 </root>

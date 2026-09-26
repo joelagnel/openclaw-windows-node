@@ -7200,4 +7200,34 @@
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>推理強度</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>更快</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>更深入</value></data>
+  <data name="Onboarding_Progress_Stage_CheckPc" xml:space="preserve"><value>檢查您的電腦</value></data>
+  <data name="Onboarding_Progress_Stage_Install" xml:space="preserve"><value>安裝 OpenClaw</value></data>
+  <data name="Onboarding_Progress_Stage_Finish" xml:space="preserve"><value>完成設定</value></data>
+  <data name="Onboarding_Progress_Details.Header" xml:space="preserve"><value>詳細資料</value></data>
+  <data name="Onboarding_Progress_LiveActivity.Text" xml:space="preserve"><value>即時活動</value></data>
+  <data name="Onboarding_Progress_StageState_Pending" xml:space="preserve"><value>{0}：尚未開始</value></data>
+  <data name="Onboarding_Progress_StageState_Active" xml:space="preserve"><value>{0}：進行中</value></data>
+  <data name="Onboarding_Progress_StageState_Done" xml:space="preserve"><value>{0}：已完成</value></data>
+  <data name="Onboarding_Progress_StageState_Failed" xml:space="preserve"><value>{0}：失敗</value></data>
+  <data name="Onboarding_Progress_Group_Preflight" xml:space="preserve"><value>檢查相容性</value></data>
+  <data name="Onboarding_Progress_Group_WslPlatform" xml:space="preserve"><value>準備 WSL</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiEngine" xml:space="preserve"><value>安裝本機 AI</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiModel" xml:space="preserve"><value>下載 AI 模型</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiVerify" xml:space="preserve"><value>準備本機 AI 路由器</value></data>
+  <data name="Onboarding_Progress_Group_WslNetworking" xml:space="preserve"><value>將 WSL 連線到本機 AI</value></data>
+  <data name="Onboarding_Progress_Group_Cleanup" xml:space="preserve"><value>移除現有閘道</value></data>
+  <data name="Onboarding_Progress_Group_Port" xml:space="preserve"><value>檢查閘道連接埠</value></data>
+  <data name="Onboarding_Progress_Group_WslCreate" xml:space="preserve"><value>安裝 WSL 閘道</value></data>
+  <data name="Onboarding_Progress_Group_WslConfigure" xml:space="preserve"><value>設定 WSL</value></data>
+  <data name="Onboarding_Progress_Group_InstallCli" xml:space="preserve"><value>安裝 OpenClaw</value></data>
+  <data name="Onboarding_Progress_Group_LocalAiWsl" xml:space="preserve"><value>驗證本機 AI 存取</value></data>
+  <data name="Onboarding_Progress_Group_TailscaleAuth" xml:space="preserve"><value>連線 Tailscale</value></data>
+  <data name="Onboarding_Progress_Group_Configure" xml:space="preserve"><value>設定閘道</value></data>
+  <data name="Onboarding_Progress_Group_Start" xml:space="preserve"><value>啟動閘道</value></data>
+  <data name="Onboarding_Progress_Group_TailscaleServe" xml:space="preserve"><value>透過 Tailscale 發布</value></data>
+  <data name="Onboarding_Progress_Group_Pairing" xml:space="preserve"><value>配對裝置</value></data>
+  <data name="Onboarding_Progress_Group_Finish" xml:space="preserve"><value>完成設定</value></data>
+  <data name="Onboarding_Progress_Stage_InstallLocalAi" xml:space="preserve"><value>設定本機 AI</value></data>
+  <data name="Onboarding_Progress_Failed" xml:space="preserve"><value>設定遇到問題。正在顯示出錯原因。</value></data>
+  <data name="Onboarding_Progress_FailedUndoing" xml:space="preserve"><value>設定遇到問題。正在復原所做的變更，然後將顯示出錯原因。</value></data>
 </root>

@@ -31,7 +31,11 @@ public sealed class LocalAiSetupUxContractTests
         string complete = File.ReadAllText(Path.Combine(pages, "CompletePage.xaml.cs"));
         string completeXaml = File.ReadAllText(Path.Combine(pages, "CompletePage.xaml"));
 
-        Assert.Contains("Prepare Local AI router", progress);
+        Dictionary<string, string> english = LocalizationValidationTests.LoadResw(
+            Path.Combine(LocalizationValidationTests.GetStringsDirectory(), "en-us", "Resources.resw"));
+
+        Assert.Contains("SetupLocalization.GetString(\"Onboarding_Progress_Group_LocalAiVerify\")", progress);
+        Assert.Equal("Prepare Local AI router", english["Onboarding_Progress_Group_LocalAiVerify"]);
         Assert.DoesNotContain("capture-local-ai-gpu-baseline", progress);
         Assert.DoesNotContain("verify-local-ai-inference", progress);
         Assert.DoesNotContain("verify-local-ai-gpu-load", progress);

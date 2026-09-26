@@ -2,6 +2,8 @@ using System.Diagnostics;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
@@ -25,6 +27,8 @@ public sealed partial class ProgressPage : Page
     private SetupLogger? _logger;
     private CancellationTokenSource? _runCts;
     private readonly Dictionary<string, StepRow> _rows = new();
+    private readonly Dictionary<SetupStage, StepRow> _stageRows = new();
+    private SetupStageTracker _stages = new([]);
     private int _logLineCount;
     private bool _pipelineFinished;
     private string _dataDir = null!;
@@ -32,31 +36,33 @@ public sealed partial class ProgressPage : Page
     private Uri? _tailscaleAuthorizationUri;
     private HashSet<string> _activeStepIds = [];
     private bool _localAiRecoveryOnly;
+    private bool _failureShown;
     private const int MaxLogLines = 200;
 
     internal bool IsPipelineRunning => _runCts != null && !_pipelineFinished;
 
-    // Map pipeline step IDs to display groups (N:1)
+    // Map pipeline step IDs to display groups (N:1). Each group stays within one setup stage,
+    // because the active stage shows its current group as what it is doing.
     private static readonly (string GroupId, string DisplayName, string[] StepIds)[] StepGroups =
     [
-        ("preflight", "Check compatibility", ["validate-distro-path", "preflight-os", "preflight-local-ai-hardware", "preflight-wsl", "preflight-windows-tailscale"]),
-        ("wsl-platform", "Prepare WSL", ["ensure-wsl-platform"]),
-        ("local-ai-engine", "Install Local AI", ["acquire-local-ai-runtime"]),
-        ("local-ai-model", "Download AI model", ["acquire-local-ai-model"]),
-        ("local-ai-verify", "Prepare Local AI router", ["persist-local-ai-manifest", "start-local-ai-runtime"]),
-        ("wsl-networking", "Connect WSL to Local AI", ["configure-local-ai-wsl-networking"]),
-        ("cleanup", "Remove existing gateway", ["cleanup-distro", "cleanup-gateway"]),
-        ("port", "Check gateway port", ["preflight-port"]),
-        ("wsl-create", "Install WSL gateway", ["wsl-create"]),
-        ("wsl-configure", "Configure WSL", ["wsl-configure", "validate-wsl-lockdown"]),
-        ("install-cli", "Install OpenClaw", ["install-cli"]),
-        ("local-ai-wsl", "Verify Local AI access", ["verify-local-ai-wsl"]),
-        ("tailscale-auth", "Connect Tailscale", ["install-tailscale", "authorize-tailscale"]),
-        ("configure", "Configure gateway", ["configure-gateway", "configure-local-ai-gateway", "install-service"]),
-        ("start", "Start gateway", ["start-gateway", "restart-gateway", "mint-token"]),
-        ("tailscale-serve", "Publish with Tailscale", ["finalize-tailscale-serve"]),
-        ("pairing", "Pair device", ["pair-operator", "pair-node", "verify-e2e"]),
-        ("finish", "Finish setup", ["run-wizard", "start-keepalive"]),
+        ("preflight", SetupLocalization.GetString("Onboarding_Progress_Group_Preflight"), ["validate-distro-path", "preflight-os", "preflight-local-ai-hardware", "preflight-wsl", "preflight-windows-tailscale"]),
+        ("wsl-platform", SetupLocalization.GetString("Onboarding_Progress_Group_WslPlatform"), ["ensure-wsl-platform"]),
+        ("local-ai-engine", SetupLocalization.GetString("Onboarding_Progress_Group_LocalAiEngine"), ["acquire-local-ai-runtime"]),
+        ("local-ai-model", SetupLocalization.GetString("Onboarding_Progress_Group_LocalAiModel"), ["acquire-local-ai-model"]),
+        ("local-ai-verify", SetupLocalization.GetString("Onboarding_Progress_Group_LocalAiVerify"), ["persist-local-ai-manifest", "start-local-ai-runtime"]),
+        ("wsl-networking", SetupLocalization.GetString("Onboarding_Progress_Group_WslNetworking"), ["configure-local-ai-wsl-networking"]),
+        ("cleanup", SetupLocalization.GetString("Onboarding_Progress_Group_Cleanup"), ["cleanup-distro", "cleanup-gateway"]),
+        ("port", SetupLocalization.GetString("Onboarding_Progress_Group_Port"), ["preflight-port"]),
+        ("wsl-create", SetupLocalization.GetString("Onboarding_Progress_Group_WslCreate"), ["wsl-create"]),
+        ("wsl-configure", SetupLocalization.GetString("Onboarding_Progress_Group_WslConfigure"), ["wsl-configure", "validate-wsl-lockdown"]),
+        ("install-cli", SetupLocalization.GetString("Onboarding_Progress_Group_InstallCli"), ["install-cli"]),
+        ("local-ai-wsl", SetupLocalization.GetString("Onboarding_Progress_Group_LocalAiWsl"), ["verify-local-ai-wsl"]),
+        ("tailscale-auth", SetupLocalization.GetString("Onboarding_Progress_Group_TailscaleAuth"), ["install-tailscale", "authorize-tailscale"]),
+        ("configure", SetupLocalization.GetString("Onboarding_Progress_Group_Configure"), ["configure-gateway", "configure-local-ai-gateway", "install-service"]),
+        ("start", SetupLocalization.GetString("Onboarding_Progress_Group_Start"), ["start-gateway", "restart-gateway"]),
+        ("tailscale-serve", SetupLocalization.GetString("Onboarding_Progress_Group_TailscaleServe"), ["finalize-tailscale-serve"]),
+        ("pairing", SetupLocalization.GetString("Onboarding_Progress_Group_Pairing"), ["mint-token", "pair-operator", "pair-node", "verify-e2e"]),
+        ("finish", SetupLocalization.GetString("Onboarding_Progress_Group_Finish"), ["run-wizard", "start-keepalive"]),
     ];
 
     public ProgressPage()
@@ -75,12 +81,16 @@ public sealed partial class ProgressPage : Page
         _activeStepIds = BuildSteps(_config, _localAiRecoveryOnly)
             .Select(step => step.Id)
             .ToHashSet(StringComparer.Ordinal);
+        _stages = new SetupStageTracker(_activeStepIds);
+        if (SetupPreview.RequestedPage == "progress-local-ai")
+            _config.LocalAi.Enabled = true;
         TitleText.Text = _config.LocalAi.Enabled ? "Setting up OpenClaw and Local AI" : "Setting up OpenClaw";
         SubtitleText.Text = _config.LocalAi.Enabled
             ? "Preparing the gateway and Local AI"
             : $"Creating {_config.DistroName} WSL instance";
 
         BuildStepRows();
+        BuildStageRows();
         if (args?.ShowMilestoneOnly == true)
         {
             foreach (var (groupId, _, _) in StepGroups)
@@ -126,9 +136,22 @@ public sealed partial class ProgressPage : Page
                 : i == previewRunningIndex ? StepStatus.Running : StepStatus.Idle;
             if (_rows.TryGetValue(ids[i], out var row))
                 row.SetStatus(status);
+            foreach (var stepId in StepGroups[i].StepIds.Where(_activeStepIds.Contains))
+            {
+                if (i < previewRunningIndex)
+                    _stages.StepFinished(stepId, StepOutcome.Success);
+                else if (i == previewRunningIndex)
+                    _stages.StepStarted(stepId);
+            }
         }
+        RefreshStages();
+        var running = StepGroups[previewRunningIndex];
+        ShowStageActivity(running.StepIds[0], running.DisplayName);
         if (localAiPreview && _rows.TryGetValue("local-ai-model", out var modelRow))
+        {
             modelRow.SetDetail("Downloading Qwen3.8-27B-UD-Q4_K_M.gguf", 6_322_405_376, 16_464_440_224, SetupDetailProgressUnit.Bytes);
+            _stageRows[SetupStage.Install].SetDetail("Downloading Qwen3.8-27B-UD-Q4_K_M.gguf", 6_322_405_376, 16_464_440_224, SetupDetailProgressUnit.Bytes);
+        }
         LogText.Text =
             "[12:04:01] [info] Windows 11 26100 · WSL 2 present\n" +
             "[12:04:03] [info] port 127.0.0.1:18789 available\n" +
@@ -151,6 +174,70 @@ public sealed partial class ProgressPage : Page
                 (_config?.LocalAi.Enabled != true && IsLocalAiOnlyGroup(stepIds)))
                 row.Element.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private void BuildStageRows()
+    {
+        foreach (var stage in Enum.GetValues<SetupStage>())
+        {
+            var row = new StepRow(StageName(stage), showDetailProgress: true);
+            _stageRows[stage] = row;
+            StagesPanel.Children.Add(row.Element);
+            if (!_stages.Includes(stage))
+                row.Element.Visibility = Visibility.Collapsed;
+        }
+        RefreshStages();
+    }
+
+    private void RefreshStages()
+    {
+        foreach (var (stage, row) in _stageRows)
+        {
+            var state = _stages.StateOf(stage);
+            row.SetStatus(state switch
+            {
+                SetupStageState.Active => StepStatus.Running,
+                SetupStageState.Done => StepStatus.Done,
+                SetupStageState.Failed => StepStatus.Failed,
+                _ => StepStatus.Idle,
+            });
+            // A failed stage keeps its last activity so users can see where setup stopped.
+            if (state is SetupStageState.Pending or SetupStageState.Done)
+                row.ClearDetail();
+            row.SetAccessibleName(SetupLocalization.Format($"Onboarding_Progress_StageState_{state}", StageName(stage)));
+        }
+    }
+
+    // Shows what the active stage is doing now, using the detail row's name for the step. Steps
+    // without a detail row have no name, so the previous row's name must not linger.
+    private void ShowStageActivity(string stepId, string? activity)
+    {
+        if (SetupStageTracker.StageOf(stepId) is not { } stage || !_stageRows.TryGetValue(stage, out var row))
+            return;
+        // Some groups share the stage's name ("Install OpenClaw", "Finish setup"); don't repeat it.
+        if (activity is null || activity == StageName(stage))
+            row.ClearDetail();
+        else
+            row.SetDetail(activity, 0, null, SetupDetailProgressUnit.Items);
+    }
+
+    // Local AI recovery keeps the existing gateway, so its install stage only sets up Local AI.
+    private string StageName(SetupStage stage) =>
+        SetupLocalization.GetString(stage == SetupStage.Install && _localAiRecoveryOnly
+            ? "Onboarding_Progress_Stage_InstallLocalAi"
+            : $"Onboarding_Progress_Stage_{stage}");
+
+    // Rollback can take a while before the Complete page shows the error, so say so right away.
+    private void ShowFailureStatus()
+    {
+        if (_failureShown)
+            return;
+        _failureShown = true;
+        SubtitleText.Text = SetupLocalization.GetString(
+            _config!.RollbackOnFailure ? "Onboarding_Progress_FailedUndoing" : "Onboarding_Progress_Failed");
+        var peer = FrameworkElementAutomationPeer.FromElement(SubtitleText)
+            ?? FrameworkElementAutomationPeer.CreatePeerForElement(SubtitleText);
+        peer.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
 
     private static bool IsLocalAiOnlyGroup(string[] stepIds) =>
@@ -207,6 +294,8 @@ public sealed partial class ProgressPage : Page
             var success = result.Outcome == PipelineOutcome.Success;
             if (success)
             {
+                _stages.RunSucceeded();
+                RefreshStages();
                 if (!config.SkipWizard)
                 {
                     if (_rows.TryGetValue("finish", out var finishRow))
@@ -275,9 +364,28 @@ public sealed partial class ProgressPage : Page
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            // Stages track every step, including ones without a detail row.
+            if (e.Outcome is { } outcome)
+            {
+                _stages.StepFinished(e.StepId, outcome);
+                // A restart isn't a problem; the Complete page asks for it.
+                if (outcome is StepOutcome.Failed or StepOutcome.FailedTerminal && !e.RequiresRestart)
+                    ShowFailureStatus();
+            }
+            else
+            {
+                _stages.StepStarted(e.StepId);
+            }
+            RefreshStages();
+
             // Find which group this step belongs to
             var groupIndex = Array.FindIndex(StepGroups, g => g.StepIds.Contains(e.StepId));
-            if (groupIndex < 0) return;
+            if (groupIndex < 0)
+            {
+                if (e.Outcome == null)
+                    ShowStageActivity(e.StepId, null);
+                return;
+            }
 
             var group = StepGroups[groupIndex];
             var row = _rows[group.GroupId];
@@ -295,6 +403,7 @@ public sealed partial class ProgressPage : Page
                 // Mark this group as running
                 if (row.Status != StepStatus.Done)
                     row.SetStatus(StepStatus.Running);
+                ShowStageActivity(e.StepId, group.DisplayName);
             }
             else if (e.Outcome == StepOutcome.Failed || e.Outcome == StepOutcome.FailedTerminal)
             {
@@ -318,6 +427,8 @@ public sealed partial class ProgressPage : Page
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (SetupStageTracker.StageOf(progress.StepId) is { } stage && _stageRows.TryGetValue(stage, out var stageRow))
+                stageRow.SetDetail(progress.Detail, progress.Completed, progress.Total, progress.Unit);
             var group = StepGroups.FirstOrDefault(candidate => candidate.StepIds.Contains(progress.StepId));
             if (string.IsNullOrWhiteSpace(group.GroupId) || !_rows.TryGetValue(group.GroupId, out var row))
                 return;
@@ -573,6 +684,15 @@ internal sealed class StepRow
             _detailProgress.Visibility = Visibility.Collapsed;
         }
     }
+
+    public void ClearDetail()
+    {
+        _detail.Visibility = Visibility.Collapsed;
+        _detailProgress.Visibility = Visibility.Collapsed;
+    }
+
+    public void SetAccessibleName(string name) =>
+        AutomationProperties.SetName(_label, name);
 
     private static string FormatBytes(long bytes) =>
         bytes >= 1_000_000_000

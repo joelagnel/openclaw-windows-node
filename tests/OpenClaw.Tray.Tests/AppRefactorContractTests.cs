@@ -1195,16 +1195,23 @@ public sealed class AppRefactorContractTests
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
         var code = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.SetupEngine.UI", "Pages", "ProgressPage.xaml.cs"));
+        var english = LocalizationValidationTests.LoadResw(
+            Path.Combine(LocalizationValidationTests.GetStringsDirectory(), "en-us", "Resources.resw"));
 
         AssertInOrder(
             code,
-            "(\"wsl-platform\", \"Prepare WSL\", [\"ensure-wsl-platform\"])",
-            "(\"local-ai-engine\", \"Install Local AI\"",
-            "(\"local-ai-model\", \"Download AI model\"");
+            "(\"wsl-platform\", SetupLocalization.GetString(\"Onboarding_Progress_Group_WslPlatform\"), [\"ensure-wsl-platform\"])",
+            "(\"local-ai-engine\", SetupLocalization.GetString(\"Onboarding_Progress_Group_LocalAiEngine\")",
+            "(\"local-ai-model\", SetupLocalization.GetString(\"Onboarding_Progress_Group_LocalAiModel\")");
         Assert.Contains(
-            "(\"wsl-networking\", \"Connect WSL to Local AI\", [\"configure-local-ai-wsl-networking\"])",
+            "(\"wsl-networking\", SetupLocalization.GetString(\"Onboarding_Progress_Group_WslNetworking\"), [\"configure-local-ai-wsl-networking\"])",
             code);
+        Assert.Equal("Prepare WSL", english["Onboarding_Progress_Group_WslPlatform"]);
+        Assert.Equal("Install Local AI", english["Onboarding_Progress_Group_LocalAiEngine"]);
+        Assert.Equal("Download AI model", english["Onboarding_Progress_Group_LocalAiModel"]);
+        Assert.Equal("Connect WSL to Local AI", english["Onboarding_Progress_Group_WslNetworking"]);
         Assert.DoesNotContain("Verify Local AI before WSL setup", code);
+        Assert.DoesNotContain("Verify Local AI before WSL setup", english.Values);
     }
 
     [Fact]

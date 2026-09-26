@@ -2,6 +2,22 @@ namespace OpenClaw.SetupEngine;
 
 using OpenClaw.Shared.Inference.Catalog;
 
+/// <summary>Who can reach the installed gateway, in terms a review screen can explain.</summary>
+public enum SetupGatewayExposure
+{
+    ThisPcOnly,
+    LocalNetwork,
+    Tailnet,
+}
+
+/// <summary>Whether the CLI installer source is the verified default, a custom host, or unusable.</summary>
+public enum SetupInstallerTrust
+{
+    Official,
+    Custom,
+    InsecureUrl,
+}
+
 public sealed record SetupReviewSummary(
     string DistroTitle,
     string DistroDescription,
@@ -15,6 +31,9 @@ public sealed record SetupReviewSummary(
     public bool LocalAiEnabled { get; init; }
     public string? LocalAiTitle { get; init; }
     public string? LocalAiDescription { get; init; }
+    public SetupGatewayExposure Exposure { get; init; }
+    public SetupInstallerTrust InstallerTrust { get; init; }
+    public string? InstallerHost { get; init; }
 }
 
 public static class SetupReviewSummaryBuilder
@@ -35,7 +54,7 @@ public static class SetupReviewSummaryBuilder
                               requestedVersion.Equals("latest", StringComparison.OrdinalIgnoreCase);
         var isExactVersion = GatewayPackageVersion.IsExact(requestedVersion);
         var installerDescription = installerHost is null
-            ? "Installer URL is not HTTPS; setup will stop before downloading anything."
+            ? "Installer URL is not HTTPS; setup will fail when it reaches the OpenClaw CLI install step."
             : isCustomInstaller
                 ? $"Unverified custom installer from {installerHost}; exact Gateway {requestedVersion}, protocol v{GatewayInstallPolicy.ProtocolGeneration} is checked after install."
                 : isDefaultLatest
@@ -128,6 +147,15 @@ public static class SetupReviewSummaryBuilder
                         $"{FormatContext(localAiProfile.ContextTokens)} context · " +
                         $"{FormatKvCache(localAiProfile)}"
                 : null,
+            // Setup refuses a LAN bind with Tailscale Serve; report the wider LAN reach rather
+            // than implying only the tailnet can connect.
+            Exposure = isLanBind
+                ? SetupGatewayExposure.LocalNetwork
+                : tailscaleEnabled ? SetupGatewayExposure.Tailnet : SetupGatewayExposure.ThisPcOnly,
+            InstallerTrust = installerHost is null
+                ? SetupInstallerTrust.InsecureUrl
+                : isCustomInstaller ? SetupInstallerTrust.Custom : SetupInstallerTrust.Official,
+            InstallerHost = installerHost,
         };
     }
 
@@ -167,6 +195,6 @@ public static class SetupReviewSummaryBuilder
     private static string? TryGetHttpsHost(string installUrl)
         => Uri.TryCreate(installUrl, UriKind.Absolute, out var uri)
            && uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            ? uri.Host
+            ? uri.IdnHost
             : null;
 }

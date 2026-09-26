@@ -360,7 +360,7 @@ The WinUI app is a **thin shell** - no business logic, just rendering pipeline s
 - Replacement prompt when an app-owned WSL gateway already exists
 
 **CapabilitiesPage**
-- Capability profile defaults to Standard
+- Access level (Look only / Balanced / Full access) defaults to Balanced, with a disclosure of what it allows, when it asks first, and how commands are contained
 - Inline Windows permission status for selected capabilities
 - Install review showing WSL distro, OpenClaw CLI, local gateway service, and possible UAC
 

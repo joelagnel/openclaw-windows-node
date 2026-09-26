@@ -58,7 +58,7 @@ On first launch, Molty opens the onboarding wizard when there is no usable saved
 
    For the role split behind these choices, see [Operator and node concepts](OPERATOR_NODE_CONCEPTS.md).
 
-3. **Capabilities** - Choose a capability profile, review matching Windows permission status, and see exactly what setup will install before anything runs.
+3. **Capabilities** - Choose an access level, see what it allows, when OpenClaw asks first, and how commands are contained, review matching Windows permission status, and see exactly what setup will install before anything runs.
 
 4. **Local setup progress** - Installs a fresh app-owned `OpenClawGateway` WSL instance and connects Molty to it. This does not modify an existing user Ubuntu distro.
 
@@ -69,6 +69,18 @@ On first launch, Molty opens the onboarding wizard when there is no usable saved
 7. **All set** - A summary of available features and startup preference. Fresh setup defaults launch-at-startup on; direct OpenClaw onboard preserves any existing startup preference.
 
 After the wizard, the tray icon turns green when connected. You can re-run the wizard or change settings anytime from the tray menu.
+
+#### Access levels
+
+An access level only chooses which capabilities the node registers. It does not change command approvals or the command sandbox, which keep their current settings at every level and stay adjustable on the **Permissions** and **Sandbox** pages. Setup calls these access levels so they are not confused with the **Security level** presets on the **Sandbox** page, which control sandbox containment. **Advanced: choose individual capabilities** sets any other combination, and setup keeps an existing custom combination. Device info and status are always available while Node Mode is on.
+
+| Level | Capabilities | Commands |
+|-------|--------------|----------|
+| Look only | Canvas, Screen | Cannot run commands |
+| Balanced (recommended) | System, Canvas, Screen, Text-to-speech, Speech-to-text | Commands not on the allowed list ask first (Deny, Allow Once, Allow Always); unanswered prompts are denied |
+| Full access | Balanced plus Camera, Location, Browser | Same as Balanced |
+
+Screen capture, camera, and location ask for consent the first time they are used; speech-to-text and browser control do not. With the default sandbox settings and the MXC sandbox available, commands run without internet or clipboard access. They can read the folder they run in, folders granted on the **Sandbox** page, and user folders on PATH, and the sandbox denies the default locations of OpenClaw's settings, SSH keys, the stable Chrome, Edge, and Brave profiles, Firefox profiles, and PowerShell history. When the sandbox is not available, commands fall back to running with the user's normal access. The mapping lives in `SetupSecurityLevels` and is pinned by `SetupSecurityLevelTests`.
 
 ## Tray Icon Status
 

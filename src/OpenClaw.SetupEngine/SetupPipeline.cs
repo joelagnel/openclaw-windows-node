@@ -43,7 +43,7 @@ public sealed record PipelineResult(
 
 // ─── Pipeline Events ───
 
-public sealed record StepProgressEvent(string StepId, string DisplayName, StepOutcome? Outcome, TimeSpan? Elapsed);
+public sealed record StepProgressEvent(string StepId, string DisplayName, StepOutcome? Outcome, TimeSpan? Elapsed, bool RequiresRestart = false);
 
 public static class SetupStepFactory
 {
@@ -226,7 +226,7 @@ public sealed class SetupPipeline
             sw.Stop();
             ctx.Logger.StepCompleted(step.Id, result, sw.Elapsed);
             ctx.Journal.RecordStepCompleted(step.Id, result.Outcome, sw.Elapsed, result.Message);
-            StepProgress?.Invoke(this, new(step.Id, step.DisplayName, result.Outcome, sw.Elapsed));
+            StepProgress?.Invoke(this, new(step.Id, step.DisplayName, result.Outcome, sw.Elapsed, result.RequiresRestart));
 
             if (result.IsSuccess)
             {

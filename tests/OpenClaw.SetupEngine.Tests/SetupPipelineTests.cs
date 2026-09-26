@@ -98,6 +98,26 @@ public class SetupPipelineTests
     }
 
     [Fact]
+    public async Task RunAsync_StepEvents_SayWhenAFailedStepOnlyNeedsARestart()
+    {
+        var events = new List<StepProgressEvent>();
+        var restart = new SetupPipeline([
+            new MockStep("restart", (_, _) => Task.FromResult(StepResult.RestartRequired("restart Windows"))),
+        ]);
+        var failure = new SetupPipeline([
+            new MockStep("fail", (_, _) => Task.FromResult(StepResult.Terminal("broken"))),
+        ]);
+        restart.StepProgress += (_, e) => events.Add(e);
+        failure.StepProgress += (_, e) => events.Add(e);
+
+        await restart.RunAsync(CreateContext());
+        await failure.RunAsync(CreateContext());
+
+        Assert.True(Assert.Single(events, e => e.StepId == "restart" && e.Outcome is not null).RequiresRestart);
+        Assert.False(Assert.Single(events, e => e.StepId == "fail" && e.Outcome is not null).RequiresRestart);
+    }
+
+    [Fact]
     public void BuildDefaultSteps_IncludesCurrentSetupFlow()
     {
         var steps = SetupStepFactory.BuildDefaultSteps();

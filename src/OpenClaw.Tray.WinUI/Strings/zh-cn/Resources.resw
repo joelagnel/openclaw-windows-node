@@ -7200,4 +7200,17 @@
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>推理强度</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>更快</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>更深入</value></data>
+  <data name="Onboarding_Intro_Title.Text" xml:space="preserve"><value>欢迎使用 OpenClaw</value></data>
+  <data name="Onboarding_Intro_Summary.Text" xml:space="preserve"><value>OpenClaw 是一款个人 AI 助手，可以在这台电脑上为您完成工作。您可以在这里与它聊天，也可以通过您常用的应用与它交流。</value></data>
+  <data name="Onboarding_Intro_BenefitTasksTitle.Text" xml:space="preserve"><value>帮您处理日常任务</value></data>
+  <data name="Onboarding_Intro_BenefitTasksDetail.Text" xml:space="preserve"><value>让它整理文件、查找信息或处理日常事务。</value></data>
+  <data name="Onboarding_Intro_BenefitChatTitle.Text" xml:space="preserve"><value>随时随地聊天</value></data>
+  <data name="Onboarding_Intro_BenefitChatDetail.Text" xml:space="preserve"><value>您也可以通过 WhatsApp 或 Telegram 等应用给它发消息。</value></data>
+  <data name="Onboarding_Intro_BenefitControlTitle.Text" xml:space="preserve"><value>一切由您掌控</value></data>
+  <data name="Onboarding_Intro_BenefitControlDetail.Text" xml:space="preserve"><value>您决定它能在这台电脑上做什么，并且可以随时更改。</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Title" xml:space="preserve"><value>继续之前</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Message" xml:space="preserve"><value>AI 助手功能强大，但也可能出错。在您允许的情况下，OpenClaw 可以查看和更改这台电脑上的内容，例如屏幕和文件，或运行程序。请仅在您自己的电脑上进行设置，不要在与他人共用的电脑上设置。</value></data>
+  <data name="Onboarding_Intro_SecurityLink.Content" xml:space="preserve"><value>OpenClaw 如何保护您的安全</value></data>
+  <data name="Onboarding_Intro_ArchitectureLink.Content" xml:space="preserve"><value>OpenClaw 的工作原理</value></data>
+  <data name="Onboarding_Intro_ContinueButton.Content" xml:space="preserve"><value>继续</value></data>
 </root>

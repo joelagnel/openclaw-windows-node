@@ -7201,4 +7201,17 @@ Kies {1} om dit voorbeeld te sluiten zonder de migratie te starten en de vorige 
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Denkinspanning</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Sneller</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Grondiger</value></data>
+  <data name="Onboarding_Intro_Title.Text" xml:space="preserve"><value>Welkom bij OpenClaw</value></data>
+  <data name="Onboarding_Intro_Summary.Text" xml:space="preserve"><value>OpenClaw is een persoonlijke AI-assistent die op deze pc taken voor u kan uitvoeren. Chat hier met de assistent of vanuit de apps die u al gebruikt.</value></data>
+  <data name="Onboarding_Intro_BenefitTasksTitle.Text" xml:space="preserve"><value>Hulp bij dagelijkse taken</value></data>
+  <data name="Onboarding_Intro_BenefitTasksDetail.Text" xml:space="preserve"><value>Vraag de assistent om bestanden te ordenen, dingen op te zoeken of routinewerk af te handelen.</value></data>
+  <data name="Onboarding_Intro_BenefitChatTitle.Text" xml:space="preserve"><value>Chat waar u ook bent</value></data>
+  <data name="Onboarding_Intro_BenefitChatDetail.Text" xml:space="preserve"><value>U kunt de assistent ook berichten sturen vanuit apps zoals WhatsApp of Telegram.</value></data>
+  <data name="Onboarding_Intro_BenefitControlTitle.Text" xml:space="preserve"><value>U houdt de controle</value></data>
+  <data name="Onboarding_Intro_BenefitControlDetail.Text" xml:space="preserve"><value>U bepaalt wat de assistent op deze pc mag doen, en u kunt dat altijd wijzigen.</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Title" xml:space="preserve"><value>Voordat u verdergaat</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Message" xml:space="preserve"><value>AI-assistenten zijn krachtig en kunnen fouten maken. Met uw toestemming kan OpenClaw dingen op deze pc zien en wijzigen, zoals uw scherm en bestanden, of programma's uitvoeren. Stel het alleen in op uw eigen pc, niet op een pc die u deelt.</value></data>
+  <data name="Onboarding_Intro_SecurityLink.Content" xml:space="preserve"><value>Hoe OpenClaw u beschermt</value></data>
+  <data name="Onboarding_Intro_ArchitectureLink.Content" xml:space="preserve"><value>Hoe OpenClaw werkt</value></data>
+  <data name="Onboarding_Intro_ContinueButton.Content" xml:space="preserve"><value>Doorgaan</value></data>
 </root>

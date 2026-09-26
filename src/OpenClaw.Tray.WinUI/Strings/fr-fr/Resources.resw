@@ -7200,4 +7200,17 @@ Choisissez {1} pour quitter cet aperçu sans démarrer la migration et continuer
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Niveau d'effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Plus rapide</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Plus approfondi</value></data>
+  <data name="Onboarding_Intro_Title.Text" xml:space="preserve"><value>Bienvenue dans OpenClaw</value></data>
+  <data name="Onboarding_Intro_Summary.Text" xml:space="preserve"><value>OpenClaw est un assistant IA personnel qui peut travailler sur ce PC pour vous. Discutez avec lui ici ou depuis les applications que vous utilisez déjà.</value></data>
+  <data name="Onboarding_Intro_BenefitTasksTitle.Text" xml:space="preserve"><value>De l'aide pour les tâches du quotidien</value></data>
+  <data name="Onboarding_Intro_BenefitTasksDetail.Text" xml:space="preserve"><value>Demandez-lui de ranger des fichiers, de faire des recherches ou de s'occuper des tâches répétitives.</value></data>
+  <data name="Onboarding_Intro_BenefitChatTitle.Text" xml:space="preserve"><value>Discutez où que vous soyez</value></data>
+  <data name="Onboarding_Intro_BenefitChatDetail.Text" xml:space="preserve"><value>Vous pouvez aussi lui écrire depuis des applications comme WhatsApp ou Telegram.</value></data>
+  <data name="Onboarding_Intro_BenefitControlTitle.Text" xml:space="preserve"><value>Vous gardez le contrôle</value></data>
+  <data name="Onboarding_Intro_BenefitControlDetail.Text" xml:space="preserve"><value>Vous choisissez ce qu'il peut faire sur ce PC, et vous pouvez le modifier à tout moment.</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Title" xml:space="preserve"><value>Avant de continuer</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Message" xml:space="preserve"><value>Les assistants IA sont puissants et peuvent faire des erreurs. Avec votre autorisation, OpenClaw peut voir et modifier des éléments sur ce PC, comme votre écran et vos fichiers, ou exécuter des programmes. Ne l'installez que sur votre propre PC, pas sur un PC partagé.</value></data>
+  <data name="Onboarding_Intro_SecurityLink.Content" xml:space="preserve"><value>Comment OpenClaw vous protège</value></data>
+  <data name="Onboarding_Intro_ArchitectureLink.Content" xml:space="preserve"><value>Comment fonctionne OpenClaw</value></data>
+  <data name="Onboarding_Intro_ContinueButton.Content" xml:space="preserve"><value>Continuer</value></data>
 </root>

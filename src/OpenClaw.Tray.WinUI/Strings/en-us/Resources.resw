@@ -7264,4 +7264,17 @@ Choose {1} to exit this preview without starting migration and continue using th
   <data name="Chat_Composer_Effort_Title" xml:space="preserve"><value>Effort</value></data>
   <data name="Chat_Composer_Effort_Faster" xml:space="preserve"><value>Faster</value></data>
   <data name="Chat_Composer_Effort_Smarter" xml:space="preserve"><value>Smarter</value></data>
+  <data name="Onboarding_Intro_Title.Text" xml:space="preserve"><value>Welcome to OpenClaw</value></data>
+  <data name="Onboarding_Intro_Summary.Text" xml:space="preserve"><value>OpenClaw is a personal AI assistant that can work on this PC for you. Chat with it here or from the apps you already use.</value></data>
+  <data name="Onboarding_Intro_BenefitTasksTitle.Text" xml:space="preserve"><value>Get help with everyday tasks</value></data>
+  <data name="Onboarding_Intro_BenefitTasksDetail.Text" xml:space="preserve"><value>Ask it to organize files, look things up, or take care of routine work.</value></data>
+  <data name="Onboarding_Intro_BenefitChatTitle.Text" xml:space="preserve"><value>Chat from anywhere</value></data>
+  <data name="Onboarding_Intro_BenefitChatDetail.Text" xml:space="preserve"><value>You can also message it from apps like WhatsApp or Telegram.</value></data>
+  <data name="Onboarding_Intro_BenefitControlTitle.Text" xml:space="preserve"><value>You stay in control</value></data>
+  <data name="Onboarding_Intro_BenefitControlDetail.Text" xml:space="preserve"><value>You choose what it can do on this PC, and you can change that anytime.</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Title" xml:space="preserve"><value>Before you continue</value></data>
+  <data name="Onboarding_Intro_RiskNotice.Message" xml:space="preserve"><value>AI assistants are powerful and can make mistakes. With your permission, OpenClaw can see and change things on this PC, like your screen and files, or run programs. Only set it up on your own PC, not one you share.</value></data>
+  <data name="Onboarding_Intro_SecurityLink.Content" xml:space="preserve"><value>How OpenClaw keeps you safe</value></data>
+  <data name="Onboarding_Intro_ArchitectureLink.Content" xml:space="preserve"><value>How OpenClaw works</value></data>
+  <data name="Onboarding_Intro_ContinueButton.Content" xml:space="preserve"><value>Continue</value></data>
 </root>

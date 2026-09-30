@@ -151,8 +151,12 @@ public sealed class ClawHubSkillVersion
 
 public sealed class ClawHubSkillMetadata
 {
-    public IReadOnlyList<string> Os { get; set; } = [];
-    public IReadOnlyList<string> Systems { get; set; } = [];
+    private IReadOnlyList<string> _os = [];
+    private IReadOnlyList<string> _systems = [];
+
+    // ClawHub reports null for skills without a platform constraint.
+    public IReadOnlyList<string> Os { get => _os; set => _os = value ?? []; }
+    public IReadOnlyList<string> Systems { get => _systems; set => _systems = value ?? []; }
 }
 
 public sealed class ClawHubSkillOwner

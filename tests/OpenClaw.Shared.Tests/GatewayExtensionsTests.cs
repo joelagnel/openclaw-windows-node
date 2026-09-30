@@ -25,6 +25,24 @@ public sealed class GatewayExtensionsTests
         Assert.False(features.SupportsMethod("Plugins.List"));
     }
 
+    [Fact]
+    public void SkillsDetailResult_NullPlatformMetadata_DeserializesAsEmptyLists()
+    {
+        // skills.detail relays ClawHub's detail, which reports null for skills with no platform constraint.
+        var detail = JsonSerializer.Deserialize<SkillsDetailResult>("""
+        {
+          "skill": { "slug": "weather", "displayName": "Weather", "tags": { "latest": "1.0.0" } },
+          "latestVersion": { "version": "1.0.0", "createdAt": 1767545394459, "changelog": "" },
+          "metadata": { "setup": [], "os": null, "systems": null },
+          "owner": { "handle": "steipete", "displayName": "Peter Steinberger" }
+        }
+        """, JsonSerializerOptionsCache.GatewayProtocol);
+
+        Assert.NotNull(detail?.Metadata);
+        Assert.Empty(detail.Metadata.Os);
+        Assert.Empty(detail.Metadata.Systems);
+    }
+
     [Theory]
     [InlineData(true, false, false, false, true, SkillReadinessState.Disabled)]
     [InlineData(false, true, false, false, true, SkillReadinessState.Blocked)]

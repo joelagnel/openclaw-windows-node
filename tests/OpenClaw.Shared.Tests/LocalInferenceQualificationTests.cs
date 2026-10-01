@@ -825,6 +825,21 @@ public class LocalInferenceQualificationTests
             StableId: stableId);
 
     /// <summary>
+    /// Every Qwen3.6-35B-A3B recipe in the 2026-09-30 set runs MTP with n=2, not the
+    /// catalog-wide default of 3. Both offered quantizations have to agree with it.
+    /// </summary>
+    [Theory]
+    [InlineData(LocalModelCatalog.Qwen35BModelId)]
+    [InlineData(LocalModelCatalog.Qwen35B_Q4KSModelId)]
+    public void Qwen35BRecipes_UseTwoSpeculativeDraftTokens(string modelId)
+    {
+        LocalModelInfo model = LocalModelCatalog.Find(modelId)!;
+
+        Assert.Equal(SpeculativeDecodingMode.DraftMtp, model.Recipe.SpeculativeDecoding);
+        Assert.Equal(2, model.Recipe.SpeculativeDraftMaxTokens);
+    }
+
+    /// <summary>
     /// The retired 48GB-SKU quantization was only ever installed at that SKU's fixed
     /// 98,304-token tier. Retiring it must keep that profile, not collapse it onto the
     /// pre-profile native/F16 set, or an existing receipt stops resolving its profile.

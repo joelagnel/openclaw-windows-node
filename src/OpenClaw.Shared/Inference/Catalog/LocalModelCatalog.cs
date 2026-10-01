@@ -237,7 +237,8 @@ public static class LocalModelCatalog
                 Recipe(
                     fullAttentionLayerCount: 10,
                     keyValueHeadCount: 2,
-                    temperature: 0.6),
+                    temperature: 0.6,
+                    speculativeDraftMaxTokens: 2),
                 IsDefault: false,
                 IsExplicitAlternative: true,
                 SupportsVision: false,

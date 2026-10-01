@@ -320,7 +320,7 @@ public class LocalInferenceQualificationTests
     // "Gb48" case below almost exactly.
     [Theory]
     [InlineData(30, null)] // 32GB SKU: no local AI recommended
-    [InlineData(45, LocalModelCatalog.Qwen35B_IQ4XSModelId)] // 48GB SKU -> 24GB recipe
+    [InlineData(45, LocalModelCatalog.Qwen35B_Q4KSModelId)] // 48GB SKU -> Qwen3.6-35B-A3B (Q4_K_S)
     [InlineData(62, LocalModelCatalog.Qwen38_27BModelId)] // 64GB SKU -> 28GB recipe
     [InlineData(120, LocalModelCatalog.Qwen38_27B_DFlashModelId)] // 128GB SKU -> 48GB recipe (default)
     public void Evaluate_RoutesRtxSparkByFixedSkuTable(long totalGiB, string? expectedModelId)
@@ -369,7 +369,7 @@ public class LocalInferenceQualificationTests
                 Gpu("NVIDIA GeForce RTX 5090", "GPU-5090", totalGiB: 80, freeGiB: 80)));
 
         Assert.Equal(LocalInferenceEligibilityStatus.Eligible, result.Status);
-        Assert.Equal(LocalModelCatalog.Qwen35B_IQ4XSModelId, result.Plan?.Model.Id);
+        Assert.Equal(LocalModelCatalog.Qwen35B_Q4KSModelId, result.Plan?.Model.Id);
         Assert.Equal("GPU-spark", result.SelectedGpu?.StableId);
         Assert.Equal("GPU-spark", result.Plan?.BoundGpuStableId);
     }
@@ -823,6 +823,44 @@ public class LocalInferenceQualificationTests
             DriverVersion: "616.30",
             CudaMajorVersion: 13,
             StableId: stableId);
+
+    /// <summary>
+    /// The retired 48GB-SKU quantization was only ever installed at that SKU's fixed
+    /// 98,304-token tier. Retiring it must keep that profile, not collapse it onto the
+    /// pre-profile native/F16 set, or an existing receipt stops resolving its profile.
+    /// </summary>
+    [Fact]
+    public void RetiredSpark48GbModel_KeepsTheProfileItWasInstalledUnder()
+    {
+        LocalModelInfo? retired = LocalModelCatalog.FindInstalled(LocalModelCatalog.Qwen35B_IQ4XSModelId);
+
+        Assert.NotNull(retired);
+        Assert.True(LocalModelCatalog.IsLegacy(LocalModelCatalog.Qwen35B_IQ4XSModelId));
+
+        LocalInferenceRunProfile profile = Assert.Single(LocalModelCatalog.GetProfiles(retired));
+        Assert.Equal(LocalModelCatalog.RtxSpark48GbContextTokens, profile.ContextTokens);
+    }
+
+    /// <summary>
+    /// The 48GB SKU is picked from a fixed table, so no capacity fit-test backstops it.
+    /// Pin the recipe's required memory so a future quantization change cannot silently
+    /// grow past what a 48GB-SKU Spark (~48.6e9 bytes visible) can actually hold.
+    /// </summary>
+    [Fact]
+    public void Spark48GbRecipe_RequiredMemoryStaysWithinTheSku()
+    {
+        LocalInferenceEligibilityResult result = LocalInferenceEligibility.Evaluate(
+            Hardware(RuntimeArchitecture.Arm64, Gpu("NVIDIA RTX Spark N1X", "GPU-spark", 45, 45)));
+
+        Assert.Equal(LocalModelCatalog.Qwen35B_Q4KSModelId, result.Plan!.Model.Id);
+        Assert.Equal(28_971_620_640L, result.RequiredTotalMemoryBytes);
+
+        // 45 GiB (48.32e9) under-states what a real 48GB-SKU Spark reports through
+        // cuMemGetInfo (48.72e9 measured), so a fit here is the conservative check that
+        // keeps this test honest if the pinned figure above is ever raised.
+        Assert.NotNull(result.DetectedTotalMemoryBytes);
+        Assert.True(result.RequiredTotalMemoryBytes <= result.DetectedTotalMemoryBytes);
+    }
 
     [Theory]
     [InlineData("b10655-cuda13-x64", "b10655")]

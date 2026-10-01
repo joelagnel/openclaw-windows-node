@@ -827,6 +827,8 @@ public class LocalInferenceQualificationTests
     [Theory]
     [InlineData("b10655-cuda13-x64", "b10655")]
     [InlineData("b10655-cuda13-arm64", "b10655")]
+    [InlineData("b11026-cuda13-x64", "b11026")]
+    [InlineData("b11026-cuda13-arm64", "b11026")]
     public void FindInstalled_ResolvesRetiredRuntimeSoExistingInstallsStayLaunchable(
         string runtimeId,
         string expectedReleaseTag)
@@ -882,5 +884,30 @@ public class LocalInferenceQualificationTests
     {
         Assert.Null(LlamaRuntimeCatalog.FindInstalled("b00000-cuda13-x64"));
         Assert.Null(LlamaRuntimeCatalog.FindInstalled(null));
+    }
+
+    /// <summary>
+    /// The receipt published alpha.78 actually writes, read back off an x64 install of
+    /// that build. Both halves have to resolve together: the reconciler looks the
+    /// runtime up by <c>runtimeId</c> and the model up by <c>modelCatalogId</c>, and
+    /// rejects the install outright if either lookup comes back empty. Pruning one of
+    /// these entries would strand every published install behind a recipe-mismatch
+    /// error, so pin the pair rather than the two ids separately.
+    /// </summary>
+    [Fact]
+    public void PublishedAlphaReceipt_StillResolvesAfterTheRuntimeBump()
+    {
+        LlamaRuntimeVariant? runtime = LlamaRuntimeCatalog.FindInstalled("b11026-cuda13-x64");
+        LocalModelInfo? model = LocalModelCatalog.FindInstalled(LocalModelCatalog.Qwen38_27BModelId);
+
+        Assert.NotNull(runtime);
+        Assert.Equal("b11026", runtime.ReleaseTag);
+        Assert.NotNull(model);
+
+        // The model is still the current recommendation for a dGPU box, so only the
+        // runtime half is an upgrade. That asymmetry is the point: the install is
+        // reusable as-is, and the 16.5 GB weights never need re-acquiring.
+        Assert.NotEqual(LlamaRuntimeCatalog.ReleaseTag, runtime.ReleaseTag);
+        Assert.False(LocalModelCatalog.IsLegacy(LocalModelCatalog.Qwen38_27BModelId));
     }
 }

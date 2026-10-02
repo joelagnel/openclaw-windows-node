@@ -155,7 +155,7 @@ public sealed class LocalAiConfig
     /// recovery. It authorizes retired-catalog lookup only for that exact selection.
     /// </summary>
     [JsonIgnore]
-    public string? InstalledReceiptModelId { get; set; }
+    internal string? InstalledReceiptModelId { get; set; }
     /// <summary>Managed llama-server port. Zero selects a free loopback port during setup.</summary>
     public int Port { get; set; }
     public bool WslMirroredNetworkingConsent { get; set; }

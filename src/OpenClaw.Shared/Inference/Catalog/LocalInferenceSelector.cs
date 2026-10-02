@@ -90,7 +90,7 @@ public static class LocalInferenceSelector
     /// Resolves an explicit model from an existing installation receipt. Retired models
     /// remain valid here, but are never admitted by the fresh-selection overload.
     /// </summary>
-    public static LocalInferenceSelectionResult SelectInstalled(
+    internal static LocalInferenceSelectionResult SelectInstalled(
         HostHardwareInfo hardware,
         string installedModelId)
     {

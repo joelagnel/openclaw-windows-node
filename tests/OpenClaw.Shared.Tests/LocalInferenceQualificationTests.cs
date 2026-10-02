@@ -856,6 +856,26 @@ public class LocalInferenceQualificationTests
         Assert.Equal(LocalModelCatalog.RtxSpark48GbContextTokens, profile.ContextTokens);
     }
 
+    [Fact]
+    public void InstalledRetiredSpark48GbModel_RemainsEligibleWithoutRestoringFreshSelection()
+    {
+        HostHardwareInfo hardware = Hardware(
+            RuntimeArchitecture.Arm64,
+            Gpu("NVIDIA RTX Spark N1X", "GPU-spark", 45, 45));
+
+        LocalInferenceEligibilityResult fresh = LocalInferenceEligibility.Evaluate(
+            hardware,
+            LocalModelCatalog.Qwen35B_IQ4XSModelId);
+        LocalInferenceEligibilityResult installed = LocalInferenceEligibility.EvaluateInstalled(
+            hardware,
+            LocalModelCatalog.Qwen35B_IQ4XSModelId);
+
+        Assert.Equal(LocalInferenceSelectionFailureCode.UnknownModel, fresh.SelectionFailureCode);
+        Assert.True(installed.CanInstall);
+        Assert.Equal(LocalModelCatalog.Qwen35B_IQ4XSModelId, installed.Plan!.Model.Id);
+        Assert.Equal(LocalModelCatalog.RtxSpark48GbContextTokens, installed.Plan.Profile.ContextTokens);
+    }
+
     /// <summary>
     /// The 48GB SKU is picked from a fixed table, so no capacity fit-test backstops it.
     /// Pin the recipe's required memory so a future quantization change cannot silently

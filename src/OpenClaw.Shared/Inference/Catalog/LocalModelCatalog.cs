@@ -448,9 +448,9 @@ public static class LocalModelCatalog
     /// Resolves a model that an existing installation receipt may reference,
     /// including retired entries that are no longer offered for new installs.
     /// Use this only on installed-receipt validation, launch, and display
-    /// paths. Selection, recommendation, and eligibility must keep using
+    /// paths. Fresh selection, recommendation, and eligibility must keep using
     /// <see cref="Find"/> and <see cref="Models"/> so retired models are never
-    /// offered again.
+    /// offered again; receipt-aware eligibility may resolve the installed model.
     /// </summary>
     public static LocalModelInfo? FindInstalled(string? id) =>
         Find(id) ??

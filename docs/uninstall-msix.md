@@ -5,7 +5,7 @@
 
 ---
 
-## MSIX Cannot Auto-Clean WSL State
+## Automatic cleanup for managed Gateways
 
 **Feasibility verdict:** `runFullTrust` MSIX packages do **not** support a
 `CustomInstall` / `CustomUninstall` extension that runs an arbitrary EXE
@@ -13,8 +13,22 @@ at uninstall time.  The supported extension points
 (`windows.startupTask`, `windows.appExecutionAlias`, `com.extension`,
 `windows.protocol`, etc.) do not include an uninstall hook.
 
-Therefore, removing the MSIX package via **Settings → Apps → OpenClaw Tray
-→ Uninstall** will silently leave behind:
+Companion registers a user-scoped cleanup helper outside its MSIX payload when it
+creates a managed WSL Gateway or acquires a missing native Store Gateway. The helper
+removes the captured WSL registration and disk directory, or the native package it
+acquired, after Companion removal. WSL ownership requires its creation marker and
+matching registered disk path and registration identity. Replacements, unknown directories
+and unreadable inventories are preserved. Native ownership is recorded only after verified
+acquisition and bound to the Gateway's LocalState marker; other installed Companion variants
+defer removal of the shared package. Unverified failed or cancelled acquisitions remain unclaimed.
+The package-local ownership marker and successful Windows Remove receipt
+let first launch settle cleanup after a fast reinstall; normal updates retain the
+marker. Older owned installations are adopted prospectively, without treating historical
+uninstalls as authority to delete a currently used Gateway. A pending conflict offers
+preservation and continuation. Startup retires only removed managed connections and their
+credentials, preserving unrelated Gateways, settings and local MCP state.
+
+Older installations without verified ownership may still leave behind:
 
 - **WSL distro** - `OpenClawGateway` remains in `wsl --list`.
 - **Roaming app data** under `%APPDATA%\OpenClawTray\` (device key, settings,
@@ -30,7 +44,7 @@ Therefore, removing the MSIX package via **Settings → Apps → OpenClaw Tray
 
 ---
 
-## Recommended: Run "Remove Local Gateway" Before Uninstalling MSIX
+## Remove a Gateway while keeping Companion, or clean up an older installation
 
 1. Open the tray icon.
 2. Navigate to **Settings → Local Gateway**.

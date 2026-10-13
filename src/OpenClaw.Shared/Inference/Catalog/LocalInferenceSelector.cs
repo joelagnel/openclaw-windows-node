@@ -293,15 +293,17 @@ internal static class LocalInferenceQualificationPolicy
         if (recipe.SpeculativeDecoding == SpeculativeDecodingMode.None)
             return 0;
 
-        // The pinned Qwen MTP and DFlash draft artifacts contain one draft
-        // attention layer with the same KV head count and head dimension as
-        // the target model.
+        // Draft artifacts use the target's KV head geometry, but can have
+        // multiple attention layers independent of the target layer count.
+        long vectorsPerTypePerToken = SaturatingMultiply(
+            recipe.DraftAttentionLayerCount,
+            recipe.KeyValueHeadCount);
         long bytesPerToken = SaturatingAdd(
             SaturatingMultiply(
-                recipe.KeyValueHeadCount,
+                vectorsPerTypePerToken,
                 EncodedBytes(recipe.KeyValueHeadDimension, profile.DraftKeyCachePrecision)),
             SaturatingMultiply(
-                recipe.KeyValueHeadCount,
+                vectorsPerTypePerToken,
                 EncodedBytes(recipe.KeyValueHeadDimension, profile.DraftValueCachePrecision)));
         return SaturatingMultiply(bytesPerToken, profile.ContextTokens);
     }

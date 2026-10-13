@@ -44,7 +44,8 @@ public sealed record LocalModelRunRecipe
         SpeculativeDecodingMode speculativeDecoding,
         int speculativeDraftMaxTokens,
         ModelSamplingPreset sampling,
-        PinnedArtifact? draftWeights = null)
+        PinnedArtifact? draftWeights = null,
+        int draftAttentionLayerCount = 1)
     {
         if (speculativeDecoding == SpeculativeDecodingMode.DraftDFlash && draftWeights is null)
             throw new ArgumentException("Draft-flash decoding requires a pinned draft checkpoint.", nameof(draftWeights));
@@ -65,6 +66,8 @@ public sealed record LocalModelRunRecipe
         if (speculativeDraftMaxTokens < 0 ||
             (speculativeDraftMaxTokens == 0 && speculativeDecoding != SpeculativeDecodingMode.None))
             throw new ArgumentOutOfRangeException(nameof(speculativeDraftMaxTokens));
+        if (draftAttentionLayerCount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(draftAttentionLayerCount));
         ArgumentNullException.ThrowIfNull(sampling);
 
         BatchTokens = batchTokens;
@@ -79,6 +82,7 @@ public sealed record LocalModelRunRecipe
         SpeculativeDraftMaxTokens = speculativeDraftMaxTokens;
         Sampling = sampling;
         DraftWeights = draftWeights;
+        DraftAttentionLayerCount = draftAttentionLayerCount;
     }
 
     public int BatchTokens { get; }
@@ -94,6 +98,8 @@ public sealed record LocalModelRunRecipe
     public ModelSamplingPreset Sampling { get; }
     /// <summary>The independently pinned draft checkpoint, set only for <see cref="SpeculativeDecodingMode.DraftDFlash"/>.</summary>
     public PinnedArtifact? DraftWeights { get; }
+    /// <summary>Attention layers in the drafter, using the target's KV head geometry.</summary>
+    public int DraftAttentionLayerCount { get; }
 }
 
 /// <summary>A downloadable GGUF model and its deterministic llama-server recipe.</summary>

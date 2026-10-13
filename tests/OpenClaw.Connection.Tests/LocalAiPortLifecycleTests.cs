@@ -12,7 +12,7 @@ using System.Text.Json.Nodes;
 
 namespace OpenClaw.Connection.Tests;
 
-public sealed class LocalAiPortLifecycleTests
+public sealed partial class LocalAiPortLifecycleTests
 {
     [Fact]
     public async Task ChildProcessPathResolver_ResolvesExistingFileAndDirectoryPaths()
@@ -3130,7 +3130,8 @@ public sealed class LocalAiPortLifecycleTests
         ILocalAiModelFileVerifier? modelFileVerifier = null,
         Func<string>? getApiKey = null,
         Func<LocalAiResolvedInstall, int?>? getRecoveryPort = null,
-        Func<string, string>? resolveChildProcessPath = null) => new(
+        Func<string, string>? resolveChildProcessPath = null,
+        OpenClaw.Shared.Inference.IHostHardwareProbe? hardwareProbe = null) => new(
             new LlamaServerRuntimeOptions
             {
                 Paths = paths,
@@ -3148,7 +3149,8 @@ public sealed class LocalAiPortLifecycleTests
             host,
             platform,
             client,
-            modelFileVerifier);
+            modelFileVerifier,
+            hardwareProbe);
 
     private static async Task<LocalAiPaths> PrepareInstallAsync(TempDirectory temp)
     {

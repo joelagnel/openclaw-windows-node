@@ -318,7 +318,8 @@ public sealed class LocalAiSetupUxContractTests
             "else if (!selectedEligibility.CanInstall)",
             "_config.LocalAi.SelectedModelId = null;",
             "_config.LocalAi.SelectedModelId ??= _localAiRecommendedModelId ?? availability.Plan.Model.Id;",
-            "eligibility ??= _localAiRecoveryModelPinned",
+            "eligibility ??= _localAiPinnedPlan is { } recordedPlan",
+            "LocalInferenceEligibility.EvaluateRecordedProfile(_localAiHardware, recordedPlan)",
             "LocalInferenceEligibility.EvaluateInstalled(",
             "LocalInferenceEligibility.Evaluate(",
             "_config.LocalAi.SelectedModelId);");

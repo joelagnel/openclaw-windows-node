@@ -175,7 +175,7 @@ public sealed record LocalInferenceRunProfile
 }
 
 /// <summary>Immutable Hugging Face model pins offered by the Windows local inference flow.</summary>
-public static class LocalModelCatalog
+public static partial class LocalModelCatalog
 {
     public const string Bonsai2ModelId = "bonsai-2-27b-ptq1-0";
     public const string NemotronBoltModelId = "nemotron-3.5-bolt-74b-a9b-iq2-lilicorr";
@@ -378,6 +378,7 @@ public static class LocalModelCatalog
                 RuntimeFamily: BonsaiRuntimeCatalog.Family,
                 MinimumSystemMemoryBytes: 16L * 1024 * 1024 * 1024,
                 MinimumFreeDiskBytes: 8L * 1024 * 1024 * 1024),
+            CreateNemotronBolt(),
         });
 
     // Retired from new installs and never offered, recommended, or selectable.
@@ -437,7 +438,9 @@ public static class LocalModelCatalog
                         1536L * 1024 * 1024)]
                     : string.Equals(model.Id, Qwen35B_Q4KSModelId, StringComparison.Ordinal)
                     ? CreateRtxSpark48GbProfiles(model)
-                    : CreateProfiles(model))))
+                    : string.Equals(model.Id, NemotronBoltModelId, StringComparison.Ordinal)
+                        ? CreateNemotronBoltProfiles()
+                        : CreateProfiles(model))))
             .Concat(s_legacyModels
                 .Select(model => (model, profiles: Array.AsReadOnly(
                     // The retired 48GB-SKU quantization was only ever installed at that

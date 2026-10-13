@@ -203,7 +203,7 @@ public static class LlamaServerRouterConfiguration
             : verifiedDraftModelPath;
     }
 
-    private static string BuildPreset(
+    internal static string BuildPreset(
         LocalModelInfo model,
         LocalInferenceRunProfile profile,
         string modelPath,
@@ -239,6 +239,10 @@ public static class LlamaServerRouterConfiguration
         preset.AppendLine("main-gpu = 0");
         preset.AppendLine("fit = off");
         preset.AppendLine("load-mode = dio");
+        if (recipe.PromptCacheMiB is { } cacheMiB)
+            preset.Append("cache-ram = ").AppendLine(Invariant(cacheMiB));
+        if (recipe.MaximumContextCheckpoints is { } checkpoints)
+            preset.Append("ctx-checkpoints = ").AppendLine(Invariant(checkpoints));
         switch (recipe.SpeculativeDecoding)
         {
             case SpeculativeDecodingMode.DraftMtp:
@@ -249,6 +253,8 @@ public static class LlamaServerRouterConfiguration
             case SpeculativeDecodingMode.DraftDFlash:
                 preset.AppendLine("spec-type = draft-dflash");
                 preset.Append("spec-draft-model = ").AppendLine(draftModelPath);
+                if (recipe.DraftGpuLayers is { } draftGpuLayers)
+                    preset.Append("spec-draft-ngl = ").AppendLine(Invariant(draftGpuLayers));
                 preset.Append("spec-draft-n-max = ").AppendLine(Invariant(recipe.SpeculativeDraftMaxTokens));
                 preset.AppendLine("spec-draft-backend-sampling = true");
                 break;

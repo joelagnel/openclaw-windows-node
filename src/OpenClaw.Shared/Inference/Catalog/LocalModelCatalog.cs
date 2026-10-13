@@ -45,7 +45,10 @@ public sealed record LocalModelRunRecipe
         int speculativeDraftMaxTokens,
         ModelSamplingPreset sampling,
         PinnedArtifact? draftWeights = null,
-        int draftAttentionLayerCount = 1)
+        int draftAttentionLayerCount = 1,
+        int? promptCacheMiB = null,
+        int? maximumContextCheckpoints = null,
+        int? draftGpuLayers = null)
     {
         if (speculativeDecoding == SpeculativeDecodingMode.DraftDFlash && draftWeights is null)
             throw new ArgumentException("Draft-flash decoding requires a pinned draft checkpoint.", nameof(draftWeights));
@@ -68,6 +71,14 @@ public sealed record LocalModelRunRecipe
             throw new ArgumentOutOfRangeException(nameof(speculativeDraftMaxTokens));
         if (draftAttentionLayerCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(draftAttentionLayerCount));
+        if (promptCacheMiB is < 0)
+            throw new ArgumentOutOfRangeException(nameof(promptCacheMiB));
+        if (maximumContextCheckpoints is < 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumContextCheckpoints));
+        if (draftGpuLayers is < 0)
+            throw new ArgumentOutOfRangeException(nameof(draftGpuLayers));
+        if (draftGpuLayers.HasValue && speculativeDecoding != SpeculativeDecodingMode.DraftDFlash)
+            throw new ArgumentException("Separate draft GPU layers require draft-flash decoding.", nameof(draftGpuLayers));
         ArgumentNullException.ThrowIfNull(sampling);
 
         BatchTokens = batchTokens;
@@ -83,6 +94,9 @@ public sealed record LocalModelRunRecipe
         Sampling = sampling;
         DraftWeights = draftWeights;
         DraftAttentionLayerCount = draftAttentionLayerCount;
+        PromptCacheMiB = promptCacheMiB;
+        MaximumContextCheckpoints = maximumContextCheckpoints;
+        DraftGpuLayers = draftGpuLayers;
     }
 
     public int BatchTokens { get; }
@@ -100,6 +114,12 @@ public sealed record LocalModelRunRecipe
     public PinnedArtifact? DraftWeights { get; }
     /// <summary>Attention layers in the drafter, using the target's KV head geometry.</summary>
     public int DraftAttentionLayerCount { get; }
+    /// <summary>Saved-prompt RAM budget in MiB. Zero disables it; null keeps the runtime default.</summary>
+    public int? PromptCacheMiB { get; }
+    /// <summary>Maximum serialized context checkpoints per slot, or null for the runtime default.</summary>
+    public int? MaximumContextCheckpoints { get; }
+    /// <summary>GPU layers for a separate DFlash drafter, or null for the runtime default.</summary>
+    public int? DraftGpuLayers { get; }
 }
 
 /// <summary>A downloadable GGUF model and its deterministic llama-server recipe.</summary>

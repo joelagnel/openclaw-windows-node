@@ -644,6 +644,28 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         // Store protocol URI for processing after setup
         _pendingProtocolUri = protocolUri;
 
+        if (!AppIdentity.IsIsolated && PackageHelper.IsPackaged)
+        {
+            using var cleanupLogger = new OpenClaw.SetupEngine.SetupLogger(filePath: null);
+            try
+            {
+                if (!await OpenClaw.SetupEngine.GatewayPackageCleanup.InitializeAsync(
+                    new OpenClaw.SetupEngine.CommandRunner(cleanupLogger),
+                    AppIdentity.ResolveRoamingDataDirectory(), AppIdentity.ResolveSetupLocalDataDirectory(),
+                    AppIdentity.SetupDistroName, preserve: error => NativeRestartAdmission.PromptPreserveGateways(error, AppIdentity.DisplayName)))
+                {
+                    Exit();
+                    return;
+                }
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                NativeRestartAdmission.Notify(error.Message, AppIdentity.DisplayName);
+                Exit();
+                return;
+            }
+        }
+
         var appUserModelIdRegistration = AppUserModelIdRegistrar.RegisterCurrentProcess(AppIdentity.AppUserModelId);
         if (appUserModelIdRegistration.Attempted && appUserModelIdRegistration.HResult < 0)
         {

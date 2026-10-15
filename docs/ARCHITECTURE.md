@@ -214,7 +214,7 @@ disconnect, replacement, or close. This cache is not used for authorization.
 | Post-save settings change effect ordering, detached snapshot comparison, and concurrent save serialization | `SettingsChangeCoordinator` | authoritative |
 | Exactly-once ordered app shutdown sequencing | `AppShutdownCoordinator` | authoritative |
 | App composition-root startup sequencing | `AppBootstrapper` (planned) | planned |
-| Packaged uninstall cleanup, preservation recovery and removed-target reconciliation | `GatewayPackageCleanup`; App only invokes its startup gate and presents the preservation choice | authoritative |
+| Packaged uninstall cleanup, preservation recovery and removed-target reconciliation | `GatewayPackageCleanup`; App only invokes its startup gate and presents recovery. Legacy name/path markers never grant unattended deletion authority; malformed receipts/settings retain pending evidence and fail closed | authoritative |
 | Inno migration records, preparation, and pre-start completion guard | `MigrationRecordCodec`, `MigrationPreparation`, `MigrationInventory`, `InnoMigrationStartupGuard` | authoritative |
 | Cross-session migration exclusion and source activity inspection | `MigrationOperationLock`, `InnoSourceActivityVerifier` (App only retains the runtime handle through process exit) | authoritative |
 | Store migration startup admission and finalization | `InnoInstallationDetector`, `InnoSourceRemovalVerifier`, `MigrationStartupRecordReader`, `MigrationInventoryCapture`, `StoreMigrationStartupCoordinator`, `StoreMigrationFinalizationCoordinator`, `StoreMigrationStartupGuard` | authoritative |

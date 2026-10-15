@@ -13,30 +13,29 @@ public static class GatewayPackageCleanup
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetCurrentPackageFamilyName(ref uint length, StringBuilder family);
 
-    public static async Task<bool> InitializeAsync(ICommandRunner commands, string dataDir, string localDataDir,
-        string distroName, CancellationToken ct = default, Func<string, bool>? preserve = null)
+    public static Task<bool> InitializeAsync(ICommandRunner commands, string dataDir, string localDataDir,
+        CancellationToken ct = default, Func<string, bool>? preserve = null) =>
+        InitializeAsync((register, keep) => RunAsync(commands, register, null, null, false, ct, preserve: keep),
+            dataDir, localDataDir, ct, preserve);
+
+    internal static async Task<bool> InitializeAsync(Func<bool, bool, Task<string?>> runCleanup,
+        string dataDir, string localDataDir, CancellationToken ct = default, Func<string, bool>? preserve = null)
     {
-        if (!OperatingSystem.IsWindows()) return true;
         try
         {
-            var directory = await RunAsync(commands, false, null, null, false, ct);
+            var directory = await runCleanup(false, false);
             if (directory is not null) await ReconcileAsync(directory, dataDir, localDataDir, ct);
             if (directory is not null && File.Exists(Path.Combine(directory, "owned.json")))
-                await RunAsync(commands, true, null, null, false, ct);
-            if (ManagedDistroOwnership.HasPathBoundMarkerEvidence(localDataDir, distroName) &&
-                DistroInstallPathPolicy.TryGetManagedInstallPath(localDataDir, distroName, out var path, out _) &&
-                ManagedDistroOwnership.HasRegisteredDistroEvidence(dataDir, localDataDir, distroName, path,
-                    new WindowsWslRegistrationInspector(), out _))
-            {
-                // Adopt retained installations prospectively. Past uninstall receipts do not authorize removal.
-                await RunAsync(commands, true, distroName, path, false, ct);
-            }
+                await runCleanup(true, false);
+            // Legacy name/path markers cannot identify the registration that Companion created.
+            // Only fresh creation may bind a WSL registration for unattended uninstall cleanup.
             return true;
         }
-        catch (Exception error) when (preserve is not null && error is (IOException or UnauthorizedAccessException or InvalidOperationException))
+        catch (Exception error) when (preserve is not null &&
+            error is (IOException or UnauthorizedAccessException or InvalidOperationException))
         {
             if (!preserve(error.Message)) return false;
-            var directory = await RunAsync(commands, false, null, null, false, ct, preserve: true);
+            var directory = await runCleanup(false, true);
             if (directory is not null) await ReconcileAsync(directory, dataDir, localDataDir, ct);
             return true;
         }
@@ -79,6 +78,10 @@ public static class GatewayPackageCleanup
             TimeSpan.FromSeconds(register ? 30 : 180), ct: ct);
         if (registration.TimedOut || registration.ExitCode != 0)
         {
+            if (registration.Stderr.Contains("OPENCLAW_CLEANUP_RECEIPT_INVALID", StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    $"The Gateway cleanup receipt '{Path.Combine(directory, "cleanup-result.json")}' is invalid. " +
+                    "Restore a valid receipt from a backup, then reopen Companion. Cleanup remains pending.");
             var diagnostic = SetupLogger.Sanitize(registration.Stderr);
             throw new InvalidOperationException(register
                 ? "Automatic Gateway cleanup could not be registered. " + diagnostic[..Math.Min(diagnostic.Length, 2048)]
@@ -88,6 +91,8 @@ public static class GatewayPackageCleanup
     }
 
     private sealed record Removal(string? DistroName, string? InstallPath, string? NativeFamily);
+    private sealed record LegacySetupState(string? DistroName, string? GatewayUrl);
+    private sealed record LegacySettings(string? GatewayUrl, bool? UseSshTunnel, string? PreferredGatewayId);
 
     private static async Task ReconcileAsync(string directory, string dataDir, string localDataDir, CancellationToken ct)
     {
@@ -99,37 +104,45 @@ public static class GatewayPackageCleanup
             try { lease = File.Open(Path.Combine(directory, "cleanup.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
             catch (IOException) when (attempt < 100) { await Task.Delay(100, ct); }
         }
-        using (lease)
+        using var cleanupLease = lease;
+        try
         {
             if (!File.Exists(receipt)) return;
             var removals = JsonSerializer.Deserialize<Removal[]>(File.ReadAllText(receipt))
                 ?? throw new InvalidDataException("The Gateway cleanup receipt is invalid.");
+            if (removals.Any(removal => removal is null))
+                throw new InvalidDataException("The Gateway cleanup receipt contains an invalid removal.");
             var registry = new GatewayRegistry(dataDir);
             registry.Load();
             var removed = registry.GetAll().Where(record => record.IsLocal && record.SshTunnel is null && removals.Any(
                 removal => removal.DistroName is { Length: > 0 } distro && string.Equals(
                     GatewayRecordEditing.ResolveManagedDistroName(record), distro, StringComparison.OrdinalIgnoreCase) ||
                     removal.NativeFamily is { Length: > 0 } family && record.NativePackageFamilyName == family)).ToArray();
-            foreach (var record in removed)
-                if (!Guid.TryParse(record.Id, out _) || !DeviceIdentity.BeginClearAllDeviceTokens(registry.GetIdentityDirectory(record.Id)).Success)
-                    throw new IOException("The removed Gateway's credentials could not be retired.");
             var settingsPath = Path.Combine(dataDir, "settings.json");
             var statePath = Path.Combine(localDataDir, "setup-state.json");
-            JsonObject? state = null;
-            try { if (File.Exists(statePath)) state = JsonNode.Parse(File.ReadAllText(statePath)) as JsonObject; }
+            LegacySetupState? state = null;
+            try { if (File.Exists(statePath)) state = JsonSerializer.Deserialize<LegacySetupState>(File.ReadAllText(statePath)); }
             catch (JsonException) { } // Invalid state cannot bind legacy credentials to a removed Gateway.
             var retiredState = removals.Any(removal => removal.DistroName is { Length: > 0 } distro &&
-                string.Equals(state?["DistroName"]?.GetValue<string>(), distro, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(state?.DistroName, distro, StringComparison.OrdinalIgnoreCase) &&
                 ManagedDistroOwnership.HasPathBoundMarkerEvidence(localDataDir, distro));
             using (PersistenceFileLease.Acquire(settingsPath))
             {
-                if (File.Exists(settingsPath) && JsonNode.Parse(File.ReadAllText(settingsPath)) is JsonObject settings)
+                var settings = File.Exists(settingsPath)
+                    ? JsonNode.Parse(File.ReadAllText(settingsPath)) as JsonObject
+                        ?? throw new InvalidDataException("The saved Gateway settings must contain a JSON object.")
+                    : null;
+                var legacySettings = settings?.Deserialize<LegacySettings>();
+                foreach (var record in removed)
+                    if (!Guid.TryParse(record.Id, out _) || !DeviceIdentity.BeginClearAllDeviceTokens(registry.GetIdentityDirectory(record.Id)).Success)
+                        throw new IOException("The removed Gateway's credentials could not be retired.");
+                if (settings is not null)
                 {
-                    var legacyUrl = settings["GatewayUrl"]?.GetValue<string>();
-                    if (settings["UseSshTunnel"]?.GetValue<bool>() != true && (removed.Any(record => record.Url == legacyUrl ||
+                    var legacyUrl = legacySettings?.GatewayUrl;
+                    if (legacySettings?.UseSshTunnel != true && (removed.Any(record => record.Url == legacyUrl ||
                         GatewayRecordEditing.AreEquivalentLoopbackEndpoints(record.Url, legacyUrl) ||
                         string.IsNullOrWhiteSpace(legacyUrl) && record.Id == registry.ActiveGatewayId) ||
-                        retiredState && GatewayRecordEditing.AreEquivalentLoopbackEndpoints(legacyUrl, state?["GatewayUrl"]?.GetValue<string>())))
+                        retiredState && GatewayRecordEditing.AreEquivalentLoopbackEndpoints(legacyUrl, state?.GatewayUrl)))
                     {
                         if (!DeviceIdentity.BeginClearAllDeviceTokens(dataDir).Success)
                             throw new IOException("The removed Gateway's legacy credentials could not be retired.");
@@ -137,7 +150,7 @@ public static class GatewayPackageCleanup
                         settings.Remove("Token");
                         settings.Remove("BootstrapToken");
                     }
-                    if (removed.Any(record => record.Id == settings["PreferredGatewayId"]?.GetValue<string>())) settings["PreferredGatewayId"] = null;
+                    if (removed.Any(record => record.Id == legacySettings?.PreferredGatewayId)) settings["PreferredGatewayId"] = null;
                     AtomicFile.WriteAllText(settingsPath, settings.ToJsonString(new() { WriteIndented = true }));
                 }
             }
@@ -150,6 +163,12 @@ public static class GatewayPackageCleanup
                     !ManagedDistroOwnership.DeleteMarker(localDataDir, distro, path))
                     throw new IOException("The removed Gateway's setup ownership could not be retired.");
             File.Delete(receipt);
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException)
+        {
+            throw new InvalidDataException(
+                $"The Gateway cleanup receipt '{receipt}' or saved settings '{Path.Combine(dataDir, "settings.json")}' are invalid. " +
+                "Cleanup remains pending. Restore valid files from a backup, then reopen Companion.", error);
         }
     }
 }

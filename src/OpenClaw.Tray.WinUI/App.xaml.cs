@@ -652,13 +652,13 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                 if (!await OpenClaw.SetupEngine.GatewayPackageCleanup.InitializeAsync(
                     new OpenClaw.SetupEngine.CommandRunner(cleanupLogger),
                     AppIdentity.ResolveRoamingDataDirectory(), AppIdentity.ResolveSetupLocalDataDirectory(),
-                    AppIdentity.SetupDistroName, preserve: error => NativeRestartAdmission.PromptPreserveGateways(error, AppIdentity.DisplayName)))
+                    preserve: error => NativeRestartAdmission.PromptPreserveGateways(error, AppIdentity.DisplayName)))
                 {
                     Exit();
                     return;
                 }
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
             {
                 NativeRestartAdmission.Notify(error.Message, AppIdentity.DisplayName);
                 Exit();

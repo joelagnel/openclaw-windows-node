@@ -36,11 +36,32 @@ function Read-WslRegistrations {
         Get-ChildItem -LiteralPath $key -ErrorAction Stop | Get-ItemProperty -ErrorAction Stop
     }
 }
+function Assert-ValidRemovalReceipt {
+    $resultPath = Join-Path $root 'cleanup-result.json'
+    if (-not (Test-Path -LiteralPath $resultPath)) { return }
+    $json = Get-Content -LiteralPath $resultPath -Raw
+    if ([string]::IsNullOrWhiteSpace($json) -or -not $json.TrimStart().StartsWith('[')) {
+        throw 'OPENCLAW_CLEANUP_RECEIPT_INVALID: The cleanup receipt must contain an array.'
+    }
+    try { $results = ConvertFrom-Json -InputObject $json -ErrorAction Stop }
+    catch [System.ArgumentException] { throw 'OPENCLAW_CLEANUP_RECEIPT_INVALID: Restore a valid cleanup-result.json before retrying.' }
+    foreach ($result in $results) {
+        if ($null -eq $result -or $result -isnot [pscustomobject]) {
+            throw 'OPENCLAW_CLEANUP_RECEIPT_INVALID: The cleanup receipt contains an invalid removal.'
+        }
+        foreach ($name in @('DistroName', 'InstallPath', 'NativeFamily')) {
+            if ($null -ne $result.$name -and $result.$name -isnot [string]) {
+                throw 'OPENCLAW_CLEANUP_RECEIPT_INVALID: A removal identity is not a string.'
+            }
+        }
+    }
+}
 function Record-Removal([string]$distro, [string]$path, [string]$native) {
     $resultPath = Join-Path $root 'cleanup-result.json'
     $results = if (Test-Path $resultPath) { @(Get-Content $resultPath -Raw | ConvertFrom-Json) } else { @() }
     $results += [pscustomobject]@{ DistroName = $distro; InstallPath = $path; NativeFamily = $native }
-    ConvertTo-Json -InputObject @($results) | Set-Content $resultPath -Encoding UTF8
+    ConvertTo-Json -InputObject @($results) | Set-Content "$resultPath.tmp" -Encoding UTF8
+    Move-Item -LiteralPath "$resultPath.tmp" -Destination $resultPath -Force
 }
 function Test-PackageRemovedSince([string]$since) {
     $events = Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-AppXDeploymentServer/Operational'; Id = 400;
@@ -76,6 +97,7 @@ while (-not $lock) {
     }
 }
 try {
+    Assert-ValidRemovalReceipt
     $record = if (Test-Path $recordPath) { Get-Content $recordPath -Raw | ConvertFrom-Json } else {
         [pscustomobject]@{ DistroName = $null; InstallPath = $null; OwnNativePackage = $false; InstallationId = $null; RegisteredUtc = $null }
     }
@@ -95,7 +117,9 @@ try {
             if (-not [IO.Path]::IsPathRooted($InstallPath)) { throw 'The managed Gateway install path must be absolute.' }
             $registrations = @(Read-WslRegistrations | Where-Object DistributionName -eq $DistroName)
             if ($registrations.Count -ne 1 -or (Normalize-Path $registrations[0].BasePath) -ne (Normalize-Path $InstallPath) -or
-                (-not $CreatedDistro -and $record.DistroName -and $record.RegistrationId -ne $registrations[0].PSChildName)) {
+                (-not $CreatedDistro -and (-not $record.DistroName -or $record.DistroName -ne $DistroName -or
+                    -not $record.RegistrationId -or $record.RegistrationId -ne $registrations[0].PSChildName -or
+                    (Normalize-Path $record.InstallPath) -ne (Normalize-Path $InstallPath)))) {
                 throw 'Managed WSL registration could not be confirmed. Preserve existing Gateways or retry cleanup.'
             }
             $record.DistroName = $DistroName

@@ -23,10 +23,19 @@ acquisition and bound to the Gateway's LocalState marker; other installed Compan
 defer removal of the shared package. Unverified failed or cancelled acquisitions remain unclaimed.
 The package-local ownership marker and successful Windows Remove receipt
 let first launch settle cleanup after a fast reinstall; normal updates retain the
-marker. Older owned installations are adopted prospectively, without treating historical
-uninstalls as authority to delete a currently used Gateway. A pending conflict offers
+marker. Legacy WSL installations without a creation-bound cleanup registration are
+preserved. A name/path marker cannot distinguish an original distro from a replacement
+installed before the first upgraded launch, so startup never adopts it for unattended
+removal. Use the explicit in-app removal flow for these installations. A pending conflict offers
 preservation and continuation. Startup retires only removed managed connections and their
 credentials, preserving unrelated Gateways, settings and local MCP state.
+
+Malformed cleanup receipts stop the worker before removal. Malformed receipts or saved
+settings also stop startup with a visible recovery error instead of entering the
+preserve/disown path. Reconciliation validates settings before retiring credentials and
+keeps a failed receipt for repair. Restore valid `cleanup-result.json` and `settings.json`
+from a backup using the paths in the error, then reopen Companion. Invalid receipt recovery
+does not discard the ownership record.
 
 Older installations without verified ownership may still leave behind:
 

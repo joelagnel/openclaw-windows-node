@@ -87,6 +87,13 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <StackPanel x:Name="CandidatesSection" Spacing="8" Visibility="Collapsed">
+                    <TextBlock x:Name="CandidatesHeading" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <ItemsControl x:Name="CandidateChoices" ItemTemplate="{StaticResource ChoiceTemplate}" />
+                    </Border>
+                </StackPanel>
                 <StackPanel x:Name="LocalGroupHeader" Spacing="4" Visibility="Collapsed">
                     <TextBlock x:Name="LocalGroupHeading" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Name="LocalGroupDescription" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
@@ -120,13 +127,6 @@
                               HorizontalAlignment="Stretch" Checked="Preference_Changed" Unchecked="Preference_Changed">
                         <TextBlock x:Name="CatalogPreferenceText" TextWrapping="Wrap" />
                     </CheckBox>
-                    <StackPanel x:Name="CandidatesSection" Spacing="8">
-                        <TextBlock x:Name="CandidatesHeading" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                        <ItemsControl x:Name="CandidateChoices" ItemTemplate="{StaticResource ChoiceTemplate}" />
-                        </Border>
-                    </StackPanel>
                     <StackPanel x:Name="UnavailableSection" Spacing="8">
                         <TextBlock x:Name="UnavailableHeading" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
                         <ItemsControl x:Name="UnavailableCandidates">

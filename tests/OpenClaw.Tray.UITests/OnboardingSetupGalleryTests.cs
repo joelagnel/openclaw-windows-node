@@ -858,11 +858,19 @@ public sealed class OnboardingSetupGalleryTests(UIThreadFixture ui, ITestOutputH
             var panel = Find<StackPanel>(page, "ChoicePanel");
             var prepare = Find<StackPanel>(page, "PrepareSection");
             var providers = Find<StackPanel>(page, "SignInSection");
+            var detected = Find<StackPanel>(page, "CandidatesSection");
+            var pageChoices = Assert.IsType<StackPanel>(detected.Parent);
+            Assert.True(pageChoices.Children.IndexOf(detected) < pageChoices.Children.IndexOf(Find<StackPanel>(page, "LocalGroupHeader")));
             Assert.True(panel.Children.IndexOf(prepare) < panel.Children.IndexOf(providers));
             Assert.Equal("Local AI", Find<TextBlock>(page, "LocalGroupHeading").Text);
             Assert.Equal("Cloud-based AI", Find<TextBlock>(page, "SignInHeading").Text);
             Assert.Null(page.FindName("LocalAiHeading"));
-            result.Facts.Add("Managed Local AI and other local choices precede detected Gateway choices, cloud provider cards, API Keys and the separate manual form.");
+            if (state == "providers")
+            {
+                Assert.Contains(TestSupport.FindDescendants<TextBlock>(detected), text => text.Text == "Claude on your Gateway");
+                result.Facts.Add("Saved cloud-provider access remains a detected Gateway choice above Local AI and setup options.");
+            }
+            result.Facts.Add("Detected Gateway choices precede managed Local AI, Ollama, LM Studio, cloud provider cards, API Keys and the separate manual form.");
         }
         if (state == "simplified-local")
         {

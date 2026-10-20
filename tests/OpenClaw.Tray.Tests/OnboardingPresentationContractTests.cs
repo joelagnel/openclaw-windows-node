@@ -165,7 +165,7 @@ public sealed class OnboardingPresentationContractTests
     {
         var xaml = Read(@"src\OpenClaw.SetupEngine.UI\Pages\AiSetupPage.xaml");
         var source = Read(@"src\OpenClaw.SetupEngine.UI\Pages\AiSetupPage.xaml.cs");
-        var groups = new[] { "LocalGroupHeader", "LocalAiSection", "PrepareSection", "CandidatesSection",
+        var groups = new[] { "CandidatesSection", "LocalGroupHeader", "LocalAiSection", "PrepareSection",
             "UnavailableSection", "SignInSection", "MoreExpander", "ApiKeySection", "ApiKeyForm", "RecommendedSection" };
         var offsets = groups.Select(name => xaml.IndexOf($"x:Name=\"{name}\"", StringComparison.Ordinal)).ToArray();
         Assert.All(offsets, offset => Assert.True(offset >= 0));

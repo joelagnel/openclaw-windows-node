@@ -478,7 +478,6 @@ public sealed partial class AiSetupPage : Page, IAsyncDisposable
             UnavailableCandidates.ItemsSource = _presentation.UnavailableCandidates.Select(candidate =>
                 new ChoiceRow(GatewayAiSetupChoiceKind.Candidate, candidate.Id, candidate.Label, candidate.Detail,
                     _artworkSession, BrandId: candidate.BrandId, Icon: candidate.Icon)).ToArray();
-            CandidatesSection.Visibility = Visible(_presentation.Candidates.Count > 0);
             RecommendedSection.Visibility = Visible(_presentation.RecommendedInstalls.Count > 0);
             UnavailableSection.Visibility = Visible(_presentation.UnavailableCandidates.Count > 0);
             PrepareSection.Visibility = Visible(_presentation.PrepareOptions.Count > 0);
@@ -1024,6 +1023,8 @@ public sealed partial class AiSetupPage : Page, IAsyncDisposable
                         (index == _activities.Count - 1 ? _activityStatus : SetupInstallationStatus.Complete)))).ToArray();
                 ChoicePanel.Visibility = Visible(_localExpectedModel is null && _args?.ExpectedConfiguredModelRef is null &&
                     (phase is GatewayAiSetupPhase.Choosing or GatewayAiSetupPhase.Cancelled or GatewayAiSetupPhase.Rejected));
+                CandidatesSection.Visibility = Visible(ChoicePanel.Visibility == Visibility.Visible &&
+                    _presentation.Candidates.Count > 0);
                 LocalGroupHeader.Visibility = Visible(LocalAiSection.Visibility == Visibility.Visible ||
                     ChoicePanel.Visibility == Visibility.Visible && PrepareSection.Visibility == Visibility.Visible);
                 LegacyButton.Visibility = phase == GatewayAiSetupPhase.ClassicWizardRequired ? Visibility.Visible : Visibility.Collapsed;

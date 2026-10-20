@@ -867,6 +867,12 @@ public sealed class OnboardingSetupGalleryTests(UIThreadFixture ui, ITestOutputH
         if (state == "simplified-local")
         {
             Assert.Equal("Set up a local model", Find<TextBlock>(page, "LocalAiTitle").Text);
+            Assert.Equal("Set up a model on this PC, or connect to LM Studio or Ollama.",
+                Find<TextBlock>(page, "LocalGroupDescription").Text);
+            Assert.Equal("Runs on this PC without provider usage charges. We'll help you set up a model suited to your hardware.",
+                Find<TextBlock>(page, "LocalAiDescription").Text);
+            Assert.Contains(TestSupport.FindDescendants<TextBlock>(page), text =>
+                text.Text == "Connect to Ollama on this PC or another host, using local or cloud models.");
             Assert.Equal(Visibility.Visible, Find<RecommendedBadge>(page, "LocalAiRecommendedBadge").Visibility);
             Assert.Equal(2, Find<ItemsControl>(page, "PrepareChoices").Items.Count);
             Assert.Single(Find<ItemsControl>(page, "FeaturedSignInChoices").Items);

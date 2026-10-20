@@ -7551,11 +7551,11 @@ Het binaire bestand wxc-exec is niet gevonden. {1} Als dit een ontwikkelaarsbuil
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Begin met je huidige keuzes en pas ze hieronder aan.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>Op deze pc</value></data>
   <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>Lokale AI</value></data>
-  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Draait lokaal op je pc zonder kosten per gebruik.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>We helpen je een model in te stellen dat bij je pc past.</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Stel een model in op deze pc of maak verbinding met LM Studio of Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Draait op deze pc zonder gebruikskosten van een provider. We helpen je een model in te stellen dat bij je hardware past.</value></data>
   <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Gebruik AI van een online dienst.</value></data>
   <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Verbind een model dat je al gebruikt in LM Studio.</value></data>
-  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Verbind een model dat je al gebruikt in Ollama.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Maak verbinding met Ollama op deze pc of een andere host voor lokale of cloudmodellen.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>De beheerde Windows llama-server gebruikt de GPU van deze pc. Dit staat los van de gehoste API van NVIDIA.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Beschikbaar op je Gateway</value></data>
   <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>AI in de cloud</value></data>

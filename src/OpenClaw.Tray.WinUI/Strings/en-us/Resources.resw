@@ -7614,11 +7614,11 @@ Make sure the gateway is running.</value>
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Start with your current choices and adjust them below.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>On this PC</value></data>
   <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>Local AI</value></data>
-  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Runs locally on your PC for unmetered intelligence.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>We’ll help you set up a model suited to your PC.</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Set up a model on this PC, or connect to LM Studio or Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Runs on this PC without provider usage charges. We'll help you set up a model suited to your hardware.</value></data>
   <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Use AI from an online service.</value></data>
   <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Connect a model you already use in LM Studio.</value></data>
-  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Connect a model you already use in Ollama.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Connect to Ollama on this PC or another host, using local or cloud models.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>Managed Windows llama-server uses this PC's GPU. This is separate from NVIDIA's hosted API.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Available on your Gateway</value></data>
   <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>Cloud-based AI</value></data>

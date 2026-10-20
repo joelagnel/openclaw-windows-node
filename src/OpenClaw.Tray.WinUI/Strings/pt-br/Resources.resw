@@ -7604,11 +7604,11 @@ O binário wxc-exec não pôde ser localizado. {1} Se esta for uma build de dese
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Comece com suas escolhas atuais e ajuste-as abaixo.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>Neste PC</value></data>
   <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>IA local</value></data>
-  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Roda localmente no seu PC sem cobrança por uso.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Vamos ajudar você a configurar um modelo adequado ao seu PC.</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Configure um modelo neste PC ou conecte-se ao LM Studio ou Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Roda neste PC sem cobranças de uso do provedor. Ajudamos você a configurar um modelo adequado ao seu hardware.</value></data>
   <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Use IA de um serviço online.</value></data>
   <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Conecte um modelo que você já usa no LM Studio.</value></data>
-  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Conecte um modelo que você já usa no Ollama.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Conecte-se ao Ollama neste PC ou em outro host para usar modelos locais ou na nuvem.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>O llama-server gerenciado do Windows usa a GPU deste PC. Ele é separado da API hospedada da NVIDIA.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Disponível no seu Gateway</value></data>
   <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>IA na nuvem</value></data>

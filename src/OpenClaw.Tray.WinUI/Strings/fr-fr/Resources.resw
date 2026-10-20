@@ -7550,11 +7550,11 @@ Le binaire wxc-exec est introuvable. {1} S'il s'agit d'une build développeur, c
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Partez de vos choix actuels et ajustez-les ci-dessous.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>Sur ce PC</value></data>
   <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>IA locale</value></data>
-  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Fonctionne localement sur votre PC sans facturation à l’usage.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Nous vous aiderons à configurer un modèle adapté à votre PC.</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Configurez un modèle sur ce PC ou connectez-vous à LM Studio ou Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>S’exécute sur ce PC sans frais d’utilisation du fournisseur. Nous vous aidons à configurer un modèle adapté à votre matériel.</value></data>
   <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Connectez-vous à un service d’IA en ligne.</value></data>
   <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Connectez un modèle que vous utilisez déjà dans LM Studio.</value></data>
-  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Connectez un modèle que vous utilisez déjà dans Ollama.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Connectez-vous à Ollama sur ce PC ou un autre hôte pour utiliser des modèles locaux ou dans le cloud.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>Le llama-server Windows géré utilise le GPU de ce PC. Il est distinct de l’API hébergée de NVIDIA.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Disponible sur votre Gateway</value></data>
   <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>IA dans le cloud</value></data>

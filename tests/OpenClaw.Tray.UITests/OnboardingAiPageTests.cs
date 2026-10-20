@@ -80,7 +80,7 @@ public sealed class OnboardingAiPageTests(UIThreadFixture ui, ITestOutputHelper 
                 OnboardingNativeProof.AssertFullyVisible(header, root);
                 Assert.Empty(TestSupport.FindDescendants<ListViewItem>(scroll));
                 using (await OnboardingNativeProof.CaptureAsync(window, $"ai-focused-default-{theme}", output,
-                    ["Set up your AI", "Set up a local model", "Refresh"],
+                    ["Set up your AI", "Local AI", "Refresh"],
                     new { textScale, defaultSize, headerHeight = header.ActualHeight,
                         scroll.ViewportHeight, scroll.ExtentHeight, rowHeights = rows.Select(row => row.ActualHeight).ToArray() },
                     requiredContent: page)) { }

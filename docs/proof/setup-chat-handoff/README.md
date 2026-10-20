@@ -92,8 +92,8 @@ and installed 262,144-token context. The running executable's product version
 also contained this exact commit. No model, runtime, or recipe change was needed.
 
 This run selected the managed **Local AI on this PC > Use this model** card
-(`RequiresManagedLocalAi=true`). Ordinary detected-model selection is covered by
-the red/green regression above; it is not claimed as the after UI path.
+(`RequiresManagedLocalAi=true`). Ordinary detected-model selection has a [separate focused live run](ordinary-selection.md)
+at the same feature head. It is not claimed as the managed after UI path below.
 
 From the verified Ready screen, click **Talk to my agent** once. After that
 click, a passive observer only read window visibility, foreground state,

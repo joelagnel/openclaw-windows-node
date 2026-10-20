@@ -24,6 +24,8 @@ internal sealed class LocalAiGatewayLifecycle(
     private IGatewayAiSetupTransport? _registeredTransport;
     private int _resuming;
     private Task? _resumeTask;
+    private sealed record WslStartup(string GatewayId, Task Task);
+    private WslStartup? _wslStartup;
     private readonly object _recoveryGate = new();
     private bool _shuttingDown;
     private sealed record EndpointRecovery(string GatewayId, string ModelRef, Uri Endpoint, string ConfigHash);
@@ -239,6 +241,16 @@ internal sealed class LocalAiGatewayLifecycle(
         };
     }
 
+    // Only a startup admitted for this WSL Gateway may delay its handoff.
+    // A saved install receipt alone does not make an ordinary Gateway selection
+    // dependent on the companion's managed runtime.
+    public void TrackWslStartup(Task startup)
+    {
+        ArgumentNullException.ThrowIfNull(startup);
+        if (_wslOwner.Resolve() is { Success: true, GatewayId: { } gatewayId })
+            Volatile.Write(ref _wslStartup, new WslStartup(gatewayId, startup));
+    }
+
     public async Task DrainRecoveryAsync()
     {
         Task? recovery;
@@ -259,14 +271,20 @@ internal sealed class LocalAiGatewayLifecycle(
         { return; }
         if (binding is null)
         {
-            if (getRegistry()?.GetActive()?.Id != expected.GatewayId || !_wslOwner.Resolve().Success)
+            if (getRegistry()?.GetActive()?.Id != expected.GatewayId ||
+                _wslOwner.Resolve() is not { Success: true, GatewayId: { } ownerId } ||
+                ownerId != expected.GatewayId)
                 return;
+            var startup = Volatile.Read(ref _wslStartup);
+            Task? GetOwnedStartup() => startup?.GatewayId == expected.GatewayId ? startup.Task : null;
             if (expected.RequiresManagedLocalAi)
             {
-                await WaitForRecoveryAsync(expected.ModelRef, runtime, () => null, ct,
+                await WaitForRecoveryAsync(expected.ModelRef, runtime, GetOwnedStartup, ct,
                     failOnTerminalState: true);
                 return;
             }
+            if (GetOwnedStartup() is null)
+                return;
             if (!expected.ModelRef.StartsWith("llamacpp/", StringComparison.Ordinal))
                 return;
             LocalAiResolvedInstall? install;
@@ -274,10 +292,11 @@ internal sealed class LocalAiGatewayLifecycle(
             catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
             { return; }
             // WSL setup records ordinary model verification for its managed route.
-            // The runtime may still be Stopped before background startup loads this receipt.
+            // Join the startup already admitted by this app, then let the Gateway
+            // verify ordinary selections even when that startup failed.
             if (install is not null && LocalAiGatewayProviderDefinition.BuildPrimaryModel(install) == expected.ModelRef)
-                await WaitForRecoveryAsync(expected.ModelRef, runtime, () => null, ct,
-                    failOnTerminalState: true);
+                await WaitForRecoveryAsync(expected.ModelRef, runtime, GetOwnedStartup, ct,
+                    requiresManagedLocalAi: false, allowOrdinaryTerminalBypass: true);
             return;
         }
         if (binding.GatewayId != expected.GatewayId || binding.ModelRef != expected.ModelRef ||
@@ -290,19 +309,27 @@ internal sealed class LocalAiGatewayLifecycle(
 
     internal static async Task WaitForRecoveryAsync(string expectedModelRef, ILocalAiRuntime runtime,
         Func<Task?> getRecoveryTask, CancellationToken ct, bool requiresManagedLocalAi = true,
-        bool failOnTerminalState = false)
+        bool failOnTerminalState = false, bool allowOrdinaryTerminalBypass = false)
     {
         // Only join recovery already admitted by the connection owner. Handoff
         // cannot replay a pending write or start a different Gateway's runtime.
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+            LocalAiRuntimeState state = runtime.Snapshot.State;
+            // An ordinary Gateway route can be verified independently when the
+            // companion runtime is already healthy or has reached a terminal state.
+            if (allowOrdinaryTerminalBypass && !requiresManagedLocalAi && state is (LocalAiRuntimeState.Healthy or
+                LocalAiRuntimeState.Failed or LocalAiRuntimeState.Conflict or LocalAiRuntimeState.NotInstalled))
+                break;
             if (getRecoveryTask() is { IsCompleted: false } recovery)
             {
-                await recovery.WaitAsync(ct).ConfigureAwait(false);
+                if (allowOrdinaryTerminalBypass && !requiresManagedLocalAi)
+                    await Task.Delay(100, ct).ConfigureAwait(false);
+                else
+                    await recovery.WaitAsync(ct).ConfigureAwait(false);
                 continue;
             }
-            LocalAiRuntimeState state = runtime.Snapshot.State;
             if (state == LocalAiRuntimeState.Healthy ||
                 (!requiresManagedLocalAi && getRecoveryTask() is { IsCompleted: true })) break;
             if (failOnTerminalState && state is LocalAiRuntimeState.Failed or LocalAiRuntimeState.Conflict)

@@ -1079,7 +1079,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         if (runtime is null)
             return;
 
-        _ = Task.Run(async () =>
+        var startup = Task.Run(async () =>
         {
             try
             {
@@ -1095,6 +1095,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                 Logger.Warn($"Local AI router startup failed: {ex.Message}");
             }
         });
+        _localAiGatewayLifecycle?.TrackWslStartup(startup);
     }
 
     private void InitializeTrayIcon()

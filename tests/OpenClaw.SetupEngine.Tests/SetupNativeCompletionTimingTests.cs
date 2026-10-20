@@ -24,6 +24,22 @@ public sealed class SetupNativeCompletionTimingTests
         var clock = new ManualTimeProvider();
         var firstRestarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondRestarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstRestartScheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRestartScheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runtimeScheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restartTimers = 0;
+        clock.TimerScheduled += due =>
+        {
+            if (due == StartGatewayStep.RestartCommandTimeout)
+            {
+                if (Interlocked.Increment(ref restartTimers) == 1)
+                    firstRestartScheduled.TrySetResult();
+                else
+                    secondRestartScheduled.TrySetResult();
+            }
+            else if (due == TimeSpan.FromSeconds(90))
+                runtimeScheduled.TrySetResult();
+        };
         var recovery = SetupNativeCompletionTiming.RunAsync(async ct =>
         {
             await Task.Delay(StartGatewayStep.RestartCommandTimeout, clock, ct);
@@ -34,10 +50,13 @@ public sealed class SetupNativeCompletionTimingTests
             return true;
         }, SetupNativeCompletionTiming.ModelRecovery, SetupNativeCompletionPhase.ModelRecovery, default, clock);
 
+        await firstRestartScheduled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         clock.Advance(StartGatewayStep.RestartCommandTimeout);
         await firstRestarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await secondRestartScheduled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         clock.Advance(StartGatewayStep.RestartCommandTimeout);
         await secondRestarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await runtimeScheduled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         clock.Advance(TimeSpan.FromSeconds(90));
         Assert.True(await recovery);
     }

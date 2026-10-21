@@ -7,11 +7,39 @@ public sealed class SetupNativeCompletionTimingTests
     [Fact]
     public void PublishedBudgetIncludesBothConnectionsRecoveryModelAndNavigation()
     {
-        Assert.Equal(TimeSpan.FromMinutes(13.5), SetupNativeCompletionTiming.Execution);
+        Assert.Equal(TimeSpan.FromMinutes(27), SetupNativeCompletionTiming.Execution);
+        // A fresh WSL runtime can withdraw and publish its route with two guarded
+        // Gateway restarts, then spend its full startup allowance reaching Healthy.
+        Assert.True(SetupNativeCompletionTiming.ModelRecovery >
+            StartGatewayStep.RestartCommandTimeout * 2 + TimeSpan.FromSeconds(90));
         Assert.Equal(SetupNativeCompletionTiming.Connection * 2 + SetupNativeCompletionTiming.ModelRecovery +
             SetupNativeCompletionTiming.ModelVerification + SetupNativeCompletionTiming.Navigation,
             SetupNativeCompletionTiming.Execution);
         Assert.True(SetupNativeCompletionTiming.ModelVerification > TimeSpan.FromSeconds(120));
+    }
+
+    [Fact]
+    public async Task ModelRecoveryAllowsTwoFullGatewayRestartsAndRuntimeStartup()
+    {
+        var clock = new ManualTimeProvider();
+        var firstRestarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRestarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = SetupNativeCompletionTiming.RunAsync(async ct =>
+        {
+            await Task.Delay(StartGatewayStep.RestartCommandTimeout, clock, ct);
+            firstRestarted.SetResult();
+            await Task.Delay(StartGatewayStep.RestartCommandTimeout, clock, ct);
+            secondRestarted.SetResult();
+            await Task.Delay(TimeSpan.FromSeconds(90), clock, ct);
+            return true;
+        }, SetupNativeCompletionTiming.ModelRecovery, SetupNativeCompletionPhase.ModelRecovery, default, clock);
+
+        clock.Advance(StartGatewayStep.RestartCommandTimeout);
+        await firstRestarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(StartGatewayStep.RestartCommandTimeout);
+        await secondRestarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromSeconds(90));
+        Assert.True(await recovery);
     }
 
     [Theory]

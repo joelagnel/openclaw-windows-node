@@ -17,6 +17,7 @@ internal sealed class LocalAiGatewayLifecycle(
     IOpenClawLogger logger) : ILocalAiEndpointLifecycle
 {
     private readonly LocalAiNativeBindingStore _store = new(paths);
+    private readonly LocalAiManifestStore _manifest = new(paths);
     private readonly LocalAiApiCredentialStore _credentials = new(paths);
     private readonly LocalAiGatewayDistroResolver _wslOwner = new(getRegistry());
     private NativeLocalAiGatewayTarget? _registeredTarget;
@@ -249,24 +250,47 @@ internal sealed class LocalAiGatewayLifecycle(
         if (recovery is not null) await recovery.ConfigureAwait(false);
     }
 
-    public Task WaitForRuntimeAsync(GatewayAiSetupCompletion expected, ILocalAiRuntime runtime, CancellationToken ct)
+    public async Task WaitForRuntimeAsync(GatewayAiSetupCompletion expected, ILocalAiRuntime runtime, CancellationToken ct)
     {
         LocalAiNativeBinding? binding;
         try { binding = _store.Load(); }
         catch (Exception ex) when (!expected.RequiresManagedLocalAi &&
             ex is InvalidDataException or JsonException or ArgumentException or IOException or UnauthorizedAccessException)
-        { return Task.CompletedTask; }
-        // Detected use may await the confirmed owner's recovery without authorizing it.
-        if (binding is null || binding.GatewayId != expected.GatewayId || binding.ModelRef != expected.ModelRef ||
+        { return; }
+        if (binding is null)
+        {
+            if (getRegistry()?.GetActive()?.Id != expected.GatewayId || !_wslOwner.Resolve().Success)
+                return;
+            if (expected.RequiresManagedLocalAi)
+            {
+                await WaitForRecoveryAsync(expected.ModelRef, runtime, () => null, ct,
+                    failOnTerminalState: true);
+                return;
+            }
+            if (!expected.ModelRef.StartsWith("llamacpp/", StringComparison.Ordinal))
+                return;
+            LocalAiResolvedInstall? install;
+            try { install = await _manifest.LoadAsync(ct); }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+            { return; }
+            // WSL setup records ordinary model verification for its managed route.
+            // The runtime may still be Stopped before background startup loads this receipt.
+            if (install is not null && LocalAiGatewayProviderDefinition.BuildPrimaryModel(install) == expected.ModelRef)
+                await WaitForRecoveryAsync(expected.ModelRef, runtime, () => null, ct,
+                    failOnTerminalState: true);
+            return;
+        }
+        if (binding.GatewayId != expected.GatewayId || binding.ModelRef != expected.ModelRef ||
             (!expected.RequiresManagedLocalAi && (binding.Pending || !binding.AutomaticRecoveryEnabled ||
                 binding.EndpointBinding != expected.EndpointBinding || binding.IdentityBinding != expected.IdentityBinding)))
-            return Task.CompletedTask;
-        return WaitForRecoveryAsync(expected.ModelRef, runtime, () => Volatile.Read(ref _resumeTask), ct,
+            return;
+        await WaitForRecoveryAsync(expected.ModelRef, runtime, () => Volatile.Read(ref _resumeTask), ct,
             requiresManagedLocalAi: expected.RequiresManagedLocalAi);
     }
 
     internal static async Task WaitForRecoveryAsync(string expectedModelRef, ILocalAiRuntime runtime,
-        Func<Task?> getRecoveryTask, CancellationToken ct, bool requiresManagedLocalAi = true)
+        Func<Task?> getRecoveryTask, CancellationToken ct, bool requiresManagedLocalAi = true,
+        bool failOnTerminalState = false)
     {
         // Only join recovery already admitted by the connection owner. Handoff
         // cannot replay a pending write or start a different Gateway's runtime.
@@ -278,8 +302,11 @@ internal sealed class LocalAiGatewayLifecycle(
                 await recovery.WaitAsync(ct).ConfigureAwait(false);
                 continue;
             }
-            if (runtime.Snapshot.State == LocalAiRuntimeState.Healthy ||
+            LocalAiRuntimeState state = runtime.Snapshot.State;
+            if (state == LocalAiRuntimeState.Healthy ||
                 (!requiresManagedLocalAi && getRecoveryTask() is { IsCompleted: true })) break;
+            if (failOnTerminalState && state is LocalAiRuntimeState.Failed or LocalAiRuntimeState.Conflict)
+                throw new InvalidOperationException("The selected Local AI runtime failed before Gateway verification.");
             await Task.Delay(100, ct).ConfigureAwait(false);
         }
         ct.ThrowIfCancellationRequested();

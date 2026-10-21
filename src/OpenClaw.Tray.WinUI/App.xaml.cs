@@ -805,7 +805,9 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         var localAiLogger = new AppLogger();
         var localAiPaths = new LocalAiPaths(AppIdentity.ResolveSetupLocalDataDirectory());
         var localAiEndpointLifecycle = new LocalAiGatewayProviderCoordinator(
-            new WslExeCommandRunner(localAiLogger),
+            // Gateway restart has the same 420-second allowance as setup.
+            // Model recovery also covers the local runtime's health check.
+            new WslExeCommandRunner(localAiLogger, TimeSpan.FromSeconds(420)),
             new LocalAiGatewayDistroResolver(_gatewayRegistry),
             localAiLogger);
         _localAiGatewayLifecycle = new LocalAiGatewayLifecycle(localAiPaths,

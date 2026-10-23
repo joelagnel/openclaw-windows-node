@@ -15,6 +15,8 @@ public class NemotronBoltCatalogTests
 
         Assert.Equal(NemotronBoltPrereleaseFixture.Weights, model.Weights);
         Assert.Equal(NemotronBoltPrereleaseFixture.DraftWeights, model.Recipe.DraftWeights);
+        Assert.Null(model.Recipe.VisionProjector);
+        Assert.False(model.SupportsVision);
         Assert.DoesNotContain(model, LocalModelCatalog.Models);
         Assert.DoesNotContain(model, LocalModelCatalog.ExplicitAlternatives);
         Assert.NotEqual(model, LocalModelCatalog.Find(model.Id));
@@ -34,11 +36,17 @@ public class NemotronBoltCatalogTests
         AssertArtifact(draft, "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr-GGUF",
             "182d2987939e12f458298b5d5f6ef98912f4ad6c", "NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-LiLiCorr.gguf", 998_242_560,
             "080e1ea41c9562a7804dbf30c6fbd4d17e216c6b8ff666f88e6edb1816010194");
-        Assert.Equal(23_016_569_088, LocalModelCatalog.TotalDownloadSizeBytes(model));
-        Assert.Equal(draft, Assert.Single(LocalModelCatalog.AdditionalArtifacts(model)));
+        // The projector is pinned at the same immutable revision as the target weights.
+        var projector = Assert.IsType<PinnedArtifact>(model.Recipe.VisionProjector);
+        AssertArtifact(projector, "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF",
+            "e0fecb69cb3e5e4c5e8a056fa2aec98c78e91246", "mmproj-NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB.gguf", 1_733_692_736,
+            "0ee891eadc7bf0cae6289b249c74eb1ef420534351f6ef8b64d49f0ca6a926b0");
+        Assert.Equal(24_750_261_824, LocalModelCatalog.TotalDownloadSizeBytes(model));
+        // Receipts, acquisition and launch agree on this order: drafter first, projector last.
+        Assert.Equal(new[] { draft, projector }, LocalModelCatalog.AdditionalArtifacts(model));
         Assert.False(model.IsDefault);
         Assert.True(model.IsExplicitAlternative);
-        Assert.False(model.SupportsVision);
+        Assert.True(model.SupportsVision);
         Assert.Equal(0, model.RecommendationPriority);
     }
 

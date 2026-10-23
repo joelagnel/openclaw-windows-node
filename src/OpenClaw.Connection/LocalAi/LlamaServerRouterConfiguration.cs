@@ -209,7 +209,7 @@ public static class LlamaServerRouterConfiguration
         if (model.Recipe.DraftWeights is null)
             return null;
         return string.IsNullOrWhiteSpace(verifiedDraftModelPath)
-            ? manifest.AdditionalModelPathsOrEmpty[^1]
+            ? manifest.AdditionalModelPathsOrEmpty[0]
             : verifiedDraftModelPath;
     }
 

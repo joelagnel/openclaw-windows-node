@@ -75,7 +75,7 @@ public sealed partial class LocalAiPortLifecycleTests
         Assert.Equal(131072, current.ContextLength);
         Assert.Equal(original.ModelId, current.ModelId);
         Assert.Equal(original.ModelAsset, current.ModelAsset);
-        Assert.Equal(Assert.Single(original.AdditionalModelAssetsOrEmpty), Assert.Single(current.AdditionalModelAssetsOrEmpty));
+        Assert.Equal(original.AdditionalModelAssetsOrEmpty.AsEnumerable(), current.AdditionalModelAssetsOrEmpty);
     }
 
     [Fact]
@@ -106,6 +106,8 @@ public sealed partial class LocalAiPortLifecycleTests
         var model = LocalModelCatalog.Find(LocalModelCatalog.NemotronBoltModelId)!;
         var weights = prerelease ? NemotronBoltPrereleaseFixture.Weights : model.Weights;
         var draft = prerelease ? NemotronBoltPrereleaseFixture.DraftWeights : model.Recipe.DraftWeights!;
+        // Prerelease receipts predate the vision projector and stay drafter-only.
+        var additional = prerelease ? ImmutableArray.Create(draft) : LocalModelCatalog.AdditionalArtifacts(model);
         var runtime = LlamaRuntimeCatalog.Find(RuntimeArchitecture.Arm64, model.RuntimeFamily)!;
         var profile = LocalModelCatalog.GetProfiles(model).Single(p => p.ContextTokens == context);
         string cache = temp.Combine("hf");
@@ -132,8 +134,8 @@ public sealed partial class LocalAiPortLifecycleTests
             RuntimeAssets = runtime.Artifacts.Select(Receipt).ToImmutableArray(),
             ModelAsset = Receipt(weights), ModelPath = Path.Combine("models", weights.RelativePath),
             ModelCacheRoot = cache, CachedModelPath = Snapshot(weights),
-            AdditionalModelAssets = [Receipt(draft)],
-            AdditionalModelPaths = [Snapshot(draft)],
+            AdditionalModelAssets = additional.Select(Receipt).ToImmutableArray(),
+            AdditionalModelPaths = additional.Select(Snapshot).ToImmutableArray(),
             ContextLength = context, KeyCachePrecision = profile.KeyCachePrecision,
             ValueCachePrecision = profile.ValueCachePrecision, DraftKeyCachePrecision = profile.DraftKeyCachePrecision,
             DraftValueCachePrecision = profile.DraftValueCachePrecision,

@@ -68,8 +68,8 @@ public static partial class LocalModelCatalog
 
     private static LocalInferenceRunProfile[] CreateNemotronBoltProfiles() =>
     [
-        NemotronBoltProfile(NativeContextTokens, 12L * 1024 * 1024 * 1024),
-        NemotronBoltProfile(ReducedContextTokens, 8L * 1024 * 1024 * 1024),
+        NemotronBoltProfile(NativeContextTokens, 5L * 512 * 1024 * 1024),
+        NemotronBoltProfile(ReducedContextTokens, 2L * 1024 * 1024 * 1024),
     ];
 
     private static LocalInferenceRunProfile NemotronBoltProfile(int contextTokens, long workspaceBytes) => new(
@@ -79,9 +79,6 @@ public static partial class LocalModelCatalog
         KvCachePrecision.Q8_0,
         KvCachePrecision.F16,
         KvCachePrecision.F16,
-        // RTX Spark N1X near-full prefill, generation, and tool/stream trials
-        // peaked at 30.30 GB (128K) and 34.94 GB (256K) of Windows commit.
-        // These reserves cover recurrent/compute/checkpoint state and retain
-        // at least 2 GiB above the larger measured peak at each context.
+        // Reserve for compute buffers and checkpoints above files and KV: 128K with vision needs about 28 GB.
         workspaceBytes);
 }

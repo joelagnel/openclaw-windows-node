@@ -81,8 +81,9 @@ public class NemotronBoltCatalogTests
             Assert.Same(profile, LocalModelCatalog.FindProfile(model, profile.ContextTokens,
                 profile.KeyCachePrecision, profile.ValueCachePrecision, profile.DraftKeyCachePrecision,
                 profile.DraftValueCachePrecision));
-            long measuredPeak = profile.ContextTokens == 262_144 ? 34_944_585_728 : 30_304_747_520;
-            Assert.True(LocalInferenceEligibility.GetRequiredMemoryBytes(model, profile) >= measuredPeak + 2L * 1024 * 1024 * 1024);
+            // Files and KV caches plus a 2 GiB (128K) or 2.5 GiB (256K) reserve: 28 GB class with vision.
+            Assert.Equal(profile.ContextTokens == 262_144 ? 29_917_644_352 : 28_139_259_456,
+                LocalInferenceEligibility.GetRequiredMemoryBytes(model, profile));
         }
     }
 

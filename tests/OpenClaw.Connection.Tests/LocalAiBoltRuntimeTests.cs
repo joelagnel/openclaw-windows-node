@@ -68,7 +68,15 @@ public sealed partial class LocalAiPortLifecycleTests
             modelFileVerifier: new AcceptingBoltVerifier(), hardwareProbe: hardware);
 
         Assert.Equal(LocalAiRuntimeState.Healthy, (await runtime.EnsureStartedAsync()).State);
-        Assert.Contains("ctx-size = 131072", (await File.ReadAllTextAsync(paths.RouterPresetPath)).Split(Environment.NewLine));
+        string[] preset = (await File.ReadAllTextAsync(paths.RouterPresetPath)).Split(Environment.NewLine);
+        Assert.Contains("ctx-size = 131072", preset);
+        Assert.Contains("cache-type-k = q8_0", preset);
+        Assert.Contains("cache-type-v = q8_0", preset);
+        // Only the public recipe has a projector (last additional asset), and only it declares image input.
+        Assert.Equal(!prerelease, preset.Contains($"mmproj = {original.AdditionalModelPathsOrEmpty[^1]}"));
+        Assert.Equal(!prerelease, LocalAiGatewayProviderDefinition.BuildProviderJson(
+            (await new LocalAiManifestStore(paths).LoadAsync())! with { Endpoint = new Uri("http://127.0.0.1:28769/v1") })
+            .Contains("\"input\":[\"text\",\"image\"]", StringComparison.Ordinal));
         Assert.Equal(LocalAiRuntimeState.Healthy, (await runtime.RestartAsync()).State);
         Assert.Equal(2, hardware.Calls);
         var current = (await new LocalAiManifestStore(paths).LoadAsync())!.Manifest;

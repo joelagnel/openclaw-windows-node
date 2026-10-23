@@ -527,12 +527,17 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             string? draftModelPath = GetRuntimeDraftModelPath();
             if (draftModelPath is not null)
                 draftModelPath = ResolveChildProcessPath(draftModelPath);
+            // The projector is the last additional asset, after the draft checkpoint.
+            string? projectorPath = LlamaServerRouterConfiguration.ResolveInstalledPlan(install).Model.Recipe.VisionProjector is null
+                ? null
+                : ResolveChildProcessPath(_verifiedAdditionalAssets[^1].ResolvedPath);
             LlamaServerRouterLaunchPlan launchPlan = LlamaServerRouterConfiguration.BuildForVerifiedRuntime(
                 _options.Paths,
                 install,
                 _runtimeModelPath,
                 draftModelPath,
-                requestedPort);
+                requestedPort,
+                projectorPath);
             if (string.Equals(install.Manifest.ModelCatalogId, LocalModelCatalog.NemotronBoltModelId,
                     StringComparison.OrdinalIgnoreCase))
             {
